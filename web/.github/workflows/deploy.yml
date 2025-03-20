@@ -45,6 +45,6 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_KEY }}
-          rm: "/var/www/html/airsense.yooud.org/*"
+          rm: true
           source: "dist/*"
           target: "/var/www/html/airsense.yooud.org"
