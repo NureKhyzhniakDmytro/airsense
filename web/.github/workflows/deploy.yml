@@ -39,12 +39,20 @@ jobs:
       - name: Build the Vue app
         run: npm run build
 
+      - name: Remove old files
+        uses: appleboy/ssh-action@v0.1.8
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            rm -rf /var/www/html/airsense.yooud.org/*
+
       - name: Copy build files to VPS
         uses: appleboy/scp-action@v0.1.5
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USERNAME }}
           key: ${{ secrets.SSH_KEY }}
-          rm: true
           source: "dist/*"
           target: "/var/www/html/airsense.yooud.org"
