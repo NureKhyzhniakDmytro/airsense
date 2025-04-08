@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, signInWithPopup, User, signOut } from "firebase/auth";
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
 
 const firebaseConfig = {
@@ -12,19 +12,14 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Initialize Messaging
 const messaging = getMessaging(app);
 
-// Initialize Auth
-const auth = getAuth(app);
-const provider = new GoogleAuthProvider();
+export const auth = getAuth(app);
+export type AuthUser = User | null;
+export const googleProvider = new GoogleAuthProvider();
 
-/**
- * Запрос разрешений на уведомления
- */
 export const getFcmToken = async (): Promise<string | null> => {
   try {
     const token = await getToken(messaging, {
@@ -43,10 +38,6 @@ export const getFcmToken = async (): Promise<string | null> => {
   }
 };
 
-/**
- * Подписка на входящие сообщения
- * @param callback - Функция для обработки сообщений
- */
 export const onMessageListener = (callback: (payload: any) => void) => {
   onMessage(messaging, (payload) => {
     console.log("Получено сообщение:", payload);
@@ -54,16 +45,16 @@ export const onMessageListener = (callback: (payload: any) => void) => {
   });
 };
 
-/**
- * Sign in with Google
- */
 export const signInWithGoogle = async (): Promise<User | null> => {
   try {
-    const result = await signInWithPopup(auth, provider);
-    console.log('User signed in: ', result.user);
+    const result = await signInWithPopup(auth, googleProvider);
     return result.user;
   } catch (error) {
-    console.error('Error signing in: ', error);
-    return null;
+    console.error("Ошибка входа через Google:", error);
+    throw error;
   }
+};
+
+export const logout = async () => {
+  await signOut(auth);
 };
