@@ -1,42 +1,34 @@
 import { createRouter, createWebHistory, RouteRecordRaw } from "vue-router";
 import { auth } from "@/firebase";
 import { useAuthStore } from "@/store/authStore";
-import Dashboard from "@/pages/Dashboard.vue";
-import EnvironmentDetails from "@/pages/EnvironmentDetails.vue";
-import Login from "@/pages/Login.vue";
-import Register from "@/pages/Register.vue";
-import RoomDetails from "@/pages/RoomDetails.vue";
-import RoomsList from "@/components/RoomsList.vue";
-import MembersList from "@/components/MembersList.vue";
-import {User} from "firebase/auth";
+import { User } from "firebase/auth";
 
-const routes: RouteRecordRaw[] = [
-  { path: "/", component: Dashboard, meta: { requiresAuth: true } },
-  { path: "/login", component: Login, meta: { guestOnly: true } },
-  { path: "/register", component: Register, meta: { guestOnly: true } },
+const dashboardRoutes: RouteRecordRaw[] = [
+  {
+    path: "/",
+    component: () => import("@/pages/Dashboard.vue"),
+  },
   {
     path: "/env/:envId",
-    component: EnvironmentDetails,
-    meta: { requiresAuth: true },
+    component: () => import("@/pages/EnvironmentDetails.vue"),
     props: true,
     children: [
       {
         path: 'rooms',
         name: 'rooms',
-        component: RoomsList,
+        component: () => import("@/components/RoomsList.vue"),
       },
       {
         path: 'members',
         name: 'members',
-        component: MembersList,
+        component: () => import("@/components/MembersList.vue"),
       },
     ]
   },
   {
     path: "/env/:envId/room/:roomId",
-    component: RoomDetails,
+    component: () => import("@/pages/RoomDetails.vue"),
     props: true,
-    meta: { requiresAuth: true },
     children: [
       {
         path: "parameters",
@@ -64,13 +56,34 @@ const routes: RouteRecordRaw[] = [
     path: "/env/:envId/room/:roomId/sensors/:sensorId",
     component: () => import("@/pages/SensorDetails.vue"),
     props: true,
-    meta: { requiresAuth: true },
   },
   {
     path: "/env/:envId/room/:roomId/devices/:deviceId",
     component: () => import("@/pages/DeviceDetails.vue"),
     props: true,
+  }
+]
+
+const routes: RouteRecordRaw[] = [
+  {
+    path: "/",
+    redirect: "/dashboard"
+  },
+  {
+    path: "/login",
+    component: () => import("@/pages/Login.vue"),
+    meta: { guestOnly: true }
+  },
+  {
+    path: "/register",
+    component: () => import("@/pages/Register.vue"),
+    meta: { guestOnly: true }
+  },
+  {
+    path: "/dashboard",
+    component: () => import("@/layout/DashboardLayout.vue"),
     meta: { requiresAuth: true },
+    children: dashboardRoutes
   }
 ];
 
