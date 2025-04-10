@@ -1,84 +1,124 @@
 <template>
-  <nav class="mb-4">
-    <div class="max-w-7xl mx-auto flex items-center gap-2 text-gray-500 text-sm">
-      <!-- Home -->
-      <router-link to="/" class="hover:text-gray-700 flex items-center gap-1">
-        <HomeIcon class="w-5 h-5" />
-      </router-link>
-
-      <!-- Skeleton Loader -->
-      <span v-if="isLoading" class="flex items-center gap-2">
-        <template v-for="(_, index) in expectedBreadcrumbs" :key="index">
-          <ChevronRightIcon class="w-5 h-5" />
-          <div class="h-5 w-20 bg-gray-300 rounded animate-pulse"></div>
-        </template>
-      </span>
-
-      <!-- Breadcrumbs -->
-      <span v-else v-for="(crumb, index) in breadcrumbs" :key="index" class="flex items-center gap-2">
-        <ChevronRightIcon class="w-5 h-5" />
-
-        <router-link
-            v-if="crumb.path && index !== breadcrumbs.length - 1"
-            :to="crumb.path"
-            class="hover:text-gray-700"
-        >
-          {{ crumb.label }}
+  <Breadcrumb :home="home" :model="items" class="bg-surface-100 p-0">
+    <template #item="{ item, props }">
+      <Skeleton v-if="item.isLoading" :width="skeletonWidth" />
+      <div v-else>
+        <router-link v-if="item.route" v-slot="{ href, navigate }" :to="item.route" custom>
+          <a :href="href" v-bind="props.action" @click="navigate" class="gap-0">
+            <span :class="[item.icon? item.icon : 'hidden']" class="h-6 w-6 text-color p-1 hover:text-color-emphasis" />
+            <span class="text-primary font-semibold hover:text-primary-emphasis">{{ item.label }}</span>
+          </a>
         </router-link>
-
-        <span v-else class="text-gray-700 font-medium">{{ crumb.label }}</span>
-      </span>
-    </div>
-  </nav>
+        <a v-else :href="item.url" :target="item.target" v-bind="props.action">
+          <span class="text-surface-700">{{ item.label }}</span>
+        </a>
+      </div>
+    </template>
+  </Breadcrumb>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watchEffect } from "vue";
+import { ref, watch, computed } from "vue";
 import { useRoute } from "vue-router";
-import { HomeIcon, ChevronRightIcon } from "@heroicons/vue/24/outline";
+import Breadcrumb from 'primevue/breadcrumb';
+import Skeleton from 'primevue/skeleton';
 import { breadcrumbConfig } from "@/config/breadcrumbConfig";
 
+type BreadcrumbItem = {
+  param: string;
+  paramValue: any;
+  label?: string;
+  icon?: string;
+  isLoading?: boolean;
+  route?: {
+    name: string;
+    params?: Record<string, any>;
+    query?: Record<string, any>;
+  };
+};
+
 const route = useRoute();
-const breadcrumbLabels = ref<Record<string, string>>({});
-const breadcrumbPaths = ref<Record<string, string | null>>({});
-const isLoading = ref(true);
 
-const expectedBreadcrumbs = computed(() => Object.keys(route.params).length);
+const home = ref<BreadcrumbItem>({
+  param: "",
+  paramValue: null,
+  icon: 'pi pi-home',
+  route: {
+    name: 'dashboard'
+  }
+});
+const items = ref<BreadcrumbItem[]>([]);
 
-const fetchBreadcrumbData = async (param: string, params: number[]) => {
+const skeletonWidth = computed(() => {
+  const value = (Math.random() * 2 + 5).toFixed(2);
+  return `${value}rem`;
+});
+
+const fetchBreadcrumbData = async (param: string) => {
   const config = breadcrumbConfig[param];
   if (!config) return;
 
-  if (config.dependsOn) {
-    const parentId = Number(route.params[config.dependsOn]);
-    if (!isNaN(parentId)) {
-      params.unshift(parentId);
-      await fetchBreadcrumbData(config.dependsOn, params);
+  return {
+    label: await config.fetchData(route.params),
+    route: {
+      name: config.path
     }
   }
-  breadcrumbLabels.value[param] = await config.fetchData(params);
-  breadcrumbPaths.value[param] = config.path ? config.path(params) : null;
 };
 
-watchEffect(async () => {
-  isLoading.value = true;
-  breadcrumbLabels.value = {};
-  breadcrumbPaths.value = {};
+const reformatBreadcrumbData = async (start: number) => {
+  for (let i = start; i < Object.keys(route.params).length; i++) {
+    items.value[i].isLoading = true;
 
-  for (const param of Object.keys(breadcrumbConfig)) {
-    const id = Number(route.params[param]);
-    if (!isNaN(id)) {
-      await fetchBreadcrumbData(param, [id]);
+    const param = Object.keys(route.params)[i];
+    const item = await fetchBreadcrumbData(param);
+    items.value[i].label = item.label;
+    items.value[i].route = item.route;
+
+    items.value[i].isLoading = false;
+  }
+}
+
+const clearBreadcrumbs = () => {
+  if (Object.keys(route.params).length < items.value.length) {
+    items.value = items.value.slice(0, Object.keys(route.params).length);
+  }
+}
+
+watch(() => route.params, async () => {
+  if (items.value.length === 0) {
+    for (const param of Object.keys(route.params)) {
+      items.value.push({
+        param: param,
+        paramValue: route.params[param],
+        isLoading: true
+      });
     }
   }
 
-  isLoading.value = false;
-});
+  for (let i = 0; i < Object.keys(route.params).length; i++) {
+    const param = Object.keys(route.params)[i];
 
-const breadcrumbs = computed(() =>
-    Object.entries(breadcrumbLabels.value).map(([param, label]) => ({
-      label,
-      path: breadcrumbPaths.value[param] || null,
-    }))
-);
+    if (!items.value[i]) {
+      items.value.push({
+        param: param,
+        paramValue: route.params[param],
+        isLoading: true
+      });
+    }
+
+    if (items.value[i].isLoading === true) {
+      reformatBreadcrumbData(i).then();
+      return ;
+    } else if (items.value[i].param !== param) {
+      reformatBreadcrumbData(i).then();
+      return ;
+    } else if (items.value[i].paramValue !== route.params[param]) {
+      reformatBreadcrumbData(i).then();
+      return ;
+    }
+  }
+
+  clearBreadcrumbs();
+}, { immediate: true });
 </script>

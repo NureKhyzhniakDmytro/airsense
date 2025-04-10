@@ -2,52 +2,67 @@ import { getRoom } from "@/services/apiService";
 import { useEnvironmentStore } from "@/store/environmentStore";
 import { useSensorStore } from "@/store/sensorStore";
 import { useDeviceStore } from "@/store/deviceStore";
+import { RouteParamsGeneric } from "vue-router";
 
 const breadcrumbCache = new Map<string, string>();
 
-export const breadcrumbConfig = {
+export type BreadcrumbConfig = {
+  label: string;
+  path?: string;
+  fetchData: (params: RouteParamsGeneric) => Promise<string>;
+};
+
+export const breadcrumbConfig: Record<string, BreadcrumbConfig> = {
   envId: {
     label: "Середовище",
-    path: (params: number[]) => `/env/${params[0]}`,
-    fetchData: async (params: number[]): Promise<string> => {
+    path: "environment",
+    fetchData: async (params: RouteParamsGeneric): Promise<string> => {
+      const envId = Number(params.envId);
+
       const environmentStore = useEnvironmentStore();
-      const env = await environmentStore.fetchEnvironment(params[0]);
+      const env = await environmentStore.fetchEnvironment(envId);
       return env?.name || `Середовище ${params[0]}`;
     },
   },
   roomId: {
     label: "Кімната",
-    dependsOn: "envId",
-    path: (params: number[]) => `/env/${params[0]}/room/${params[1]}`,
-    fetchData: async (params: number[]): Promise<string> => {
-      const cacheKey = `room-${params[0]}-${params[1]}`;
-      if (breadcrumbCache.has(cacheKey))
-        return breadcrumbCache.get(cacheKey) || `Кімната ${params[1]}`;
+    path: "room",
+    fetchData: async (params: RouteParamsGeneric): Promise<string> => {
+      const envId = Number(params.envId);
+      const roomId = Number(params.roomId);
 
-      const room = await getRoom(params[0], params[1]);
-      const name = room?.name || `Кімната ${params[1]}`;
+      const cacheKey = `room-${envId}-${roomId}`;
+      if (breadcrumbCache.has(cacheKey))
+        return breadcrumbCache.get(cacheKey) || `Кімната ${roomId}`;
+
+      const room = await getRoom(envId, roomId);
+      const name = room?.name || `Кімната ${roomId}`;
       breadcrumbCache.set(cacheKey, name);
       return name;
     },
   },
  deviceId: {
    label: "Пристрій",
-   dependsOn: "roomId",
-   path: (params: number[]) => `/env/${params[0]}/room/${params[1]}/devices/${params[2]}`,
-   fetchData: async (params: number[]): Promise<string> => {
+   path: "device",
+   fetchData: async (params: RouteParamsGeneric): Promise<string> => {
+     const roomId = Number(params.roomId);
+     const deviceId = Number(params.deviceId);
+
      const deviceStore = useDeviceStore();
-     const device = await deviceStore.fetchDevice(params[1], params[2]);
+     const device = await deviceStore.fetchDevice(roomId, deviceId);
      return `Пристрій #${device?.id}`;
    },
  },
   sensorId: {
     label: "Датчик",
-    dependsOn: "roomId",
-    path: (params: number[]) => `/env/${params[0]}/room/${params[1]}/sensors/${params[2]}`,
-    fetchData: async (params: number[]): Promise<string> => {
+    path: "sensor",
+    fetchData: async (params: RouteParamsGeneric): Promise<string> => {
+      const roomId = Number(params.roomId);
+      const deviceId = Number(params.deviceId);
+
       const sensorStore = useSensorStore();
-      const sensor = await sensorStore.fetchSensor(params[1], params[2]);
-      return sensor == null ? `Датчик #${params[2]}` : `${sensor.type_name} #${sensor.id}`;
+      const sensor = await sensorStore.fetchSensor(roomId, deviceId);
+      return sensor == null ? `Датчик #${deviceId}` : `${sensor.type_name} #${sensor.id}`;
     },
   },
 };
