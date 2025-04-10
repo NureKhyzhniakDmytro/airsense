@@ -1,119 +1,118 @@
 <template>
-  <div class="container max-w-7xl mx-auto py-6">
-    <h1 class="text-3xl font-bold text-gray-800 mt-4 text-center">Панель управління</h1>
+  <div
+      class="items-center flex-grow"
+      :class="{ 'place-content-center': environmentStore.environments.length === 0 }"
+  >
+    <div v-if="environmentStore.environments.length !== 0" class="mt-8">
+      <h1 class="text-3xl font-bold text-gray-800">Environments</h1>
 
-    <div class="mt-4">
-      <h2 class="text-xl font-semibold text-gray-700">Список середовищ</h2>
+      <DataView
+          :value="environmentStore.environments"
+          :total-records="environmentStore.pagination.total"
+          @page="changePage"
+          paginator
+          :rows="5"
+          :pt="{ content: 'rounded-t-xl', pcPaginator: {
+            root: 'rounded-b-xl rounded-none'
+          } }"
+          class = "mt-8"
+      >
+        <template #list="slotProps">
+          <div class="flex flex-col rounded-md">
+            <div
+                v-if="!isLoading"
+                v-for="(item, index) in slotProps.items"
+                :key="index"
+                class="p-6 flex justify-between items-center cursor-pointer hover:bg-surface-200 transition"
+                :class="{
+                  'border-t border-surface-200': index !== 0,
+                  'rounded-t-xl': index === 0,
+                  }"
+                @click="goToEnvironment(item.id)"
+            >
+              <div>
+                <h3 class="text-lg font-semibold text-color">{{ item.name }}</h3>
+                <p class="text-muted-color text-sm mt-1">{{ item.description || "Немає опису" }}</p>
+              </div>
+              <div class="gap-4 flex">
+                <span
+                    class="px-3 py-1 rounded-full text-xs font-medium"
+                    :class="getRoleBadge(item.role)"
+                >
+                  {{ item.role }}
+                </span>
+                <i class="pi pi-angle-right place-self-center text-muted-color group-hover:text-color" />
+              </div>
+            </div>
 
-      <!-- Skeleton Loader -->
-      <div v-if="isLoading" class="mt-4 space-y-2">
-        <div v-for="i in 5" :key="i" class="h-16 bg-gray-300 animate-pulse rounded"></div>
-      </div>
-
-      <!-- Заглушка, если окружений нет -->
-      <div v-else-if="environments.length === 0" class="mt-10 flex flex-col items-center">
-        <div class="flex flex-col items-center">
-          <PlusIcon class="w-12 h-12 text-gray-400" />
-          <h3 class="text-lg font-semibold text-gray-800 mt-4">Немає середовищ</h3>
-          <p class="text-gray-500 text-sm mt-2 text-center">
-            Почніть, створивши нове середовище.
-          </p>
-          <button
-              @click="modalOpen = true"
-              class="mt-4 px-4 py-2 bg-blue-600 text-white flex items-center font-semibold rounded-lg hover:bg-blue-700 transition"
-          >
-            <PlusIcon class="size-5 mr-2" />
-            Створити середовище
-          </button>
-        </div>
-      </div>
-
-      <!-- Список окружений -->
-      <ul v-else class="mt-4 border border-gray-200 rounded-lg divide-y divide-gray-200">
-        <li
-            v-for="env in environments"
-            :key="env.id"
-            class="p-4 flex justify-between items-center cursor-pointer hover:bg-gray-100 transition"
-            @click="goToEnvironment(env.id)"
-        >
-          <div>
-            <h3 class="text-lg font-semibold text-gray-800">{{ env.name }}</h3>
-            <p class="text-gray-500 text-sm mt-1">{{ env.description || "Немає опису" }}</p>
+            <div
+                v-if="isLoading"
+                v-for="index in 5"
+                :key="index"
+                class="p-6 flex justify-between items-center cursor-pointer hover:bg-surface-200 transition"
+                :class="{
+                  'border-t border-surface-200': index !== 1,
+                  'rounded-t-xl': index === 1,
+                  }"
+            >
+              <div class="w-fit">
+                <Skeleton width="8rem" height="1.25rem" class="my-2" />
+                <Skeleton width="5rem" height="1rem" />
+              </div>
+              <div class="gap-4 flex">
+                <Skeleton width="3rem" height="1.5rem" class="rounded-full" />
+                <i class="pi pi-angle-right place-self-center text-muted-color group-hover:text-color" />
+              </div>
+            </div>
           </div>
-          <span
-              class="px-3 py-1 rounded-full text-xs font-medium"
-              :class="getRoleBadge(env.role)"
-          >
-            {{ env.role }}
-          </span>
-        </li>
-      </ul>
-
-      <!-- Пагинация -->
-      <div class="mt-6 flex justify-center">
-        <Pagination
-            :totalPages="totalPages"
-            :currentPage="currentPage"
-            @prev="prevPage"
-            @next="nextPage"
-            @page-change="changePage"
-        />
-      </div>
+        </template>
+      </DataView>
     </div>
 
-    <!-- Модальное окно создания окружения -->
-    <CreateEnvironmentModal :isOpen="modalOpen" @close="modalOpen = false" @created="changePage(currentPage)" />
+    <div v-else class="flex flex-col items-center">
+      <i class="pi pi-plus text-5xl text-gray-400" />
+      <h3 class="text-lg font-semibold text-gray-800 mt-4">No environments</h3>
+      <p class="text-gray-500 text-sm mt-2 text-center">
+        Start by creating a new environment.
+      </p>
+      <div class="mt-4">
+        <Button @click="createEnvironmentDialog = true" label="New Environment" />
+        <create-environment-dialog v-model="createEnvironmentDialog"/>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useEnvironmentStore } from "@/store/environmentStore";
-import type { Environment } from "@/services/apiService";
-import Pagination from "@/components/Pagination.vue";
 import { getRoleBadge } from "@/utils/environment";
-import { PlusIcon } from "@heroicons/vue/24/outline";
-import CreateEnvironmentModal from "@/components/CreateEnvironmentModal.vue";
+import DataView from 'primevue/dataview';
+import type { DataViewPageEvent } from 'primevue/dataview';
+import Button from "primevue/button";
+import Skeleton from 'primevue/skeleton';
+import CreateEnvironmentDialog from "@/components/evnironment/CreateEnvironmentDialog.vue"
 
 const router = useRouter();
 const environmentStore = useEnvironmentStore();
-const modalOpen = ref(false);
-
-const environments = ref<Environment[]>([]);
-const pagination = ref({ total: 0, skip: 0, count: 5 });
+const createEnvironmentDialog = ref(false);
 const isLoading = ref(true);
 
-const totalPages = computed(() => Math.ceil(pagination.value.total / pagination.value.count));
-const currentPage = computed(() => Math.floor(pagination.value.skip / pagination.value.count) + 1);
+onMounted(async () => await changePage({ page: 0 } as DataViewPageEvent));
 
-onMounted(async () => {
+const changePage = async (event: DataViewPageEvent) => {
   isLoading.value = true;
-  environments.value = await environmentStore.fetchEnvironments();
-  isLoading.value = false;
-});
-
-const prevPage = async () => {
-  if (pagination.value.skip > 0) {
-    pagination.value.skip -= pagination.value.count;
-    await changePage(currentPage.value - 1);
-  }
-};
-
-const nextPage = async () => {
-  if (pagination.value.skip + pagination.value.count < pagination.value.total) {
-    pagination.value.skip += pagination.value.count;
-    await changePage(currentPage.value + 1);
-  }
-};
-
-const changePage = async (page: number) => {
-  isLoading.value = true;
-  environments.value = await environmentStore.fetchEnvironments(page - 1);
+  await environmentStore.fetchEnvironments(event.page);
   isLoading.value = false;
 };
 
 const goToEnvironment = (envId: number) => {
-  router.push(`/env/${envId}`);
+  router.push({
+    name: 'environment',
+    params: {
+      envId: envId,
+    }
+  })
 };
 </script>

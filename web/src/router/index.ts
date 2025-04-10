@@ -5,7 +5,8 @@ import { User } from "firebase/auth";
 
 const dashboardRoutes: RouteRecordRaw[] = [
   {
-    path: "/",
+    path: "",
+    name: "dashboard",
     component: () => import("@/pages/Dashboard.vue"),
   },
   {

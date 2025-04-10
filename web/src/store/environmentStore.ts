@@ -1,6 +1,6 @@
 import { defineStore } from "pinia";
 import { reactive, computed } from "vue";
-import {EnvironmentsResponse, getEnvironmentDetails, getEnvironments} from "@/services/apiService";
+import { EnvironmentsResponse, getEnvironmentDetails, getEnvironments } from "@/services/apiService";
 import type { Environment } from "@/services/apiService";
 
 export const useEnvironmentStore = defineStore("environmentStore", () => {
@@ -22,7 +22,7 @@ export const useEnvironmentStore = defineStore("environmentStore", () => {
     pagination: { total: 0, skip: 0, count: 6 },
   });
 
-  const fetchEnvironment = async (envId: number) => {
+  const fetchEnvironment = async (envId: number): Promise<Environment> => {
     if (state.environments.has(envId)) {
       return state.environments.get(envId)!;
     }
@@ -49,7 +49,7 @@ export const useEnvironmentStore = defineStore("environmentStore", () => {
     }
   };
 
-  const fetchEnvironments = async (pageNumber = 0) => {
+  const fetchEnvironments = async (pageNumber = 0): Promise<Environment[]> => {
     if (state.pages.has(pageNumber)) {
       return state.pages.get(pageNumber)!;
     }
@@ -85,6 +85,8 @@ export const useEnvironmentStore = defineStore("environmentStore", () => {
   return {
     fetchEnvironment,
     fetchEnvironments,
+    environments: computed(() => Array.from(state.environments, ([id, value]) => value)),
+    pagination: computed(() => state.pagination),
     isLoading: computed(() => state.isLoading),
     isLoadingList: computed(() => state.isLoadingList),
   };
