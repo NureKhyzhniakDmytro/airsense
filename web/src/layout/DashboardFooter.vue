@@ -1,6 +1,6 @@
 <template>
   <footer
-      class="shadow p-4 text-center text-color bg-c"
+      class="shadow p-4 text-center text-color bg-surface-0"
   >
     &copy; 2025 AirSense
   </footer>

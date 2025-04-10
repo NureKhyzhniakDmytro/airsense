@@ -1,5 +1,5 @@
 <template>
-  <header class="bg-white shadow py-4">
+  <header class="bg-surface-0 shadow py-4">
     <div class="max-w-7xl mx-auto flex items-center justify-between">
       <div class="flex items-center gap-6">
         <router-link to="/">
@@ -31,11 +31,11 @@
             variant="text"
             rounded
             aria-label="Notification"
-            class="h-full"
+            class="h-full hover:text-color-emphasis"
             iconClass="text-xl"
         />
         <div>
-          <Avatar icon="pi pi-user" class="size-[42px]" shape="circle" @click.nativa="toggle" />
+          <Avatar icon="pi pi-user" class="size-[42px] hover:bg-surface-100 active:bg-surface-300" shape="circle" @click.nativa="toggle" />
           <Menu ref="profileMenu" :model="items" id="overlay_menu" :popup="true" />
         </div>
       </div>
