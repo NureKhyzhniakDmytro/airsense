@@ -11,7 +11,7 @@
           :total-records="environmentStore.pagination.total"
           @page="changePage"
           paginator
-          :rows="5"
+          :rows="environmentStore.pagination.count"
           :pt="{ content: 'rounded-t-xl', pcPaginator: {
             root: 'rounded-b-xl rounded-none'
           } }"
@@ -47,7 +47,7 @@
 
             <div
                 v-if="isLoading"
-                v-for="index in 5"
+                v-for="index in environmentStore.pagination.count"
                 :key="index"
                 class="p-6 flex justify-between items-center cursor-pointer hover:bg-surface-200 transition"
                 :class="{
@@ -76,7 +76,7 @@
         Start by creating a new environment.
       </p>
       <div class="mt-4">
-        <Button @click="createEnvironmentDialog = true" label="New Environment" />
+        <Button @click="createEnvironmentDialog = true" label="New Environment"  />
         <create-environment-dialog v-model="createEnvironmentDialog"/>
       </div>
     </div>
@@ -92,7 +92,7 @@ import DataView from 'primevue/dataview';
 import type { DataViewPageEvent } from 'primevue/dataview';
 import Button from "primevue/button";
 import Skeleton from 'primevue/skeleton';
-import CreateEnvironmentDialog from "@/components/evnironment/CreateEnvironmentDialog.vue"
+import CreateEnvironmentDialog from "@/components/environment/CreateEnvironmentDialog.vue"
 
 const router = useRouter();
 const environmentStore = useEnvironmentStore();

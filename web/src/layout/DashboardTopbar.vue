@@ -51,7 +51,7 @@ import Button from 'primevue/button';
 import Avatar from 'primevue/avatar';
 import Menu from 'primevue/menu';
 import type { MenuItem, MenuItemCommandEvent } from 'primevue/menuitem';
-import CreateEnvironmentDialog from "@/components/evnironment/CreateEnvironmentDialog.vue"
+import CreateEnvironmentDialog from "@/components/environment/CreateEnvironmentDialog.vue"
 
 const router = useRouter();
 const route = useRoute();

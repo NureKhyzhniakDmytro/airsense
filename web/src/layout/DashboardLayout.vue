@@ -7,7 +7,7 @@
     <div class="flex justify-center p-px bg-surface-0">
       <div class="w-full max-w-7xl my-3">
         <div class="flex items-center flex-col">
-          <Breadcrumbs class="w-full bg-surface-0" />
+          <Breadcrumbs class="w-full !bg-surface-0"  />
         </div>
       </div>
     </div>
@@ -19,6 +19,9 @@
     </main>
 
     <dashboard-footer />
+
+    <ConfirmDialog />
+    <Toast />
   </div>
 </template>
 
@@ -27,4 +30,6 @@ import Breadcrumbs from "@/components/Breadcrumbs.vue";
 import DashboardTopbar from "@/layout/DashboardTopbar.vue";
 import DashboardFooter from "@/layout/DashboardFooter.vue";
 import Divider from 'primevue/divider';
+import ConfirmDialog from 'primevue/confirmdialog';
+import Toast from 'primevue/toast';
 </script>

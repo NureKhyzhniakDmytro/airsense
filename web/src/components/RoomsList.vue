@@ -1,158 +1,148 @@
 <template>
-  <div>
-    <div class="flex justify-between items-center">
-      <h2 class="text-xl font-semibold text-gray-800">Кімнати</h2>
+  <div
+      class="items-center flex-grow"
+      :class="{ 'place-content-center': rooms.length === 0 }"
+  >
+    <div v-if="rooms.length !== 0">
+      <div class="flex justify-between items-center">
+        <div>
+          <h2 class="text-xl font-semibold text-gray-800">Rooms</h2>
+          <h2 class="text-sm text-gray-500">List of all rooms in your environment.</h2>
+        </div>
 
-      <button
-          @click="isCreateModalOpen = true"
-          class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition"
+        <Button @click="createRoomDialog = true" label="New Room" icon="pi pi-plus" />
+        <create-room-dialog v-model="createRoomDialog" :envId="envId" />
+      </div>
+
+      <DataView
+          :value="rooms"
+          :total-records="pagination.total"
+          @page="changePage"
+          paginator
+          :rows="pagination.count"
+          :pt="{ content: 'rounded-t-xl', pcPaginator: {
+            root: 'rounded-b-xl rounded-none'
+          } }"
+          class = "mt-8"
       >
-        Додати кімнату
-      </button>
-    </div>
+        <template #list="slotProps">
+          <div class="flex flex-col rounded-md">
+            <div
+                v-if="!isLoading"
+                v-for="(item, index) in slotProps.items"
+                v-ripple
+                :key="index"
+                class="p-6 flex justify-between items-center cursor-pointer hover:bg-surface-200 transition"
+                :class="{
+                  'border-t border-surface-200': index !== 0,
+                  'rounded-t-xl': index === 0,
+                  }"
+                @click="goToRoom(item.id)"
+            >
+              <div>
+                <span class="text-lg font-medium text-gray-800 cursor-pointer">
+                  {{ item.name }}
+                </span>
 
-    <!-- Skeleton Loader -->
-    <div v-if="isLoading" class="mt-4 space-y-2">
-      <div v-for="i in pagination.count" :key="i" class="h-12 bg-gray-200 animate-pulse rounded"></div>
-    </div>
+                <div v-if="item.parameters" class="mt-2 flex flex-wrap gap-2">
+                  <div
+                      v-if="item.device_speed !== undefined"
+                      class="text-sm bg-gray-200 px-2 py-1 rounded-lg text-gray-700"
+                  >
+                    Fan speed:
+                    <span class="font-medium text-gray-800">{{ item.device_speed }}%</span>
+                  </div>
+                  <Divider layout="vertical" class="m-0" />
+                  <div
+                    v-for="param in item.parameters"
+                    :key="param.name"
+                    class="bg-gray-200 px-2 py-1 rounded-lg text-sm text-gray-700"
+                  >
+                    <span class="font-medium">{{ getParameterLabel(param.name) }}:</span>
+                    <span class="ml-1">{{ param.value }}{{ param.unit }}</span>
+                  </div>
+                </div>
+              </div>
+              <i class="pi pi-angle-right place-self-center text-muted-color group-hover:text-color" />
+            </div>
 
-    <!-- Сообщение, если комнат нет -->
-    <div v-else-if="rooms.length === 0" class="text-center mt-10">
-      <p class="text-gray-500 text-lg">Поки немає кімнат</p>
-    </div>
+            <div
+                v-if="isLoading"
+                v-for="index in pagination.count"
+                :key="index"
+                class="p-6 flex justify-between items-center cursor-pointer hover:bg-surface-200 transition"
+                :class="{
+                  'border-t border-surface-200': index !== 1,
+                  'rounded-t-xl': index === 1,
+                  }"
+            >
+              <div>
+                <Skeleton width="8rem" height="1.25rem" class="my-2" />
 
-    <!-- Список комнат -->
-    <ul v-else class="mt-2 border border-gray-300 rounded-lg divide-y divide-gray-300">
-      <li v-for="room in rooms" :key="room.id" class="p-4 hover:bg-gray-100 transition relative">
-        <div class="flex justify-between items-center">
-          <span class="text-lg font-medium text-gray-800 cursor-pointer" @click="goToRoom(room)">
-            {{ room.name }}
-          </span>
-
-          <!-- Действия -->
-          <div class="relative">
-            <button @click.stop="toggleMenu(room.id)" class="text-gray-500 hover:text-gray-700">
-              <EllipsisVerticalIcon class="w-5 h-5" />
-            </button>
-
-            <div v-if="activeMenu === room.id" class="absolute right-0 bg-white border border-gray-300 rounded-lg shadow-lg z-10">
-              <button @click="editRoom(room)" class="block w-full text-left px-4 py-2 hover:bg-gray-100">Редагувати</button>
-              <button @click="confirmDelete(room)" class="block w-full text-left px-4 py-2 text-red-600 hover:bg-red-100">Видалити</button>
+                <div class="mt-2 flex flex-wrap gap-2">
+                  <Skeleton width="5rem" height="1.7rem" />
+                  <Divider layout="vertical" class="m-0" />
+                  <Skeleton width="5rem" height="1.7rem" v-for="_ in 3" />
+                </div>
+              </div>
+              <i class="pi pi-angle-right place-self-center text-muted-color group-hover:text-color" />
             </div>
           </div>
-        </div>
-
-        <!-- Скорость вентиляции -->
-        <div v-if="room.device_speed !== undefined" class="mt-2 text-sm text-gray-600">
-          Швидкість вентиляції:
-          <span class="font-medium text-gray-800">{{ room.device_speed }}% |</span>
-        </div>
-        
-        <!-- Параметры комнаты -->
-        <div v-if="room.parameters" class="mt-2 flex flex-wrap gap-2">
-          <div
-              v-for="param in room.parameters"
-              :key="param.name"
-              class="bg-gray-200 px-2 py-1 rounded-lg text-sm text-gray-700"
-          >
-            <span class="font-medium">{{ getParameterLabel(param.name) }}:</span>
-            <span class="ml-1">{{ param.value }}{{ param.unit }}</span>
-          </div>
-        </div>
-      </li>
-    </ul>
-
-    <!-- Пагинация -->
-    <div v-if="!isLoading && pagination.total > pagination.count" class="mt-4 flex justify-center">
-      <Pagination :totalPages="totalPages" :currentPage="currentPage" @prev="prevPage" @next="nextPage" @page-change="goToPage" />
+        </template>
+      </DataView>
     </div>
 
-    <!-- Модальное окно создания комнаты -->
-    <CreateRoomModal v-if="isCreateModalOpen" :isOpen="isCreateModalOpen" :envId="envId" @close="isCreateModalOpen = false" @added="loadRooms" />
-
-    <!-- Модальное окно редактирования комнаты -->
-    <EditRoomModal v-if="isEditModalOpen" :room="selectedRoom" @close="isEditModalOpen = false" @updated="loadRooms" />
-
-    <!-- Модальное окно подтверждения удаления -->
-    <ConfirmModal
-        v-if="isDeleteModalOpen"
-        :title="'Видалити кімнату?'"
-        :message="`Ви впевнені, що хочете видалити '${roomToDelete?.name}'?`"
-        :confirmText="'Так, видалити'"
-        :cancelText="'Скасувати'"
-        :onConfirm="() => deleteRoom(roomToDelete)"
-        @close="isDeleteModalOpen = false"
-    />
+    <div v-else class="flex flex-col items-center">
+      <i class="pi pi-plus text-5xl text-gray-400" />
+      <h3 class="text-lg font-semibold text-gray-800 mt-4">No rooms</h3>
+      <p class="text-gray-500 text-sm mt-2 text-center">
+        Start by creating a new room.
+      </p>
+      <div class="mt-4">
+        <Button @click="createRoomDialog = true" label="New Room" />
+        <create-room-dialog v-model="createRoomDialog" :envId="envId" />
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from "vue";
+import { ref, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useEnvironmentStore } from "@/store/environmentStore";
-import { getRooms, removeRoom } from "@/services/apiService";
-import { EllipsisVerticalIcon } from "@heroicons/vue/24/outline";
+import { getRooms } from "@/services/apiService";
 import type { Room, Environment } from "@/services/apiService";
-import Pagination from "@/components/Pagination.vue";
-import CreateRoomModal from "@/components/CreateRoomModal.vue";
-import EditRoomModal from "@/components/EditRoomModal.vue";
-import ConfirmModal from "@/components/ConfirmModal.vue";
+import CreateRoomDialog from "@/components/environment/CreateRoomDialog.vue";
+import Button from "primevue/button";
+import DataView, { type DataViewPageEvent } from "primevue/dataview";
+import Divider from 'primevue/divider';
+import Skeleton from "primevue/skeleton";
 
 const router = useRouter();
 const route = useRoute();
 const environmentStore = useEnvironmentStore();
 const envId = Number(route.params.envId);
 const rooms = ref<Room[]>([]);
-const pagination = ref({ total: 0, skip: 0, count: 5 });
+const pagination = ref({ total: 0, skip: 0, count: 3 });
 const isLoading = ref(true);
 const environment = ref<Environment>();
-const isCreateModalOpen = ref(false);
-const isEditModalOpen = ref(false);
-const isDeleteModalOpen = ref(false);
-const selectedRoom = ref<Room | null>(null);
-const activeMenu = ref<number | null>(null);
 let refreshInterval: ReturnType<typeof setInterval> | null = null;
-
-const totalPages = computed(() => Math.ceil(pagination.value.total / pagination.value.count));
-const currentPage = computed(() => Math.floor(pagination.value.skip / pagination.value.count) + 1);
-
-const loadRooms = async (withLoading: boolean = true) => {
-  if (!environment.value) return;
-
-  isLoading.value = withLoading;
-  const { rooms: roomList, pagination: pag } = await getRooms(envId, pagination.value.skip, pagination.value.count);
-  rooms.value = roomList;
-  pagination.value = pag;
-  isLoading.value = false;
-};
+const createRoomDialog = ref(false);
+let currentPage = 0;
 
 const getParameterLabel = (name: string) => {
   const labels: Record<string, string> = {
-    temperature: "Температура",
-    humidity: "Вологість",
+    temperature: "Temperature",
+    humidity: "Humidity",
     co2: "CO₂",
   };
   return labels[name] || name;
 };
 
-const toggleMenu = (roomId: number) => {
-  activeMenu.value = activeMenu.value === roomId ? null : roomId;
-};
-
-const editRoom = (room: Room) => {
-  selectedRoom.value = room;
-  isEditModalOpen.value = true;
-  activeMenu.value = null;
-};
-
-const confirmDelete = (room: Room) => {
-  selectedRoom.value = room;
-  isDeleteModalOpen.value = true;
-  activeMenu.value = null;
-};
-
 const startAutoRefresh = () => {
-  refreshInterval = setInterval(() => loadRooms(false), 10_000);
+  refreshInterval = setInterval(
+      async () => await changePage({ page: currentPage } as DataViewPageEvent), 10_000
+  );
 };
 
 const stopAutoRefresh = () => {
@@ -162,46 +152,43 @@ const stopAutoRefresh = () => {
   }
 };
 
-const prevPage = () => {
-  if (pagination.value.skip > 0) {
-    pagination.value.skip -= pagination.value.count;
-    loadRooms();
-  }
+const goToRoom = (roomId: number) => {
+  router.push({
+    name: 'room',
+    params: {
+      envId,
+      roomId
+    }
+  });
 };
-
-const nextPage = () => {
-  if (pagination.value.skip + pagination.value.count < pagination.value.total) {
-    pagination.value.skip += pagination.value.count;
-    loadRooms();
-  }
-};
-
-const goToPage = (page: number) => {
-  pagination.value.skip = (page - 1) * pagination.value.count;
-  loadRooms();
-};
-
-const goToRoom = (room: Room) => {
-  router.push(`/env/${envId}/room/${room.id}`);
-};
-
-const deleteRoom = async (room: Room) => {
-  try {
-    await removeRoom(environment.value.id, room.id);
-  } catch (error) {
-    console.error("Помилка видалення кімнати:", (error as Error).message);
-  }
-};
-
-watch(() => pagination.value.skip, () => loadRooms());
 
 onMounted(async () => {
   if (!environment.value) {
     environment.value = await environmentStore.fetchEnvironment(envId);
   }
-  await loadRooms();
+  await changePage({ page: 0 } as DataViewPageEvent);
   startAutoRefresh();
 });
+
+const changePage = async (event: DataViewPageEvent) => {
+  currentPage = event.page;
+
+  isLoading.value = true;
+  if (!environment.value) return;
+
+  const { rooms: roomList, pagination: pag } = await getRooms(envId, pagination.value.skip, pagination.value.count);
+  roomList.forEach((room) => {
+    const index = rooms.value.findIndex(r => r.id === room.id);
+    if (index !== -1) {
+      rooms.value[index] = room;
+    } else {
+      rooms.value.push(room);
+    }
+  });
+  pagination.value.total = pag.total;
+
+  isLoading.value = false;
+};
 
 onUnmounted(stopAutoRefresh);
 </script>

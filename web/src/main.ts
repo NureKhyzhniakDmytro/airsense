@@ -6,6 +6,8 @@ import { createPinia } from 'pinia';
 import PrimeVue from 'primevue/config';
 import ConfirmationService from 'primevue/confirmationservice';
 import Aura from '@primeuix/themes/aura';
+import Ripple from 'primevue/ripple';
+import ToastService from 'primevue/toastservice';
 import { definePreset } from '@primeuix/themes';
 
 import '@/assets/styles.scss'
@@ -42,8 +44,11 @@ app.use(PrimeVue, {
             },
             darkModeSelector: '.app-dark'
         }
-    }
+    },
+    ripple: true
 });
+app.directive('ripple', Ripple);
+app.use(ToastService);
 app.use(ConfirmationService);
 
 app.mount("#app");

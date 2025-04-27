@@ -10,24 +10,26 @@ const dashboardRoutes: RouteRecordRaw[] = [
     component: () => import("@/pages/Dashboard.vue"),
   },
   {
-    path: "/env/:envId",
+    path: "env/:envId",
+    name: "environment",
     component: () => import("@/pages/EnvironmentDetails.vue"),
     props: true,
     children: [
       {
         path: 'rooms',
-        name: 'rooms',
+        name: 'environment-rooms',
         component: () => import("@/components/RoomsList.vue"),
       },
       {
         path: 'members',
-        name: 'members',
+        name: 'environment-members',
         component: () => import("@/components/MembersList.vue"),
       },
     ]
   },
   {
     path: "/env/:envId/room/:roomId",
+    name: "room",
     component: () => import("@/pages/RoomDetails.vue"),
     props: true,
     children: [
