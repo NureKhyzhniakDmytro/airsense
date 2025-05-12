@@ -1,64 +1,28 @@
 <template>
-  <div class="container max-w-7xl mx-auto py-6">
-    <!-- Заголовок -->
-    <div class="flex justify-between items-center">
+  <div class="flex flex-col flex-grow">
+    <div class="flex justify-between items-center mt-8">
       <h1 v-if="room" class="text-3xl font-bold text-gray-800">{{ room.name }}</h1>
     </div>
 
-    <!-- Skeleton Loader -->
-    <div v-if="isLoading" class="space-y-2 mt-4">
+    <div v-if="isLoading" class="space-y-2">
       <div class="h-10 bg-gray-300 animate-pulse rounded"></div>
     </div>
 
-    <div v-else>
-      <!-- Навигация по вкладкам -->
-      <div class="mt-6 flex gap-6 border-b border-gray-300">
-        <router-link
-            :to="{ name: 'room-parameters', params: { envId, roomId } }"
-            :class="[
-              'py-2 px-4 text-lg font-medium transition',
-              activeTab === 'parameters' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'
-            ]"
-            @click="activeTab = 'parameters'"
-        >
-          Параметри
-        </router-link>
-        <router-link
-            :to="{ name: 'room-sensors', params: { envId, roomId } }"
-            :class="[
-              'py-2 px-4 text-lg font-medium transition',
-              activeTab === 'sensors' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'
-            ]"
-            @click="activeTab = 'sensors'"
-        >
-          Датчики
-        </router-link>
-        <router-link
-            :to="{ name: 'room-devices', params: { envId, roomId } }"
-            :class="[
-              'py-2 px-4 text-lg font-medium transition',
-              activeTab === 'devices' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'
-            ]"
-            @click="activeTab = 'devices'"
-        >
-          Пристрої
-        </router-link>
-        <router-link
-            :to="{ name: 'room-settings', params: { envId, roomId } }"
-            :class="[
-              'py-2 px-4 text-lg font-medium transition',
-              activeTab === 'settings' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-gray-500 hover:text-gray-700'
-            ]"
-            @click="activeTab = 'settings'"
-        >
-          Налаштування
-        </router-link>
-      </div>
+    <Tabs :value="activeTab" class="mt-8">
+      <TabList qwety="qwety" :pt="{ tabList: 'bg-inherit'}">
+        <Tab v-for="tab in items" :key="tab.label" :value="tab.value">
+          <router-link v-if="tab.route" v-slot="{ href, navigate }" :to="tab.route" custom>
+            <a :href="href" @click="navigate" class="flex items-center gap-2 text-inherit">
+              <i :class="tab.icon" />
+              <span>{{ tab.label }}</span>
+            </a>
+          </router-link>
+        </Tab>
+      </TabList>
+    </Tabs>
 
-      <!-- Контент -->
-      <div class="mt-6">
-        <router-view :room="room" :env="environment" />
-      </div>
+    <div class="my-6 flex flex-grow">
+      <router-view />
     </div>
   </div>
 </template>
@@ -69,6 +33,9 @@ import { useRoute, useRouter } from "vue-router";
 import { useEnvironmentStore } from "@/store/environmentStore";
 import { getRoom } from "@/services/apiService";
 import type { Room, Environment } from "@/services/apiService";
+import Tabs from 'primevue/tabs';
+import TabList from 'primevue/tablist';
+import Tab from 'primevue/tab';
 
 const route = useRoute();
 const router = useRouter();
@@ -90,9 +57,16 @@ const activeTab = ref<"parameters" | "sensors" | "devices" | "settings">(
                 : "parameters"
 );
 
+const items = ref([
+  { route: { name: 'room-parameters' }, label: 'Parameters', icon: 'pi pi-chart-line', value: 'parameters' },
+  { route: { name: 'room-sensors' }, label: 'Sensors', icon: 'pi pi-bullseye', value: 'sensors' },
+  { route: { name: 'room-devices' }, label: 'Devices', icon: 'pi pi-slack', value: 'devices' },
+  { route: { name: 'room-settings' }, label: 'Settings', icon: 'pi pi-cog', value: 'settings' },
+]);
+
 onMounted(async () => {
-  if (route.path === `/env/${envId}/room/${roomId}`) {
-    await router.replace({ name: "room-parameters", params: { envId, roomId } });
+  if (route.name === "room") {
+    await router.replace({ name: "room-parameters" });
     activeTab.value = "parameters";
   }
 

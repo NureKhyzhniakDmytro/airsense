@@ -23,6 +23,7 @@ export interface Parameter {
   unit: string;
   min_value: number;
   max_value: number;
+  critical_value: number;
 }
 
 export interface Room {
@@ -45,16 +46,22 @@ export interface Sensor {
   parameters?: Parameter[];
 }
 
-interface DeviceHistory {
-  timestamp: string;
-  value: number;
-}
-
 export interface Device {
   id: number;
   serial_number: string;
   fan_speed: number;
   active_at: number;
+}
+
+export interface Param {
+  name: string;
+  label: string;
+  unit: string;
+}
+
+export interface HistoryEntry {
+  value: number;
+  timestamp: number;
 }
 
 export interface DevicesResponse {
@@ -198,14 +205,14 @@ export const getAllDevicesHistory = async (roomId: number, from?: string, to?: s
   const response = await api.get(`/room/${roomId}/history`, {
     params: { interval: "minute", from, to },
   });
-  return response.data as DeviceHistory[];
+  return response.data as HistoryEntry[];
 };
 
 export const getDeviceHistory = async (roomId: number, deviceId: number, from?: string, to?: string) => {
   const response = await api.get(`/room/${roomId}/history/${deviceId}`, {
     params: { interval: "minute", from, to },
   });
-  return response.data as DeviceHistory[];
+  return response.data as HistoryEntry[];
 };
 
 export const getEnvironments = async (skip = 0, count = 5): Promise<EnvironmentsResponse> => {

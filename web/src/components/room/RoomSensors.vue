@@ -1,79 +1,90 @@
 <template>
-  <div class="space-y-6">
-    <div class="flex justify-between items-center">
-      <h2 class="text-xl font-semibold text-gray-800">Список сенсорів</h2>
+  <div class="items-center flex-grow">
+    <div v-if="sensors.length !== 0">
+      <div class="flex flex-row gap-4 items-center justify-between mb-4">
+        <h2 class="text-lg font-semibold text-gray-800">Sensors List</h2>
 
-      <button
-          @click="isModalOpen = true"
-          class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition"
-      >
-        Додати сенсор
-      </button>
-    </div>
+        <Button 
+          icon="pi pi-plus" 
+          label="Add Sensor" 
+          @click="addSensorDialog = true"
+          severity="primary"
+        />
+      </div>
 
-    <!-- Загрузка -->
-    <div v-if="isLoading" class="space-y-2">
+      <div v-if="isLoading" class="space-y-2">
+        <div
+            v-for="i in pagination.count"
+            :key="i"
+            class="h-16 bg-gray-200 animate-pulse rounded-lg"
+        ></div>
+      </div>
+
       <div
-          v-for="i in pagination.count"
-          :key="i"
-          class="h-16 bg-gray-200 animate-pulse rounded-lg"
-      ></div>
-    </div>
-
-    <!-- Пусто -->
-    <div v-else-if="sensors.length === 0" class="text-center text-gray-500">
-      Поки немає сенсорів для цієї кімнати.
-    </div>
-
-    <!-- Список сенсорів -->
-    <ul
-        v-else
-        class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
-    >
-      <li
-          v-for="sensor in sensors"
-          :key="sensor.id"
-          class="bg-white shadow rounded-lg p-4 border border-gray-200 cursor-pointer hover:bg-gray-50 transition"
-          @click="goToSensor(sensor.id)"
+          v-else
+          class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
       >
-        <h3 class="text-lg font-semibold text-gray-800">
-          {{ sensor.type_name }}
-        </h3>
-        <p class="text-sm text-gray-500 mt-1">
-          Серійний номер: {{ sensor.serial_number }}
-        </p>
+        <Card
+            v-for="sensor in sensors"
+            :key="sensor.id"
+            class="cursor-pointer hover:shadow-lg transition-shadow"
+            @click="goToSensor(sensor.id)"
+        >
+          <template #title>
+            <div class="flex items-center gap-2">
+              <i class="pi pi-sensor text-purple-600"></i>
+              <span>{{ sensor.type_name }}</span>
+            </div>
+          </template>
+          <template #subtitle>
+            <span class="text-sm text-gray-500">Serial number: {{ sensor.serial_number }}</span>
+          </template>
+          <template #content>
+            <div v-if="sensor.parameters?.length" class="mt-3 space-y-1">
+              <div
+                  v-for="param in sensor.parameters"
+                  :key="param.name"
+                  class="flex items-center justify-between text-sm text-gray-700 bg-gray-50 px-3 py-1.5 rounded-md"
+              >
+                <span class="font-medium">{{ getLabel(param.name) }}:</span>
+                <span>{{ param.value }}{{ param.unit }}</span>
+              </div>
+            </div>
+            <p v-else class="text-sm text-gray-400 mt-3">Sensor offline</p>
+          </template>
+        </Card>
+      </div>
 
-        <div v-if="sensor.parameters?.length" class="mt-3 space-y-1">
-          <div
-              v-for="param in sensor.parameters"
-              :key="param.name"
-              class="flex items-center justify-between text-sm text-gray-700 bg-gray-100 px-3 py-1 rounded-md"
-          >
-            <span class="font-medium">{{ getLabel(param.name) }}:</span>
-            <span>{{ param.value }}{{ param.unit }}</span>
-          </div>
-        </div>
-        <p v-else class="text-sm text-gray-400 mt-3">Сенсор офлайн</p>
-      </li>
-    </ul>
-
-    <!-- Пагинация -->
-    <div v-if="pagination.total > pagination.count" class="flex justify-center mt-6">
-      <Pagination
-          :totalPages="totalPages"
-          :currentPage="currentPage"
-          @prev="prevPage"
-          @next="nextPage"
-          @page-change="goToPage"
-      />
+      <div v-if="pagination.total > pagination.count" class="flex justify-center mt-6">
+        <Paginator
+          v-model:first="pagination.skip"
+          :rows="pagination.count"
+          :totalRecords="pagination.total"
+          @page="onPageChange"
+          template="FirstPageLink PrevPageLink PageLinks NextPageLink LastPageLink"
+        />
+      </div>
+    </div>
+    
+    <div v-else class="flex flex-col items-center justify-center h-full">
+      <i class="pi pi-bullseye text-5xl text-gray-400" />
+      <h3 class="text-lg font-semibold text-gray-800 mt-4">No sensors</h3>
+      <p class="text-gray-500 text-sm mt-2 text-center">
+        Add your first sensor to start monitoring.
+      </p>
+      <div class="mt-4">
+        <Button 
+          icon="pi pi-plus" 
+          label="Add Sensor" 
+          @click="addSensorDialog = true"
+          severity="primary"
+        />
+      </div>
     </div>
 
-    <!-- Модальное окно -->
-    <AddSensorModal
-        v-if="isModalOpen"
+    <AddSensorDialog
+        v-model="addSensorDialog"
         :roomId="roomId"
-        :isOpen="isModalOpen"
-        @close="isModalOpen = false"
         @added="refresh"
     />
   </div>
@@ -83,10 +94,11 @@
 import { ref, computed, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import api from "@/api";
-import Pagination from "@/components/Pagination.vue";
-import AddSensorModal from "@/components/AddSensorModal.vue";
+import AddSensorDialog from "@/components/room/AddSensorDialog.vue";
 import { Sensor } from "@/services/apiService";
-
+import Button from 'primevue/button';
+import Card from 'primevue/card';
+import Paginator from 'primevue/paginator';
 
 const route = useRoute();
 const router = useRouter();
@@ -94,18 +106,21 @@ const roomId = Number(route.params.roomId);
 
 const sensors = ref<Sensor[]>([]);
 const isLoading = ref(true);
-const isModalOpen = ref(false);
+const addSensorDialog = ref(false);
 const pagination = ref({ total: 0, skip: 0, count: 6 });
 
-const currentPage = computed(() => Math.floor(pagination.value.skip / pagination.value.count) + 1);
-const totalPages = computed(() => Math.ceil(pagination.value.total / pagination.value.count));
+const onPageChange = (event: { first: number, rows: number }) => {
+  pagination.value.skip = event.first;
+  pagination.value.count = event.rows;
+  loadSensors();
+};
 
 const getLabel = (key: string) => {
   const map: Record<string, string> = {
-    temperature: "Температура",
-    humidity: "Вологість",
+    temperature: "Temperature",
+    humidity: "Humidity",
     co2: "CO₂",
-    device_speed: "Швидкість вентиляції",
+    device_speed: "Ventilation speed",
   };
   return map[key] || key;
 };
@@ -130,25 +145,6 @@ const loadSensors = async () => {
     console.error("Помилка завантаження сенсорів:", error);
   } finally {
     isLoading.value = false;
-  }
-};
-
-const goToPage = (page: number) => {
-  pagination.value.skip = (page - 1) * pagination.value.count;
-  loadSensors();
-};
-
-const prevPage = () => {
-  if (pagination.value.skip > 0) {
-    pagination.value.skip -= pagination.value.count;
-    loadSensors();
-  }
-};
-
-const nextPage = () => {
-  if (pagination.value.skip + pagination.value.count < pagination.value.total) {
-    pagination.value.skip += pagination.value.count;
-    loadSensors();
   }
 };
 

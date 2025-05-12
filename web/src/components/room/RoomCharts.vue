@@ -1,70 +1,42 @@
 <template>
-  <div class="space-y-6">
-    <!-- Фильтры -->
-    <div class="grid md:grid-cols-2 gap-4">
-      <!-- Параметр -->
-      <div>
-        <label class="text-gray-700 font-medium block mb-1">Параметр</label>
-        <select
-            v-model="selectedParam"
-            class="w-full px-4 py-2 rounded-lg border border-gray-300 bg-gray-100 text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option
-              v-for="param in availableParams"
-              :key="param.name"
-              :value="param.name"
-          >
-            {{ param.label }}
-          </option>
-        </select>
-      </div>
-
-      <!-- Интервал -->
-      <div>
-        <label class="text-gray-700 font-medium block mb-1">Інтервал</label>
-        <select
-            v-model="selectedInterval"
-            class="w-full px-4 py-2 rounded-lg border border-gray-300 bg-gray-100 text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="minute">Хвилина</option>
-          <option value="hour">Година</option>
-          <option value="day">День</option>
-        </select>
+  <div class="items-center flex-grow">
+    <div class="flex flex-row gap-4 items-center justify-between">
+      <Select v-model="selectedParam" :options="parametersOptions" optionLabel="label" class="w-full md:w-56" />
+      
+      <div class="flex flex-row gap-4 items-center">
+        <FloatLabel variant="on">
+          <DatePicker v-model="fromDate" inputId="on_label" showIcon showTime hourFormat="24" iconDisplay="input" />
+          <label for="on_label">From</label>
+        </FloatLabel>
+        <i class="pi pi-minus my-auto" style="font-size: 1rem"></i>
+        <FloatLabel variant="on">
+          <DatePicker v-model="toDate" inputId="on_label" showIcon showTime hourFormat="24" iconDisplay="input" />
+          <label for="on_label">To</label>
+        </FloatLabel>
       </div>
     </div>
 
-    <!-- Даты -->
-    <div class="grid md:grid-cols-2 gap-4">
-      <div>
-        <label class="text-gray-700 font-medium block mb-1">Від</label>
-        <input
-            type="datetime-local"
-            v-model="fromDate"
-            class="w-full px-4 py-2 rounded-lg border border-gray-300 bg-gray-100 text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+    <div v-if="isLoading" class="flex items-center justify-center h-64">
+      <span class="text-gray-500">Loading...</span>
+    </div>
+
+    <div v-else class="bg-white shadow-md rounded-lg p-4 mt-4">
+      <div class="flex flex-row items-center justify-between">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">{{ selectedParam.label }}</h3>
+        <SelectButton v-model="selectedInterval" :options="intervalOptions" optionLabel="name" />
+      </div>
+      
+      <div class="relative">
+        <ApexCharts
+          type="area" 
+          height="350" 
+          :options="chartOptions" 
+          :series="series" 
         />
+        <div v-if="!series[0].data.length" class="absolute inset-0 flex items-center justify-center bg-white bg-opacity-80">
+          <span class="text-gray-500">No data available for the chart.</span>
+        </div>
       </div>
-      <div>
-        <label class="text-gray-700 font-medium block mb-1">До</label>
-        <input
-            type="datetime-local"
-            v-model="toDate"
-            class="w-full px-4 py-2 rounded-lg border border-gray-300 bg-gray-100 text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-      </div>
-    </div>
-
-    <!-- График -->
-    <div v-if="isLoading" class="text-center text-gray-500">Завантаження...</div>
-
-    <div v-else-if="!chartData" class="text-center text-gray-500">
-      Дані для графіка відсутні.
-    </div>
-
-    <div v-else class="bg-white shadow-md rounded-lg p-4">
-      <h3 class="text-lg font-semibold text-gray-800 mb-4">
-        {{ selectedLabel }}
-      </h3>
-      <LineChart :data="chartData" />
     </div>
   </div>
 </template>
@@ -73,94 +45,172 @@
 import { ref, computed, onMounted, watch } from "vue";
 import { useRoute } from "vue-router";
 import api from "@/api";
-import LineChart from "@/components/charts/LineChart.vue";
+import DatePicker from 'primevue/datepicker';
+import FloatLabel from 'primevue/floatlabel';
+import SelectButton from 'primevue/selectbutton';
+import Select from 'primevue/select';
+import { HistoryEntry, Param } from "@/services/apiService";
 
-interface Param {
+import ApexCharts from "vue3-apexcharts";
+
+interface SeriesData {
   name: string;
-  label: string;
-  unit: string;
+  data: Array<{
+    x: number;
+    y: number;
+  }>;
 }
 
-interface HistoryEntry {
-  value: number;
-  timestamp: number;
-}
+const series = ref<SeriesData[]>([
+  {
+    name: "",
+    data: [],
+  },
+]);
+
+const chartOptions = ref({
+  chart: {
+    type: 'area' as const,
+    toolbar: { show: false },
+    zoom: { enabled: false },
+    animations: {
+      enabled: true,
+      easing: 'easeinout',
+      speed: 800,
+    }
+  },
+  dataLabels: {
+    enabled: false
+  },
+  stroke: {
+    curve: 'smooth',
+    width: 3,
+    colors: ['#7C3AED']
+  },
+  fill: {
+    type: 'gradient',
+    gradient: {
+      shadeIntensity: 1,
+      opacityFrom: 0.5,
+      opacityTo: 0,
+      stops: [0, 90, 100],
+      colorStops: [
+        { offset: 0, color: "#7C3AED", opacity: 0.4 },
+        { offset: 100, color: "#ffffff", opacity: 0 }
+      ]
+    }
+  },
+  xaxis: {
+    categories: [] as string[],
+    labels: {
+      style: { fontSize: '14px' }
+    },
+    type: 'datetime',
+    tooltip: {
+      enabled: false
+    }
+  },
+  yaxis: {
+    min: 0,
+    max: 100,
+    tickAmount: 5,
+    labels: {
+      formatter: (val: number) => val.toFixed(1)
+    }
+  },
+  markers: {
+    size: 6,
+    colors: ['#fff'],
+    strokeColors: '#7C3AED',
+    strokeWidth: 3,
+    hover: { size: 8 },
+  },
+  grid: {
+    borderColor: '#e0e6ed',
+    strokeDashArray: 4,
+  },
+  tooltip: {
+    x: {
+      format: 'dd MMM HH:mm'
+    },
+    y: {
+      formatter: (val: number) => val.toFixed(1)
+    }
+  }
+});
+
+const intervalOptions = ref([
+  { name: "Minute", value: "minute" },
+  { name: "Hour", value: "hour" },
+  { name: "Day", value: "day" },
+]);
+const parametersOptions = ref<Param[]>([
+  { label: "Device Speed", name: "device_speed", unit: "%" }
+]);
 
 const route = useRoute();
 const roomId = Number(route.params.roomId);
 
 const isLoading = ref(false);
-const selectedParam = ref("device_speed");
-const selectedInterval = ref<"minute" | "hour" | "day">("hour");
-
-const toDate = ref(new Date().toISOString().slice(0, 16));
-const fromDate = ref(
-    new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
+const selectedParam = ref<Param>(parametersOptions.value[0]);
+const selectedInterval = ref(intervalOptions.value[1])
+const fromDate = ref<Date>(new Date(    
+    new Date().getFullYear(),
+    new Date().getMonth(), 
+    new Date().getDate() - 1,
+    new Date().getHours(),
+    new Date().getMinutes()
+  )
 );
-
-const params = ref<Param[]>([
-  { name: "device_speed", label: "Швидкість вентиляції", unit: "%" },
-]);
-
-const availableParams = computed(() => params.value);
-const selectedLabel = computed(
-    () => availableParams.value.find(p => p.name === selectedParam.value)?.label || selectedParam.value
-);
-
-const chartData = ref<any>(null);
+const toDate = ref<Date>(new Date());
 
 const getLabel = (name: string) => {
   const labels: Record<string, string> = {
-    temperature: "Температура",
-    humidity: "Вологість",
+    temperature: "Temperature",
+    humidity: "Humidity",
+    pressure: "Pressure",
     co2: "CO₂",
-    device_speed: "Швидкість вентиляції",
+    device_speed: "Ventilation speed",
   };
   return labels[name] || name;
 };
 
 const loadChartData = async () => {
   isLoading.value = true;
-  chartData.value = null;
+  series.value[0].data = [];
+  chartOptions.value.xaxis.categories = [];
 
   try {
-    const from = new Date(fromDate.value).getTime();
-    const to = new Date(toDate.value).getTime();
+    const from = fromDate.value.getTime();
+    const to = toDate.value.getTime();
 
     let res;
 
-    if (selectedParam.value === "device_speed") {
+    if (selectedParam.value.name === "device_speed") {
       res = await api.get(`/room/${roomId}/history`, {
-        params: { from, to, interval: selectedInterval.value },
+        params: { from, to, interval: selectedInterval.value.value },
       });
     } else {
       res = await api.get(
-          `/room/${roomId}/${selectedParam.value}/history`,
-          { params: { from, to, interval: selectedInterval.value } }
+          `/room/${roomId}/${selectedParam.value.name}/history`,
+          { params: { from, to, interval: selectedInterval.value.value } }
       );
     }
 
     const history: HistoryEntry[] = res.data?.data?.[0]?.history || [];
 
     if (history.length > 0) {
-      const unit = availableParams.value.find(p => p.name === selectedParam.value)?.unit || "";
+      const unit = parametersOptions.value.find(p => p.name === selectedParam.value.name)?.unit || "";
+      const label = `${getLabel(selectedParam.value.name)} (${unit})`;
 
-      chartData.value = {
-        labels: history.map(h => new Date(h.timestamp * 1000).toLocaleTimeString()),
-        datasets: [
-          {
-            label: `${getLabel(selectedParam.value)} (${unit})`,
-            data: history.map(h => h.value),
-            borderColor: "#3B82F6",
-            backgroundColor: "#3B82F6",
-            fill: false,
-            tension: 0.3,
-          },
-        ],
-      };
+      series.value[0].name = label;
+      series.value[0].data = history.map(h => ({
+        x: h.timestamp * 1000,
+        y: h.value
+      }));
     }
   } catch (err) {
-    console.error("Помилка при завантаженні графіка:", err);
+    console.error("Error loading chart data:", err);
   } finally {
     isLoading.value = false;
   }
@@ -169,11 +219,11 @@ const loadChartData = async () => {
 const loadParams = async () => {
   try {
     const res = await api.get(`/room/${roomId}`);
-    const fetched: { name: string; unit: string }[] = res.data;
+    const fetched: Param[] = res.data;
 
     for (const p of fetched) {
-      if (!params.value.find(x => x.name === p.name)) {
-        params.value.push({
+      if (!parametersOptions.value.find(x => x.name === p.name)) {
+        parametersOptions.value.push({
           name: p.name,
           label: getLabel(p.name),
           unit: p.unit,
@@ -181,7 +231,7 @@ const loadParams = async () => {
       }
     }
   } catch (err) {
-    console.error("Помилка при завантаженні параметрів:", err);
+    console.error("Error loading parameters:", err);
   }
 };
 
@@ -195,4 +245,3 @@ watch(
     loadChartData
 );
 </script>
-<!--https://dribbble.com/shots/15506112-Curved-Line-Chart-UI-Design-D-->
