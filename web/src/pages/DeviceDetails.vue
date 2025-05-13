@@ -1,77 +1,29 @@
 <template>
-  <div class="container max-w-7xl mx-auto py-6 space-y-6">
-    <div v-if="isLoading" class="text-center text-gray-500">
-      Завантаження інформації про пристрій...
-    </div>
-
-    <div v-else-if="!device" class="text-center text-gray-500">
-      Пристрій не знайдено.
+  <div class="items-center flex-grow" :class="{ 'place-content-center': !device }">
+    <div v-if="!device" class="flex flex-col items-center justify-center">
+      <i class="pi pi-exclamation-circle text-6xl text-gray-400 mb-4"></i>
+      <h2 class="text-2xl font-semibold text-gray-700 mb-2">Device Not Found</h2>
+      <p class="text-gray-500">The requested device does not exist or has been removed</p>
     </div>
 
     <div v-else>
-      <div class="flex justify-between items-center">
-        <div>
-          <h1 class="text-3xl font-bold text-gray-800">Пристрій №{{ device.id }}</h1>
-          <p class="text-sm text-gray-500 mt-1">Серійний номер: {{ device.serial_number }}</p>
-        </div>
-      </div>
+      <DeviceHeader :device="device" /> 
 
-      <!-- Параметр (скорость) -->
-      <div class="mt-6">
-        <h2 class="text-lg font-semibold text-gray-700 mb-2">Параметри</h2>
-        <div v-if="device.fan_speed" class="grid grid-cols-1 gap-4">
-          <div class="p-4 bg-white rounded-lg shadow border border-gray-200">
-            <div class="text-gray-500 text-sm mb-1">Швидкість</div>
-            <div class="text-2xl font-bold text-gray-800">
-              {{ device.fan_speed }}%
-            </div>
-          </div>
+      <div class="bg-white shadow-md rounded-lg p-4 mt-8">
+        <div class="flex flex-row items-center justify-between mb-2">
+          <h3 class="text-lg font-semibold text-gray-800 mb-4">Speed</h3>
+          <DateRangeSelector
+            v-model:from="fromDate"
+            v-model:to="toDate"
+            v-model:interval="selectedInterval"
+            :interval-options="INTERVAL_OPTIONS"
+          />
         </div>
-        <p v-else class="text-gray-400">Пристрій офлайн.</p>
-      </div>
-
-      <div class="mt-6 space-y-6">
-        <div class="grid md:grid-cols-3 gap-4">
-          <div>
-            <label class="text-gray-700 font-medium block mb-1">Від</label>
-            <input
-                type="datetime-local"
-                v-model="fromDate"
-                class="w-full px-4 py-2 rounded-lg border border-gray-300 bg-gray-100 text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div>
-            <label class="text-gray-700 font-medium block mb-1">До</label>
-            <input
-                type="datetime-local"
-                v-model="toDate"
-                class="w-full px-4 py-2 rounded-lg border border-gray-300 bg-gray-100 text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div>
-            <label class="text-gray-700 font-medium block mb-1">Інтервал</label>
-            <select
-                v-model="selectedInterval"
-                class="w-full px-4 py-2 rounded-lg border border-gray-300 bg-gray-100 text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="minute">Хвилина</option>
-              <option value="hour">Година</option>
-              <option value="day">День</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- График -->
-        <div v-if="isChartLoading" class="text-center text-gray-500">Завантаження графіка...</div>
-        <div v-else-if="!chartData" class="text-center text-gray-500">
-          Дані для графіка відсутні.
-        </div>
-        <div v-else class="bg-white shadow-md rounded-lg p-4">
-          <h3 class="text-lg font-semibold text-gray-800 mb-4">
-            Швидкість (%)
-          </h3>
-          <LineChart :data="chartData" />
-        </div>
+        <ChartDisplay
+          :series="series"
+          :chart-options="chartOptions"
+          :is-loading="isChartLoading"
+        />
       </div>
     </div>
   </div>
@@ -79,38 +31,36 @@
 
 <script setup lang="ts">
 import { ref, onMounted, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
-import { DevicesResponse, Device } from "@/services/apiService";
+import { useRoute } from "vue-router";
+import { Device } from "@/services/apiService";
 import api from "@/api";
-import LineChart from "@/components/charts/LineChart.vue";
 import { useDeviceStore } from "@/store/deviceStore";
-
-interface HistoryEntry {
-  value: number;
-  timestamp: number;
-}
+import DateRangeSelector from "@/components/sensor/DateRangeSelector.vue";
+import ChartDisplay from "@/components/sensor/ChartDisplay.vue";
+import DeviceHeader from "@/components/device/DeviceHeader.vue";
+import { INTERVAL_OPTIONS, type HistoryEntry } from "@/types/sensor";
+import { useChartConfig } from "@/composables/useChartConfig";
 
 const route = useRoute();
-const router = useRouter();
 const deviceStore = useDeviceStore();
 const deviceId = Number(route.params.deviceId);
 const roomId = Number(route.params.roomId);
+
 const isLoading = ref(true);
 const isChartLoading = ref(false);
 const device = ref<Device | null>(null);
-const selectedInterval = ref<"minute" | "hour" | "day">("hour");
-const toDate = ref(new Date().toISOString().slice(0, 16));
-const fromDate = ref(
-    new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 16)
-);
-const chartData = ref<any>(null);
+const { series, chartOptions } = useChartConfig();
+
+const selectedInterval = ref(INTERVAL_OPTIONS[1]);
+const fromDate = ref<Date>(new Date(new Date().setDate(new Date().getDate() - 1)));
+const toDate = ref<Date>(new Date());
 
 const loadDevice = async () => {
   isLoading.value = true;
   try {
     device.value = await deviceStore.fetchDevice(roomId, deviceId);
   } catch (error) {
-    console.error("Помилка завантаження пристрою:", error);
+    console.error("Failed to load device:", error);
   } finally {
     isLoading.value = false;
   }
@@ -120,35 +70,27 @@ const loadChartData = async () => {
   if (!device.value) return;
 
   isChartLoading.value = true;
-  chartData.value = null;
+  series.value[0].data = [];
 
   try {
-    const from = new Date(fromDate.value).getTime();
-    const to = new Date(toDate.value).getTime();
+    const from = fromDate.value.getTime();
+    const to = toDate.value.getTime();
 
     const res = await api.get(
-        `/room/${roomId}/history/${deviceId}`,
-        { params: { from, to, interval: selectedInterval.value } }
+      `/room/${roomId}/history/${deviceId}`,
+      { params: { from, to, interval: selectedInterval.value } }
     );
 
     const history: HistoryEntry[] = res.data?.data?.history || [];
     if (history.length > 0) {
-      chartData.value = {
-        labels: history.map(h => new Date(h.timestamp * 1000).toLocaleTimeString()),
-        datasets: [
-          {
-            label: 'Швидкість (%)',
-            data: history.map(h => h.value),
-            borderColor: "#3B82F6",
-            backgroundColor: "#3B82F6",
-            fill: false,
-            tension: 0.3,
-          },
-        ],
-      };
+      series.value[0].name = 'Speed';
+      series.value[0].data = history.map(h => ({
+        x: h.timestamp * 1000,
+        y: h.value
+      }));
     }
   } catch (err) {
-    console.error("Помилка при завантаженні графіка:", err);
+    console.error("Failed to load chart data:", err);
   } finally {
     isChartLoading.value = false;
   }
@@ -159,8 +101,5 @@ onMounted(async () => {
   await loadChartData();
 });
 
-watch(
-    [selectedInterval, fromDate, toDate],
-    loadChartData
-);
+watch([selectedInterval, fromDate, toDate], loadChartData);
 </script>

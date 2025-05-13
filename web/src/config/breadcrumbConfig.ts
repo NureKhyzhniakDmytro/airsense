@@ -54,15 +54,15 @@ export const breadcrumbConfig: Record<string, BreadcrumbConfig> = {
    },
  },
   sensorId: {
-    label: "Датчик",
+    label: "Sensor",
     path: "sensor",
     fetchData: async (params: RouteParamsGeneric): Promise<string> => {
       const roomId = Number(params.roomId);
-      const deviceId = Number(params.deviceId);
+      const sensorId = Number(params.sensorId);
 
       const sensorStore = useSensorStore();
-      const sensor = await sensorStore.fetchSensor(roomId, deviceId);
-      return sensor == null ? `Датчик #${deviceId}` : `${sensor.type_name} #${sensor.id}`;
+      const sensor = await sensorStore.fetchSensor(roomId, sensorId);
+      return sensor == null ? `Sensor #${sensorId}` : `${sensor.type_name} #${sensor.id}`;
     },
   },
 };

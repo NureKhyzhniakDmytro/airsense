@@ -57,11 +57,13 @@ const dashboardRoutes: RouteRecordRaw[] = [
   },
   {
     path: "/env/:envId/room/:roomId/sensors/:sensorId",
+    name: "sensor",
     component: () => import("@/pages/SensorDetails.vue"),
     props: true,
   },
   {
     path: "/env/:envId/room/:roomId/devices/:deviceId",
+    name: "device",
     component: () => import("@/pages/DeviceDetails.vue"),
     props: true,
   }
