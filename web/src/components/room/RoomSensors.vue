@@ -91,14 +91,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import api from "@/api";
-import AddSensorDialog from "@/components/room/AddSensorDialog.vue";
-import { Sensor } from "@/services/apiService";
+import { getRoomSensors } from "@/services/apiService";
+import type { Sensor } from "@/types/sensor";
+import { PARAMETER_LABELS } from "@/types/sensor";
+import type { PaginationState, PageChangeEvent } from "@/types/pagination";
 import Button from 'primevue/button';
 import Card from 'primevue/card';
 import Paginator from 'primevue/paginator';
+import AddSensorDialog from './AddSensorDialog.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -107,22 +109,16 @@ const roomId = Number(route.params.roomId);
 const sensors = ref<Sensor[]>([]);
 const isLoading = ref(true);
 const addSensorDialog = ref(false);
-const pagination = ref({ total: 0, skip: 0, count: 6 });
+const pagination = ref<PaginationState>({ total: 0, skip: 0, count: 6 });
 
-const onPageChange = (event: { first: number, rows: number }) => {
+const onPageChange = (event: PageChangeEvent) => {
   pagination.value.skip = event.first;
   pagination.value.count = event.rows;
   loadSensors();
 };
 
 const getLabel = (key: string) => {
-  const map: Record<string, string> = {
-    temperature: "Temperature",
-    humidity: "Humidity",
-    co2: "CO₂",
-    device_speed: "Ventilation speed",
-  };
-  return map[key] || key;
+  return PARAMETER_LABELS[key] || key;
 };
 
 const goToSensor = (sensorId: number) => {
@@ -132,17 +128,11 @@ const goToSensor = (sensorId: number) => {
 const loadSensors = async () => {
   isLoading.value = true;
   try {
-    const res = await api.get(`/room/${roomId}/sensor`, {
-      params: {
-        skip: pagination.value.skip,
-        count: pagination.value.count,
-      },
-    });
-
-    sensors.value = res.data?.data || [];
-    pagination.value.total = res.data?.pagination?.total || 0;
+    const res = await getRoomSensors(roomId, pagination.value.skip, pagination.value.count);
+    sensors.value = res.data || [];
+    pagination.value.total = res.pagination?.total || 0;
   } catch (error) {
-    console.error("Помилка завантаження сенсорів:", error);
+    console.error("Error loading sensors:", error);
   } finally {
     isLoading.value = false;
   }

@@ -15,14 +15,17 @@
           <DateRangeSelector
             v-model:from="fromDate"
             v-model:to="toDate"
-            v-model:interval="selectedInterval"
+            v-model:interval="selectedInterval" 
             :interval-options="INTERVAL_OPTIONS"
+            from-label="Start"
+            to-label="End"
           />
         </div>
         <ChartDisplay
           :series="series"
           :chart-options="chartOptions"
           :is-loading="isChartLoading"
+          empty-message="No speed data available for the selected period"
         />
       </div>
     </div>
@@ -32,14 +35,14 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from "vue";
 import { useRoute } from "vue-router";
-import { Device } from "@/services/apiService";
+import { Device } from "@/types/sensor";
 import api from "@/api";
 import { useDeviceStore } from "@/store/deviceStore";
-import DateRangeSelector from "@/components/sensor/DateRangeSelector.vue";
-import ChartDisplay from "@/components/sensor/ChartDisplay.vue";
+import DateRangeSelector from "@/components/common/DateRangeSelector.vue";
+import ChartDisplay from "@/components/common/ChartDisplay.vue";
 import DeviceHeader from "@/components/device/DeviceHeader.vue";
 import { INTERVAL_OPTIONS, type HistoryEntry } from "@/types/sensor";
-import { useChartConfig } from "@/composables/useChartConfig";
+import { useChartConfig } from "@/config/chartConfig";
 
 const route = useRoute();
 const deviceStore = useDeviceStore();
@@ -89,6 +92,7 @@ const loadChartData = async () => {
         y: h.value
       }));
     }
+    console.log(series.value);
   } catch (err) {
     console.error("Failed to load chart data:", err);
   } finally {

@@ -87,51 +87,26 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, onMounted, watch, computed } from "vue";
 import { useRoute } from "vue-router";
-import api from "@/api";
-import { Param, Parameter } from "@/services/apiService";
+import { 
+  getRoomCurve, 
+  updateRoomCurve, 
+  getAvailableParameters,
+} from "@/services/apiService";
+import { PARAMETER_LABELS, type ExtendedParam } from "@/types/sensor";
+import type { 
+  ChartEvent, 
+  ChartContext,
+} from "@/types/chart";
 import Select from 'primevue/select';
 import Button from 'primevue/button';
 import ApexCharts from "vue3-apexcharts";
 import { useToast } from "primevue/usetoast";
 import Dialog from 'primevue/dialog';
 import InputNumber from 'primevue/inputnumber';
+import { useChartConfig } from "@/config/chartConfig";
 
-// Types
-interface ExtendedParam extends Param {
-  min_value?: number;
-  max_value?: number;
-  critical_value?: number;
-}
-
-interface ChartPoint {
-  x: number;
-  y: number;
-}
-
-interface ChartSeries {
-  name: string;
-  data: ChartPoint[];
-}
-
-interface ChartEvent {
-  clientX: number;
-  clientY: number;
-}
-
-interface ChartContext {
-  w: {
-    globals: {
-      xAxisScale: {
-        niceMin: number;
-        niceMax: number;
-      };
-    };
-  };
-}
-
-// State
 const route = useRoute();
 const roomId = Number(route.params.roomId);
 const toast = useToast();
@@ -145,14 +120,8 @@ const tempCriticalValue = ref<number | null>(null);
 const parametersOptions = ref<ExtendedParam[]>([]);
 const selectedParam = ref<ExtendedParam>({ name: "", label: "", unit: "" });
 
-const series = ref<ChartSeries[]>([
-  {
-    name: "",
-    data: [],
-  },
-]);
+const { series } = useChartConfig();
 
-// Chart configuration
 const chartOptions = computed(() => ({
   chart: {
     type: 'line' as const,
@@ -233,7 +202,6 @@ const chartOptions = computed(() => ({
   }
 }));
 
-// Event handlers
 function handleDataPointSelection(event: ChartEvent, chartContext: ChartContext, config: { dataPointIndex: number }) {
   const pointIndex = config.dataPointIndex;
   const points = series.value[0].data;
@@ -296,12 +264,11 @@ function handleChartClick(event: ChartEvent, chartContext: ChartContext, config:
   }
 }
 
-// Data loading
 async function loadParams() {
   isLoading.value = true;
   try {
-    const res = await api.get(`/room/${roomId}`);
-    const fetched: Parameter[] = res.data;
+    const res = await getAvailableParameters(roomId);
+    const fetched = res;
 
     for (const p of fetched) {
       if (!parametersOptions.value.find(x => x.name === p.name)) {
@@ -328,11 +295,10 @@ async function loadParams() {
 async function loadChartData(paramName: string) {
   isLoading.value = true;
   try {
-    const res = await api.get(`/room/${roomId}/${paramName}/curve`);
-    const data = res.data;
+    const data = await getRoomCurve(roomId, paramName);
     
     if (data && data.points && data.points.length > 0) {
-      series.value[0].data = data.points.map((point: any) => ({
+      series.value[0].data = data.points.map(point => ({
         x: point.value,
         y: point.fan_speed
       }));
@@ -357,7 +323,6 @@ async function loadChartData(paramName: string) {
   }
 }
 
-// Point manipulation
 function addPoint() {
   const points = series.value[0].data;
   if (points.length < 2) return;
@@ -397,7 +362,6 @@ function deleteSelectedPoint() {
   hasChanges.value = true;
 }
 
-// Critical value handling
 function openCriticalValueDialog() {
   tempCriticalValue.value = selectedParam.value.critical_value || null;
   showCriticalValueDialog.value = true;
@@ -409,7 +373,6 @@ function saveCriticalValue() {
   hasChanges.value = true;
 }
 
-// Data saving
 async function saveChanges() {
   try {
     const points = series.value[0].data.map(point => ({
@@ -417,7 +380,7 @@ async function saveChanges() {
       fan_speed: Math.round(point.y)
     }));
 
-    await api.patch(`/room/${roomId}/${selectedParam.value.name}/curve`, {
+    await updateRoomCurve(roomId, selectedParam.value.name, {
       points,
       critical_value: selectedParam.value.critical_value
     });
@@ -430,17 +393,8 @@ async function saveChanges() {
   }
 }
 
-// Utilities
-function getLabel(name: string) {
-  const labels: Record<string, string> = {
-    temperature: "Temperature",
-    humidity: "Humidity",
-    pressure: "Pressure",
-  };
-  return labels[name] || name;
-}
+function getLabel(name: string) { return PARAMETER_LABELS[name] || name; }
 
-// Watchers and lifecycle
 watch(selectedParam, (newVal) => {
   if (newVal) {
     series.value[0].name = newVal.label;

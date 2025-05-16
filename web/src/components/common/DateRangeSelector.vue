@@ -11,7 +11,7 @@
           iconDisplay="input"
           @update:modelValue="(value) => value instanceof Date && emit('update:from', value)" 
         />
-        <label for="from_date">From</label>
+        <label for="from_date">{{ fromLabel }}</label>
       </FloatLabel>
       <i class="pi pi-minus my-auto" style="font-size: 1rem"></i>
       <FloatLabel variant="on">
@@ -24,10 +24,11 @@
           iconDisplay="input"
           @update:modelValue="(value) => value instanceof Date && emit('update:to', value)" 
         />
-        <label for="to_date">To</label>
+        <label for="to_date">{{ toLabel }}</label>
       </FloatLabel>
     </div>
     <SelectButton 
+      v-if="intervalOptions?.length"
       :modelValue="props.interval" 
       :options="intervalOptions" 
       optionLabel="name"
@@ -40,18 +41,12 @@
 import DatePicker from 'primevue/datepicker';
 import FloatLabel from 'primevue/floatlabel';
 import SelectButton from 'primevue/selectbutton';
-import type { ChartOptions } from '@/types/sensor';
+import type { DateRangeProps, DateRangeEmits } from '@/types/date';
 
-const props = defineProps<{
-  from: Date;
-  to: Date;
-  interval: ChartOptions;
-  intervalOptions: ChartOptions[];
-}>();
+const props = withDefaults(defineProps<DateRangeProps>(), {
+  fromLabel: 'From',
+  toLabel: 'To'
+});
 
-const emit = defineEmits<{
-  (e: 'update:from', value: Date): void;
-  (e: 'update:to', value: Date): void;
-  (e: 'update:interval', value: ChartOptions): void;
-}>();
+const emit = defineEmits<DateRangeEmits>();
 </script> 

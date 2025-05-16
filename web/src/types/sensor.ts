@@ -1,6 +1,77 @@
+import type { Pagination } from "@/types/api";
+import { IntervalOption } from "@/types/date";
+
+export interface Parameter {
+  name: string;
+  value: number | null;
+  unit: string;
+  min_value: number;
+  max_value: number;
+  critical_value: number;
+}
+
+export interface Sensor {
+  id: number;
+  type_name: string;
+  serial_number: string;
+  types: string[];
+  parameters?: Parameter[];
+}
+
+export interface Device {
+  id: number;
+  serial_number: string;
+  fan_speed: number;
+  active_at: number;
+}
+
 export interface HistoryEntry {
   value: number;
   timestamp: number;
+}
+
+export interface HistoryParams {
+  from: number;
+  to: number;
+  interval: string;
+}
+
+export interface Param {
+  name: string;
+  label: string;
+  unit: string;
+}
+
+export interface ExtendedParam extends Param {
+  min_value?: number;
+  max_value?: number;
+  critical_value?: number;
+}
+
+export interface DevicesResponse {
+  data: Device[];
+  pagination: Pagination;
+}
+
+export interface SensorsResponse {
+  data: Sensor[];
+  pagination: Pagination;
+}
+
+export const INTERVAL_OPTIONS = [
+  { name: '1m', value: 'minute' },
+  { name: '1h', value: 'hour' },
+  { name: '1d', value: 'day' },
+] as IntervalOption[];
+
+export interface CurvePoint {
+  value: number;
+  fan_speed: number;
+}
+
+export interface CurveData {
+  points: CurvePoint[];
+  critical_value?: number;
 }
 
 export interface SeriesData {
@@ -15,12 +86,6 @@ export interface ChartOptions {
   name: string;
   value: string;
 }
-
-export const INTERVAL_OPTIONS: ChartOptions[] = [
-  { name: "Minute", value: "minute" },
-  { name: "Hour", value: "hour" },
-  { name: "Day", value: "day" },
-];
 
 export const PARAMETER_LABELS: Record<string, string> = {
   temperature: "Temperature",

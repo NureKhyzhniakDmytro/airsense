@@ -27,49 +27,44 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, onMounted } from "vue";
 import Dialog from "primevue/dialog";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
 import Message from "primevue/message";
 import FloatLabel from "primevue/floatlabel";
 import { Form } from "@primevue/forms";
-import { FormResolverOptions, FormSubmitEvent } from "@primevue/forms/form";
+import type { FormResolverOptions, FormSubmitEvent, FormValues } from "@/types/form";
 import { useToast } from "primevue/usetoast";
-import api from "@/api";
+import { addSensor } from "@/services/apiService";
 
 const toast = useToast();
 const isLoading = ref(false);
 const isError = ref(false);
 
-const props = defineProps({
-  modelValue: Boolean,
-  roomId: {
-    type: Number,
-    required: true
-  }
-});
+const props = defineProps<{
+  modelValue: boolean;
+  roomId: number;
+}>();
 
-const emit = defineEmits(['update:modelValue', 'added']);
+const emit = defineEmits<{
+  (e: "update:modelValue", value: boolean): void;
+  (e: "added"): void;
+}>();
 
 const isOpen = computed({
   get: () => props.modelValue,
   set: (val) => emit('update:modelValue', val)
 });
 
-const resolver = ({ values }: FormResolverOptions) => {
-  const errors: Record<string, Record<string, string>[]> = {
-    serialNumber: []
-  };
+const resolver = (options: FormResolverOptions) => {
+  const errors: Record<string, Array<{ message: string }>> = {};
 
-  if (!values.serialNumber) {
-    errors.serialNumber.push({ message: 'Serial number is required' });
+  if (!options.values.serialNumber) {
+    errors.serialNumber = [{ message: "Serial number is required" }];
   }
 
-  return {
-    values,
-    errors
-  };
+  return errors;
 };
 
 const onFormSubmit = ({ valid, values }: FormSubmitEvent) => {
@@ -85,13 +80,11 @@ const onFormSubmit = ({ valid, values }: FormSubmitEvent) => {
   }
 };
 
-const create = async (values: Record<string, any>): Promise<boolean> => {
+const create = async (values: FormValues): Promise<boolean> => {
   try {
     isLoading.value = true;
     try {
-      await api.post(`/room/${props.roomId}/sensor`, {
-        serial_number: values.serialNumber.trim()
-      });
+      await addSensor(props.roomId, values.serialNumber.trim());
       toast.add({ severity: 'success', summary: 'Success', detail: 'Sensor added', life: 3000 });
       return true;
     } catch {

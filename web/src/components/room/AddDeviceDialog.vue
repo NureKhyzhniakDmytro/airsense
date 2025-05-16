@@ -31,7 +31,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from "vue";
-import api from "@/api";
+import { addDevice } from "@/services/apiService";
 import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import InputText from 'primevue/inputtext';
@@ -63,10 +63,7 @@ const submit = async () => {
   errorMessage.value = "";
 
   try {
-    await api.post(`/room/${props.roomId}/device`, {
-      serial_number: serialNumber.value.trim(),
-    });
-
+    await addDevice(props.roomId, serialNumber.value.trim());
     emit("added");
     close();
   } catch (error) {

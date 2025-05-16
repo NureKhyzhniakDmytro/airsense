@@ -19,7 +19,7 @@
 
 <script setup lang="ts">
 import { PARAMETER_ICONS } from '@/types/sensor';
-import type { Sensor, Parameter } from '@/services/apiService';
+import type { Sensor, Parameter } from '@/types/sensor';
 
 defineProps<{
   sensor: Sensor;

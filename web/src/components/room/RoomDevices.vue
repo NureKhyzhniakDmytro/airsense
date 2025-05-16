@@ -7,12 +7,12 @@
         <Button 
           icon="pi pi-plus" 
           label="Add Device" 
-          @click="addDeviceDialog = true"
+          @click="showAddDialog = true"
           severity="primary"
         />
       </div>
 
-      <div v-if="isLoading" class="space-y-2">
+      <div v-if="loading" class="space-y-2">
         <div
             v-for="i in pagination.count"
             :key="i"
@@ -74,14 +74,14 @@
         <Button 
           icon="pi pi-plus" 
           label="Add Device" 
-          @click="addDeviceDialog = true"
+          @click="showAddDialog = true"
           severity="primary"
         />
       </div>
     </div>
 
     <AddDeviceDialog
-        v-model="addDeviceDialog"
+        v-model="showAddDialog"
         :roomId="roomId"
         @added="refresh"
     />
@@ -91,23 +91,24 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import api from "@/api";
-import AddDeviceDialog from "./AddDeviceDialog.vue";
-import { Device } from "@/services/apiService";
+import { getRoomDevices } from "@/services/apiService";
+import type { Device } from "@/types/sensor";
+import type { PaginationState, PageChangeEvent } from "@/types/pagination";
 import Button from 'primevue/button';
 import Card from 'primevue/card';
 import Paginator from 'primevue/paginator';
+import AddDeviceDialog from './AddDeviceDialog.vue';
 
 const route = useRoute();
 const router = useRouter();
 const roomId = Number(route.params.roomId);
 
 const devices = ref<Device[]>([]);
-const isLoading = ref(true);
-const addDeviceDialog = ref(false);
-const pagination = ref({ total: 0, skip: 0, count: 6 });
+const loading = ref(true);
+const showAddDialog = ref(false);
+const pagination = ref<PaginationState>({ total: 0, skip: 0, count: 6 });
 
-const onPageChange = (event: { first: number, rows: number }) => {
+const onPageChange = (event: PageChangeEvent) => {
   pagination.value.skip = event.first;
   pagination.value.count = event.rows;
   loadDevices();
@@ -118,21 +119,15 @@ const goToDevice = (deviceId: number) => {
 };
 
 const loadDevices = async () => {
-  isLoading.value = true;
+  loading.value = true;
   try {
-    const res = await api.get(`/room/${roomId}/device`, {
-      params: {
-        skip: pagination.value.skip,
-        count: pagination.value.count,
-      },
-    });
-
-    devices.value = res.data?.data || [];
-    pagination.value.total = res.data?.pagination?.total || 0;
+    const res = await getRoomDevices(roomId, pagination.value.skip, pagination.value.count);
+    devices.value = res.data || [];
+    pagination.value.total = res.pagination?.total || 0;
   } catch (error) {
     console.error("Error loading devices:", error);
   } finally {
-    isLoading.value = false;
+    loading.value = false;
   }
 };
 

@@ -39,19 +39,21 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from "vue";
 import { useRoute } from "vue-router";
-import { getAvailableParameters, Sensor, Parameter } from "@/services/apiService";
+import { getAvailableParameters } from "@/services/apiService";
 import api from "@/api";
 import { useSensorStore } from "@/store/sensorStore";
-import { useChartConfig } from "@/composables/useChartConfig";
+import { useChartConfig } from "@/config/chartConfig";
 import { 
   INTERVAL_OPTIONS, 
   PARAMETER_LABELS, 
-  type HistoryEntry 
+  type HistoryEntry, 
+  Sensor, 
+  Parameter
 } from "@/types/sensor";
 import SensorHeader from "@/components/sensor/SensorHeader.vue";
-import ParameterSelector from "@/components/sensor/ParameterSelector.vue";
-import DateRangeSelector from "@/components/sensor/DateRangeSelector.vue";
-import ChartDisplay from "@/components/sensor/ChartDisplay.vue";
+import ParameterSelector from "@/components/common/ParameterSelector.vue";
+import DateRangeSelector from "@/components/common/DateRangeSelector.vue";
+import ChartDisplay from "@/components/common/ChartDisplay.vue";
 
 const route = useRoute();
 const sensorStore = useSensorStore();

@@ -17,7 +17,7 @@
   </template>
   
   <script setup lang="ts">
-  import type { Device } from '@/services/apiService';
+  import type { Device } from '@/types/sensor';
   
   defineProps<{
     device: Device;
