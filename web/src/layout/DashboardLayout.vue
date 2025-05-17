@@ -1,25 +1,21 @@
 <template>
-  <div class="min-h-screen flex flex-col bg-surface-100 text-color">
+  <div class="h-screen flex flex-col overflow-hidden bg-surface-100 text-color">
     <dashboard-topbar />
 
     <Divider class="m-0"/>
 
     <div class="flex justify-center p-px bg-surface-0">
-      <div class="w-full max-w-7xl my-3">
-        <div class="flex items-center flex-col">
-          <Breadcrumbs class="w-full !bg-surface-0"  />
-        </div>
+      <div class="w-full max-w-7xl my-3 flex items-center">
+        <Breadcrumbs class="w-full !bg-surface-0" />
       </div>
     </div>
 
-    <main class="flex-grow p-6 flex flex-col items-center">
-      <div class="w-full max-w-7xl flex flex-grow">
+    <div class="flex-grow flex flex-col items-center min-h-0 overflow-y-auto">
+      <main class="w-full max-w-7xl flex flex-grow p-6">
         <router-view />
-      </div>
-    </main>
-
-    <dashboard-footer />
-
+      </main>
+      <dashboard-footer />
+    </div>
     <ConfirmDialog />
     <Toast />
   </div>
