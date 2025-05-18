@@ -1,28 +1,45 @@
 <template>
-  <div class="flex flex-col flex-grow">
-    <div class="flex justify-between items-center mt-8">
-      <h1 v-if="room" class="text-3xl font-bold text-gray-800">{{ room.name }}</h1>
+  <div class="flex flex-col flex-grow"
+    :class="{ 'place-content-center': environment?.role === 'user' }"
+  >
+    <div
+      v-if="environment?.role === 'user'"
+      class="flex flex-col flex-grow justify-center items-center max-w-lg self-center"
+    >
+      <i class="pi pi-lock text-6xl text-gray-300 mb-4"></i>
+      <h1 class="text-2xl font-semibold text-gray-800 mb-2 text-center">
+        You are not allowed to access this room
+      </h1>
+      <p class="text-gray-600 text-center">
+        Please contact your administrator if you believe this is an error.
+      </p>
     </div>
 
-    <div v-if="isLoading" class="space-y-2">
-      <div class="h-10 bg-gray-300 animate-pulse rounded"></div>
-    </div>
+    <div v-else>
+      <div class="flex justify-between items-center mt-8">
+        <h1 v-if="room" class="text-3xl font-bold text-gray-800">{{ room.name }}</h1>
+      </div>
 
-    <Tabs :value="activeTab" class="mt-8">
-      <TabList qwety="qwety" :pt="{ tabList: 'bg-inherit'}">
-        <Tab v-for="tab in items" :key="tab.label" :value="tab.value">
-          <router-link v-if="tab.route" v-slot="{ href, navigate }" :to="tab.route" custom>
-            <a :href="href" @click="navigate" class="flex items-center gap-2 text-inherit">
-              <i :class="tab.icon" />
-              <span>{{ tab.label }}</span>
-            </a>
-          </router-link>
-        </Tab>
-      </TabList>
-    </Tabs>
+      <div v-if="isLoading" class="space-y-2">
+        <div class="h-10 bg-gray-300 animate-pulse rounded"></div>
+      </div>
 
-    <div class="my-6 flex flex-grow">
-      <router-view />
+      <Tabs :value="activeTab" class="mt-8">
+        <TabList qwety="qwety" :pt="{ tabList: 'bg-inherit'}">
+          <Tab v-for="tab in items" :key="tab.label" :value="tab.value">
+            <router-link v-if="tab.route" v-slot="{ href, navigate }" :to="tab.route" custom>
+              <a :href="href" @click="navigate" class="flex items-center gap-2 text-inherit">
+                <i :class="tab.icon" />
+                <span>{{ tab.label }}</span>
+              </a>
+            </router-link>
+          </Tab>
+        </TabList>
+      </Tabs>
+
+      <div class="my-6 flex flex-grow">
+        <router-view />
+      </div>
     </div>
   </div>
 </template>
@@ -32,7 +49,8 @@ import { ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useEnvironmentStore } from "@/store/environmentStore";
 import { getRoom } from "@/services/apiService";
-import type { Room, Environment } from "@/services/apiService";
+import type { Environment } from "@/types/environment";
+import type { Room } from "@/types/room";
 import Tabs from 'primevue/tabs';
 import TabList from 'primevue/tablist';
 import Tab from 'primevue/tab';
@@ -72,6 +90,10 @@ onMounted(async () => {
 
   isLoading.value = true;
   environment.value = await environmentStore.fetchEnvironment(envId);
+  if (environment.value?.role === "user") {
+    isLoading.value = false;
+    return;
+  }
   room.value = await getRoom(envId, roomId);
   isLoading.value = false;
 });

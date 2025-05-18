@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { reactive, computed } from "vue";
-import { EnvironmentsResponse, getEnvironmentDetails, getEnvironments } from "@/services/apiService";
-import type { Environment } from "@/services/apiService";
+import { getEnvironmentDetails, getEnvironments } from "@/services/apiService";
+import type { Environment, EnvironmentsResponse } from "@/types/environment";
 
 export const useEnvironmentStore = defineStore("environmentStore", () => {
   const state = reactive<{

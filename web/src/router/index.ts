@@ -18,12 +18,12 @@ const dashboardRoutes: RouteRecordRaw[] = [
       {
         path: 'rooms',
         name: 'environment-rooms',
-        component: () => import("@/components/RoomsList.vue"),
+        component: () => import("@/components/environment/RoomsList.vue"),
       },
       {
         path: 'members',
         name: 'environment-members',
-        component: () => import("@/components/MembersList.vue"),
+        component: () => import("@/components/environment/MembersList.vue"),
       },
     ]
   },

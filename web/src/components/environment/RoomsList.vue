@@ -10,7 +10,12 @@
           <h2 class="text-sm text-gray-500">List of all rooms in your environment.</h2>
         </div>
 
-        <Button @click="createRoomDialog = true" label="New Room" icon="pi pi-plus" />
+        <Button 
+            @click="createRoomDialog = true" 
+            label="New Room"
+            icon="pi pi-plus" 
+            :disabled="environment?.role === 'user'"
+        />
         <create-room-dialog v-model="createRoomDialog" :envId="envId" />
       </div>
 
@@ -111,7 +116,8 @@ import { ref, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useEnvironmentStore } from "@/store/environmentStore";
 import { getRooms } from "@/services/apiService";
-import type { Room, Environment } from "@/services/apiService";
+import type { Environment } from "@/types/environment";
+import type { Room } from "@/types/room";
 import CreateRoomDialog from "@/components/environment/CreateRoomDialog.vue";
 import Button from "primevue/button";
 import DataView, { type DataViewPageEvent } from "primevue/dataview";
@@ -153,6 +159,9 @@ const stopAutoRefresh = () => {
 };
 
 const goToRoom = (roomId: number) => {
+  if (environment.value?.role === 'user') {
+    return;
+  }
   router.push({
     name: 'room',
     params: {

@@ -7,7 +7,12 @@
         <h2 class="text-sm text-gray-500">List of all users in your environment.</h2>
       </div>
 
-      <Button @click="inviteMemberDialog = true" label="Invite" icon="pi pi-plus" />
+      <Button 
+          @click="inviteMemberDialog = true" 
+          label="Invite"  
+          icon="pi pi-plus" 
+          :disabled="environment?.role === 'user'"
+      />
       <invite-member-dialog v-model="inviteMemberDialog" :envId="envId" />
     </div>
 
@@ -68,7 +73,7 @@
 import { ref, computed, onMounted } from "vue";
 import { useRoute } from "vue-router";
 import { getMembers, removeUser } from "@/services/apiService";
-import type { User, Environment } from "@/services/apiService";
+import type { Environment } from "@/types/environment";
 import { getRoleBadge } from "@/utils/environment";
 import { useEnvironmentStore } from "@/store/environmentStore";
 import { useAuthStore } from "@/store/authStore";
@@ -84,6 +89,7 @@ import type { ContextMenuMethods } from 'primevue/contextmenu';
 import type { DataViewPageEvent } from "primevue/dataview";
 import { useToast } from 'primevue/usetoast';
 import EditMemberDialog from "@/components/environment/EditMemberDialog.vue";
+import { User } from "@/types/user";
 
 const route = useRoute();
 const authStore = useAuthStore();
