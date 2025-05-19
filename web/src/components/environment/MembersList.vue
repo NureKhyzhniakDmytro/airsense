@@ -38,6 +38,7 @@
           <Column field="role" header="Role">
             <template #body="slotProps">
               <span
+                  v-if="slotProps.data" 
                   class="px-3 py-1 rounded-full text-xs font-medium"
                   :class="getRoleBadge(slotProps.data.role)"
               >
@@ -47,7 +48,7 @@
           </Column>
           <Column>
             <template #body="slotProps">
-              <div class="flex justify-end">
+              <div v-if="slotProps.data" class="flex justify-end">
                 <Button
                     :disabled="!canModify(slotProps.data)"
                     icon="pi pi-ellipsis-v"
@@ -167,8 +168,10 @@ const changePage = async (event: DataViewPageEvent) => {
   isLoading.value = true;
   if (!environment.value) return;
 
+  pagination.value.skip = event.first ?? 0;
   const { members: memberList, pagination: pag } = await getMembers(environment.value.id, pagination.value.skip, pagination.value.count);
-  members.value.push(...memberList);
+  for (let i = 0; i < memberList.length; i++) 
+    members.value[pagination.value.skip + i] = memberList[i]
   pagination.value.total = pag.total;
 
   isLoading.value = false;
