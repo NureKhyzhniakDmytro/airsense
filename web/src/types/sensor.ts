@@ -87,6 +87,11 @@ export interface ChartOptions {
   value: string;
 }
 
+export interface ChartLabel {
+  name: string;
+  serial_number: string;
+}
+
 export const PARAMETER_LABELS: Record<string, string> = {
   temperature: "Temperature",
   humidity: "Humidity",

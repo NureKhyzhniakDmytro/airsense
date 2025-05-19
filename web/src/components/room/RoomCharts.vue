@@ -32,10 +32,13 @@
         :key="sensorId"
         class="bg-white shadow-md rounded-lg p-4"
       >
-        <div class="flex flex-row items-center justify-between mb-2">
-          <h3 class="text-lg font-semibold text-gray-800 mb-4">
-            {{ sensorNames[sensorId] || sensorId }}
+        <div class="flex flex-col mb-2 ml-4">
+          <h3 class="text-lg font-semibold text-gray-800">
+            {{ sensorNames[sensorId]?.name }}
           </h3>
+          <h5 class="text-sm text-gray-500">
+            Serial number: {{ sensorNames[sensorId]?.serial_number }}
+          </h5>
         </div>
         <ChartDisplay
           :series="deviceSeries"
@@ -68,6 +71,7 @@ import {
   type Parameter,
   INTERVAL_OPTIONS,
   PARAMETER_LABELS,
+  ChartLabel,
 } from '@/types/sensor';
 import { useChartConfig } from '@/config/chartConfig';
 
@@ -89,7 +93,7 @@ const parametersOptions = ref<Param[]>([
 
 const { chartOptions } = useChartConfig();
 const series = shallowRef<Record<number, SeriesData[]>>({});
-const sensorNames = shallowRef<Record<number, string>>({});
+const sensorNames = shallowRef<Record<number, ChartLabel>>({});
 const isLoading = ref(false);
 const isChartLoading = ref(false);
 
@@ -107,7 +111,7 @@ async function loadChartData() {
   isChartLoading.value = true;
 
   const newSeries: Record<number, SeriesData[]> = {};
-  const newNames: Record<number, string> = {};
+  const newNames: Record<number, ChartLabel> = {};
 
   try {
     const params: HistoryParams = {
@@ -145,13 +149,21 @@ async function loadChartData() {
             })),
           },
         ];
-
-        const sensor = await sensorStore.fetchSensor(
-          roomId,
-          deviceData.id
-        );
-        newNames[deviceData.id] =
-          sensor?.type_name || String(deviceData.id);
+        if (selectedParam.value.name === 'device_speed') {
+          newNames[deviceData.id] = {
+            name: `Device №${deviceData.id}`,
+            serial_number: deviceData.serial_number,
+          }
+        } else {
+          const sensor = await sensorStore.fetchSensor(
+            roomId,
+            deviceData.id
+          );
+          newNames[deviceData.id] = {
+            name: sensor?.type_name || String(deviceData.id),
+            serial_number: deviceData.serial_number,
+          }
+        }
       })
     );
 
