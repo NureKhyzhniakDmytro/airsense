@@ -18,6 +18,10 @@
     <div v-else>
       <div class="flex justify-between items-center mt-8">
         <h1 v-if="room" class="text-3xl font-bold text-gray-800">{{ room.name }}</h1>
+        <div class="flex items-center gap-2">
+          <Button label="Edit" icon="pi pi-pencil" rounded variant="text" @click="editRoomDialog = true" />
+          <Button label="Delete" icon="pi pi-trash" rounded severity="danger" @click="deleteRoom" variant="text" />
+      </div>
       </div>
 
       <div v-if="isLoading" class="space-y-2">
@@ -41,6 +45,8 @@
         <router-view />
       </div>
     </div>
+
+    <edit-room-dialog v-model="editRoomDialog" :envId="envId" :roomId="roomId" @refresh="refreshRoom" />
   </div>
 </template>
 
@@ -48,12 +54,16 @@
 import { ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useEnvironmentStore } from "@/store/environmentStore";
-import { getRoom } from "@/services/apiService";
+import { getRoom, removeRoom as deleteRoomApi } from "@/services/apiService";
 import type { Environment } from "@/types/environment";
 import type { Room } from "@/types/room";
 import Tabs from 'primevue/tabs';
 import TabList from 'primevue/tablist';
 import Tab from 'primevue/tab';
+import Button from 'primevue/button';
+import EditRoomDialog from "@/components/room/EditRoomDialog.vue";
+import { useConfirm } from "primevue/useconfirm";
+import { useToast } from "primevue/usetoast";
 
 const route = useRoute();
 const router = useRouter();
@@ -63,7 +73,10 @@ const roomId = Number(route.params.roomId);
 const environmentStore = useEnvironmentStore();
 const environment = ref<Environment | null>(null);
 const room = ref<Room | null>(null);
+const editRoomDialog = ref(false);
 const isLoading = ref(true);
+const confirm = useConfirm();
+const toast = useToast();
 
 const activeTab = ref<"parameters" | "sensors" | "devices" | "settings">(
     route.path.includes("sensors")
@@ -81,6 +94,34 @@ const items = ref([
   { route: { name: 'room-devices' }, label: 'Devices', icon: 'pi pi-slack', value: 'devices' },
   { route: { name: 'room-settings' }, label: 'Settings', icon: 'pi pi-cog', value: 'settings' },
 ]);
+
+const refreshRoom = async () => {
+  isLoading.value = true;
+  room.value = await getRoom(envId, roomId);
+  isLoading.value = false;
+}
+
+const deleteRoom = async () => {
+  confirm.require({
+        message: 'Are you sure you want to delete this room?',
+        header: 'Confirmation',
+        icon: 'pi pi-exclamation-triangle',
+        rejectProps: {
+          label: 'Cancel',
+          severity: 'secondary',
+          outlined: true
+        },
+        acceptProps: {
+          label: 'Delete',
+          severity: 'danger'
+        },
+        accept: async () => {
+          await deleteRoomApi(envId, roomId);
+          router.push({ name: 'environment-rooms' });
+          toast.add({ severity: 'success', summary: 'Success', detail: 'Room successfully deleted', life: 3000 });
+        },
+      });
+}
 
 onMounted(async () => {
   if (route.name === "room") {

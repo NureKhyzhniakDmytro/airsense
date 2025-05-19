@@ -1,7 +1,7 @@
 import api from "@/api";
 import type { RegisterPayload, UsersResponse } from '@/types/user';
 import type { Environment, EnvironmentsResponse, CreateEnvironmentPayload, UpdateEnvironmentPayload } from '@/types/environment';
-import type { Room, RoomsResponse } from '@/types/room';
+import type { Room, RoomsResponse, UpdateRoomPayload } from '@/types/room';
 import type { Sensor, Device, HistoryEntry, Parameter, HistoryParams, CurveData } from '@/types/sensor';
 
 export const register = async (payload: RegisterPayload) => {
@@ -59,8 +59,8 @@ export const createRoom = async (envId: number, name: string): Promise<Room> => 
   return response.data;
 };
 
-export const updateRoom = async (envId: number, roomId: number, name: string) => {
-  const response = await api.patch(`/env/${envId}/room/${roomId}`, { name });
+export const updateRoom = async (envId: number, roomId: number, data: UpdateRoomPayload) => {
+  const response = await api.patch(`/env/${envId}/room/${roomId}`, data);
   return response.data;
 };
 
