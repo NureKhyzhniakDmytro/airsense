@@ -13,7 +13,7 @@
           icon="pi pi-plus" 
           :disabled="environment?.role === 'user'"
       />
-      <invite-member-dialog v-model="inviteMemberDialog" :envId="envId" />
+      <invite-member-dialog v-model="inviteMemberDialog" :envId="envId" @refresh="refreshMembers" />
     </div>
 
     <!-- TODO: убрать обводку снизу для пагинации -->
@@ -177,9 +177,13 @@ const changePage = async (event: DataViewPageEvent) => {
   isLoading.value = false;
 };
 
+const refreshMembers = async () => {
+  await changePage({ first: pagination.value.skip } as DataViewPageEvent);
+};
+
 onMounted(async () => {
   environment.value = await environmentStore.fetchEnvironment(envId);
-  await changePage({ page: 0 } as DataViewPageEvent);
+  await changePage({ first: 0 } as DataViewPageEvent);
 
   members.value.push(...Array(pagination.value.total - pagination.value.count).fill(null));
 

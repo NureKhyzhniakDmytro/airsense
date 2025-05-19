@@ -36,7 +36,7 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(['update:modelValue']);
+const emit = defineEmits(['update:modelValue', 'refresh']);
 
 const isOpen = computed({
   get: () => props.modelValue,
@@ -83,6 +83,7 @@ const create = async (values: Record<string, any>): Promise<boolean> => {
     try {
       await addUserToEnvByEmail(props.envId, values.email.trim());
       toast.add({ severity: 'success', summary: 'Success', detail: 'User invited', life: 3000 });
+      emit('refresh');
       return true;
     } catch {
       return false;
