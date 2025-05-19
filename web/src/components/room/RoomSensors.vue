@@ -31,9 +31,20 @@
             @click="goToSensor(sensor.id)"
         >
           <template #title>
-            <div class="flex items-center gap-2">
-              <i class="pi pi-sensor text-purple-600"></i>
-              <span>{{ sensor.type_name }}</span>
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <i class="pi pi-sensor text-purple-600"></i>
+                <span>{{ sensor.type_name }}</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <Button 
+                  icon="pi pi-trash" 
+                  severity="danger" 
+                  variant="text"
+                  rounded
+                  @click="deleteSensor(sensor.id)"
+                />
+              </div>
             </div>
           </template>
           <template #subtitle>
@@ -93,7 +104,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { getRoomSensors } from "@/services/apiService";
+import { getRoomSensors, removeSensor as deleteSensorApi } from "@/services/apiService";
 import type { Sensor } from "@/types/sensor";
 import { PARAMETER_LABELS } from "@/types/sensor";
 import type { PaginationState, PageChangeEvent } from "@/types/pagination";
@@ -101,6 +112,8 @@ import Button from 'primevue/button';
 import Card from 'primevue/card';
 import Paginator from 'primevue/paginator';
 import AddSensorDialog from './AddSensorDialog.vue';
+import { useConfirm } from "primevue/useconfirm";
+import { useToast } from "primevue/usetoast";
 
 const route = useRoute();
 const router = useRouter();
@@ -110,6 +123,8 @@ const sensors = ref<Sensor[]>([]);
 const isLoading = ref(true);
 const addSensorDialog = ref(false);
 const pagination = ref<PaginationState>({ total: 0, skip: 0, count: 6 });
+const confirm = useConfirm();
+const toast = useToast();
 
 const onPageChange = (event: PageChangeEvent) => {
   pagination.value.skip = event.first;
@@ -136,6 +151,28 @@ const loadSensors = async () => {
   } finally {
     isLoading.value = false;
   }
+};
+
+const deleteSensor = async (sensorId: number) => {
+  confirm.require({
+        message: 'Are you sure you want to delete this sensor?',
+        header: 'Confirmation',
+        icon: 'pi pi-exclamation-triangle',
+        rejectProps: {
+          label: 'Cancel',
+          severity: 'secondary',
+          outlined: true
+        },
+        acceptProps: {
+          label: 'Delete',
+          severity: 'danger'
+        },
+        accept: async () => {
+          await deleteSensorApi(roomId, sensorId);
+          await router.push({ name: 'room-sensors' });
+          toast.add({ severity: 'success', summary: 'Success', detail: 'Sensor successfully deleted', life: 3000 });
+        },
+      });
 };
 
 const refresh = async () => {

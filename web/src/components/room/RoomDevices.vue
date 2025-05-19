@@ -31,9 +31,20 @@
             @click="goToDevice(device.id)"
         >
           <template #title>
-            <div class="flex items-center gap-2">
-              <i class="pi pi-fan text-purple-600"></i>
-              <span>Device #{{ device.id }}</span>
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <i class="pi pi-fan text-purple-600"></i>
+                <span>Device №{{ device.id }}</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <Button 
+                  icon="pi pi-trash" 
+                  severity="danger" 
+                  variant="text"
+                  rounded
+                  @click="deleteDevice(device.id)"
+                />
+              </div>
             </div>
           </template>
           <template #subtitle>
@@ -91,13 +102,15 @@
 <script setup lang="ts">
 import { ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { getRoomDevices } from "@/services/apiService";
+import { getRoomDevices, removeDevice as deleteDeviceApi } from "@/services/apiService";
 import type { Device } from "@/types/sensor";
 import type { PaginationState, PageChangeEvent } from "@/types/pagination";
 import Button from 'primevue/button';
 import Card from 'primevue/card';
 import Paginator from 'primevue/paginator';
 import AddDeviceDialog from './AddDeviceDialog.vue';
+import { useConfirm } from "primevue/useconfirm";
+import { useToast } from "primevue/usetoast";
 
 const route = useRoute();
 const router = useRouter();
@@ -107,6 +120,8 @@ const devices = ref<Device[]>([]);
 const loading = ref(true);
 const showAddDialog = ref(false);
 const pagination = ref<PaginationState>({ total: 0, skip: 0, count: 6 });
+const confirm = useConfirm();
+const toast = useToast();
 
 const onPageChange = (event: PageChangeEvent) => {
   pagination.value.skip = event.first;
@@ -129,6 +144,28 @@ const loadDevices = async () => {
   } finally {
     loading.value = false;
   }
+};
+
+const deleteDevice = async (deviceId: number) => {
+  confirm.require({
+        message: 'Are you sure you want to delete this device?',
+        header: 'Confirmation',
+        icon: 'pi pi-exclamation-triangle',
+        rejectProps: {
+          label: 'Cancel',
+          severity: 'secondary',
+          outlined: true
+        },
+        acceptProps: {
+          label: 'Delete',
+          severity: 'danger'
+        },
+        accept: async () => {
+          await deleteDeviceApi(roomId, deviceId);
+          await router.push({ name: 'room-devices' });
+          toast.add({ severity: 'success', summary: 'Success', detail: 'Device successfully deleted', life: 3000 });
+        },
+      });
 };
 
 const refresh = async () => {
