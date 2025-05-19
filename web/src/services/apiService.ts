@@ -1,6 +1,6 @@
 import api from "@/api";
 import type { RegisterPayload, UsersResponse } from '@/types/user';
-import type { Environment, EnvironmentsResponse, CreateEnvironmentPayload } from '@/types/environment';
+import type { Environment, EnvironmentsResponse, CreateEnvironmentPayload, UpdateEnvironmentPayload } from '@/types/environment';
 import type { Room, RoomsResponse } from '@/types/room';
 import type { Sensor, Device, HistoryEntry, Parameter, HistoryParams, CurveData } from '@/types/sensor';
 
@@ -131,6 +131,16 @@ export const getEnvironments = async (skip = 0, count = 5): Promise<Environments
     console.error("Failed to fetch environments:", error);
     return { data: [], pagination: { total: 0, skip, count } };
   }
+};
+
+export const updateEnvironment = async (envId: number, data: UpdateEnvironmentPayload): Promise<Environment> => {
+  const response = await api.patch(`/env/${envId}`, data);
+  return response.data;
+};
+
+export const deleteEnvironment = async (envId: number) => {
+  const response = await api.delete(`/env/${envId}`);
+  return response.data;
 };
 
 export const getEnvironmentDetails = async (envId: number): Promise<Environment> => {

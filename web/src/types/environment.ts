@@ -14,3 +14,7 @@ export interface EnvironmentsResponse {
 export interface CreateEnvironmentPayload {
   name: string;
 } 
+
+export interface UpdateEnvironmentPayload {
+  name: string;
+}

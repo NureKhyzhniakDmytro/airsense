@@ -22,23 +22,27 @@ export const useEnvironmentStore = defineStore("environmentStore", () => {
     pagination: { total: 0, skip: 0, count: 6 },
   });
 
-  const fetchEnvironment = async (envId: number): Promise<Environment> => {
-    if (state.environments.has(envId)) {
+  const fetchEnvironment = async (
+    envId: number,
+    forceRefresh: boolean = false
+  ): Promise<Environment> => {
+    if (!forceRefresh && state.environments.has(envId)) {
       return state.environments.get(envId)!;
     }
-
-    if (state.pendingRequests.has(envId)) {
+  
+    if (!forceRefresh && state.pendingRequests.has(envId)) {
       return state.pendingRequests.get(envId)!;
     }
-
+  
     try {
       state.isLoading.set(envId, true);
+  
       const request = getEnvironmentDetails(envId);
       state.pendingRequests.set(envId, request);
-
+  
       const environment = await request;
       state.environments.set(envId, environment);
-
+  
       return environment;
     } catch (error) {
       console.error(`Ошибка загрузки окружения ${envId}:`, error);
