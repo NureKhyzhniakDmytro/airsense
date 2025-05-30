@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Airsense</string>
+    <string name="sign_in_error">Failed to login: %1$s</string>
 </resources>
