@@ -1,4 +1,4 @@
-package org.yooud.airsense
+package org.yooud.airsense.auth
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.ktx.auth

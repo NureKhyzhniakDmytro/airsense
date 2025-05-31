@@ -1,7 +1,8 @@
-package org.yooud.airsense
+package org.yooud.airsense.network
 
 import okhttp3.Interceptor
 import okhttp3.Response
+import org.yooud.airsense.auth.SessionManager
 
 class AuthInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {

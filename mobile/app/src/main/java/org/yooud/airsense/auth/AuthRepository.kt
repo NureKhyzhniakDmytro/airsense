@@ -1,6 +1,7 @@
-package org.yooud.airsense
+package org.yooud.airsense.auth
 
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.ktx.auth
 import com.google.firebase.ktx.Firebase
@@ -50,6 +51,6 @@ class FirebaseAuthRepository(
 
     override fun signOut() = auth.signOut()
 
-    private fun com.google.firebase.auth.FirebaseUser.toUser() =
+    private fun FirebaseUser.toUser() =
         User(uid, email ?: "")
 }

@@ -1,4 +1,4 @@
-package org.yooud.airsense
+package org.yooud.airsense.auth
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -7,6 +7,8 @@ import com.google.firebase.ktx.Firebase
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.yooud.airsense.network.ApiClient
+import org.yooud.airsense.RegisterRequest
 
 class AuthViewModel(
     private val repo: AuthRepository = FirebaseAuthRepository()
@@ -31,7 +33,7 @@ class AuthViewModel(
     }
 
     val currentUser = repo.currentUser
-        .stateIn(viewModelScope, SharingStarted.Lazily, null)
+        .stateIn(viewModelScope, SharingStarted.Companion.Lazily, null)
 
     fun signIn(email: String, pass: String) = viewModelScope.launch {
         repo.signIn(email, pass)

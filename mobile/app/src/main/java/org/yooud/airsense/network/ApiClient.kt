@@ -1,4 +1,4 @@
-package org.yooud.airsense
+package org.yooud.airsense.network
 
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor

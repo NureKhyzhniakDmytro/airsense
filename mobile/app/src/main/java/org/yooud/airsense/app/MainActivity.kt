@@ -18,7 +18,7 @@ import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.Companion.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
 import kotlinx.coroutines.launch
-import org.yooud.airsense.AuthViewModel
+import org.yooud.airsense.auth.AuthViewModel
 import org.yooud.airsense.R
 import org.yooud.airsense.ui.HomeScreen
 import org.yooud.airsense.ui.LoginScreen
