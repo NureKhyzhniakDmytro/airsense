@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import org.yooud.airsense.network.ApiClient
-import org.yooud.airsense.RegisterRequest
+import org.yooud.airsense.models.RegisterRequest
 
 class AuthViewModel(
     private val repo: AuthRepository = FirebaseAuthRepository()

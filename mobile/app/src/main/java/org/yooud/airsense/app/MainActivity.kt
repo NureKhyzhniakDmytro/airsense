@@ -1,5 +1,6 @@
 package org.yooud.airsense.app
 
+import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.view.View
@@ -20,7 +21,6 @@ import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.Co
 import kotlinx.coroutines.launch
 import org.yooud.airsense.auth.AuthViewModel
 import org.yooud.airsense.R
-import org.yooud.airsense.ui.HomeScreen
 import org.yooud.airsense.ui.LoginScreen
 import org.yooud.airsense.ui.RegistrationScreen
 
@@ -37,7 +37,8 @@ class MainActivity : ComponentActivity() {
             val user by authVm.currentUser.collectAsState(initial = null)
 
             if (user != null) {
-                HomeScreen(user!!)
+                val intent = Intent(this, EnvironmentActivity::class.java)
+                startActivity(intent)
             } else if (showRegister) {
                 RegistrationScreen(
                     onRegister = { email, pass ->

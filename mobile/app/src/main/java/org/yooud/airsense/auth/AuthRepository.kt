@@ -49,7 +49,10 @@ class FirebaseAuthRepository(
         Result.failure(e)
     }
 
-    override fun signOut() = auth.signOut()
+    override fun signOut() {
+        auth.signOut()
+        SessionManager.token = null
+    }
 
     private fun FirebaseUser.toUser() =
         User(uid, email ?: "")
