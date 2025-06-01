@@ -37,7 +37,7 @@ class EnvironmentViewModel(
                 val response = service.getEnvironments(skip = 0, count = pageSize)
                 _environments.value = response.body()!!.data
             } catch (e: Exception) {
-                Log.e("EnvironmentViewModel", e.localizedMessage)
+                Log.e("EnvironmentViewModel", e.localizedMessage, e)
             } finally {
                 _isRefreshing.value = false
             }
