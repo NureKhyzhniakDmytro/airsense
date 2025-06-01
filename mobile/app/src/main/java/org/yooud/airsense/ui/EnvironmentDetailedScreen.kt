@@ -37,13 +37,14 @@ fun EnvironmentDetailScreen(
     val rooms by viewModel.rooms.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
+    val hasMoreData by viewModel.hasMoreData.collectAsState()
 
     val listState = rememberLazyListState()
 
-    LaunchedEffect(listState) {
+    LaunchedEffect(listState, hasMoreData) {
         snapshotFlow { listState.firstVisibleItemIndex to listState.layoutInfo.totalItemsCount }
             .collectLatest { (firstIndex, totalCount) ->
-                if (totalCount > 0 && firstIndex + 1 >= totalCount - 1) {
+                if (hasMoreData && totalCount > 0 && firstIndex + 1 >= totalCount - 1) {
                     viewModel.loadMoreRooms()
                 }
             }
@@ -168,7 +169,6 @@ private fun RoomCard(
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                // Handle null device_speed
                 Text(
                     text = "Speed: ${room.device_speed ?: "N/A"}",
                     style = MaterialTheme.typography.bodyMedium,

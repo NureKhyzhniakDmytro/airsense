@@ -3,9 +3,11 @@
 package org.yooud.airsense.ui
 
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -17,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.outlined.AccountCircle
@@ -26,6 +29,8 @@ import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material.icons.outlined.NewReleases
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.QuestionAnswer
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,6 +46,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -108,21 +114,21 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                CategoryCard(
+                CategoryRow(
                     title = "Account",
                     icon = Icons.Outlined.AccountCircle,
                     onClick = { /* Navigate to Account settings */ }
                 )
             }
             item {
-                CategoryCard(
+                CategoryRow(
                     title = "Privacy",
                     icon = Icons.Outlined.Lock,
                     onClick = { /* Navigate to Privacy */ }
                 )
             }
             item {
-                CategoryCard(
+                CategoryRow(
                     title = "Notifications",
                     icon = Icons.Outlined.Notifications,
                     onClick = { /* Navigate to Notifications */ }
@@ -132,21 +138,21 @@ fun SettingsScreen(
                 Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
             }
             item {
-                CategoryCard(
+                CategoryRow(
                     title = "FAQ",
                     icon = Icons.Outlined.QuestionAnswer,
                     onClick = { /* Navigate to FAQ */ }
                 )
             }
             item {
-                CategoryCard(
+                CategoryRow(
                     title = "Send Feedback",
                     icon = Icons.Outlined.Email,
                     onClick = { /* Open feedback dialog */ }
                 )
             }
             item {
-                CategoryCard(
+                CategoryRow(
                     title = "What’s New",
                     icon = Icons.Outlined.NewReleases,
                     onClick = { /* Show release notes */ }
@@ -156,7 +162,7 @@ fun SettingsScreen(
                 Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
             }
             item {
-                CategoryCard(
+                CategoryRow(
                     title = "Logout",
                     icon = Icons.Outlined.Logout,
                     onClick = onLogout,
@@ -167,9 +173,9 @@ fun SettingsScreen(
                 Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
             }
             item {
-                AppVersion(
-                    versionText = "Version 1.0.0",
-                    copyrights = "© 2025 Airsense",
+                VersionCard(
+                    versionText = "Version 1.2.3",
+                    copyrights = "© 2023, All Rights Reserved",
                     onClick = { /* Easter egg if clicked 8 times */ }
                 )
             }
@@ -178,7 +184,7 @@ fun SettingsScreen(
 }
 
 @Composable
-fun CategoryCard(
+fun CategoryRow(
     title: String,
     icon: ImageVector,
     onClick: () -> Unit,
@@ -190,14 +196,22 @@ fun CategoryCard(
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(24.dp)
+        horizontalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(28.dp),
-            tint = tint
-        )
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = tint
+            )
+        }
         Text(
             text = title,
             style = MaterialTheme.typography.bodyLarge,
@@ -207,28 +221,40 @@ fun CategoryCard(
 }
 
 @Composable
-fun AppVersion(
+fun VersionCard(
     versionText: String,
     copyrights: String,
     onClick: () -> Unit
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
+    Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.Center
+            .height(200.dp)
+            .padding(horizontal = 16.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                text = versionText,
-                style = MaterialTheme.typography.bodySmall
+        Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(color = Color.Black.copy(alpha = 0.25f))
             )
-            Text(
-                text = copyrights,
-                style = MaterialTheme.typography.bodySmall
-            )
+
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = versionText,
+                    style = MaterialTheme.typography.headlineSmall.copy(color = Color.White)
+                )
+                Text(
+                    text = copyrights,
+                    style = MaterialTheme.typography.bodySmall.copy(color = Color.White.copy(alpha = 0.8f))
+                )
+            }
         }
     }
 }

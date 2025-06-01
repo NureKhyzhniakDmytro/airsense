@@ -1,19 +1,37 @@
-
 @file:OptIn(ExperimentalMaterial3Api::class)
 
 package org.yooud.airsense.ui
 
 import androidx.compose.foundation.background
-import android.util.Log
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.*
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.pullToRefresh
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -72,14 +90,14 @@ fun EnvironmentScreen(
     val environments by viewModel.environments.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
+    val hasMoreData by viewModel.hasMoreData.collectAsState()
 
     val listState = rememberLazyListState()
 
-    
-    LaunchedEffect(listState) {
+    LaunchedEffect(listState, hasMoreData) {
         snapshotFlow { listState.firstVisibleItemIndex to listState.layoutInfo.totalItemsCount }
             .collectLatest { (firstIndex, totalCount) ->
-                if (totalCount > 0 && firstIndex + 1 >= totalCount - 1) {
+                if (hasMoreData && totalCount > 0 && firstIndex + 1 >= totalCount - 1) {
                     viewModel.loadMoreEnvironments()
                 }
             }
@@ -198,7 +216,6 @@ private fun EnvironmentListCard(
     env: Environment,
     onClick: () -> Unit
 ) {
-    
     val roleBackground: Color = when (env.role.lowercase()) {
         "owner" -> MaterialTheme.colorScheme.errorContainer
         "user" -> MaterialTheme.colorScheme.primaryContainer
@@ -228,10 +245,9 @@ private fun EnvironmentListCard(
                 .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            
             Text(
                 text = env.name,
-                style = MaterialTheme.typography.titleLarge,    
+                style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f)
             )
@@ -239,11 +255,11 @@ private fun EnvironmentListCard(
             Box(
                 modifier = Modifier
                     .background(color = roleBackground, shape = MaterialTheme.shapes.small)
-                    .padding(horizontal = 12.dp, vertical = 6.dp) 
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
             ) {
                 Text(
                     text = env.role.replaceFirstChar { it.uppercaseChar() },
-                    style = MaterialTheme.typography.labelLarge,  
+                    style = MaterialTheme.typography.labelLarge,
                     color = roleTextColor
                 )
             }
@@ -252,7 +268,7 @@ private fun EnvironmentListCard(
                 imageVector = Icons.Default.ChevronRight,
                 contentDescription = "Go to details",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(32.dp) 
+                modifier = Modifier.size(32.dp)
             )
         }
     }
