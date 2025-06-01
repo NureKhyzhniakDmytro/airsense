@@ -1,4 +1,3 @@
-// EnvironmentDetailScreen.kt
 @file:OptIn(ExperimentalMaterial3Api::class)
 
 package org.yooud.airsense.ui
@@ -69,11 +68,6 @@ fun EnvironmentDetailScreen(
                         )
                     }
                 },
-//                colors = TopAppBarDefaults.smallTopAppBarColors(
-//                    containerColor = MaterialTheme.colorScheme.background,
-//                    titleContentColor = MaterialTheme.colorScheme.primary,
-//                    navigationIconContentColor = MaterialTheme.colorScheme.primary
-//                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(64.dp)
@@ -174,8 +168,9 @@ private fun RoomCard(
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
+                // Handle null device_speed
                 Text(
-                    text = "Speed: ${room.device_speed}",
+                    text = "Speed: ${room.device_speed ?: "N/A"}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -183,9 +178,19 @@ private fun RoomCard(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            room.parameters?.forEach { param ->
-                ParameterRow(parameter = param)
-                Spacer(modifier = Modifier.height(8.dp))
+            if (room.parameters.isNullOrEmpty()) {
+                Text(
+                    text = "No parameters available",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+                Log.d("RoomCard", "Parameters are null or empty for room: ${room.name}")
+            } else {
+                room.parameters.forEach { param ->
+                    ParameterRow(parameter = param)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
             }
         }
     }
