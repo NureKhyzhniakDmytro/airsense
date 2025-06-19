@@ -57,14 +57,17 @@ const isOpen = computed({
   set: (val) => emit('update:modelValue', val)
 });
 
-const resolver = (options: FormResolverOptions) => {
+const resolver = ({ values }: FormResolverOptions) => {
   const errors: Record<string, Array<{ message: string }>> = {};
 
-  if (!options.values.serialNumber) {
+  if (!values.serialNumber) {
     errors.serialNumber = [{ message: "Serial number is required" }];
   }
 
-  return errors;
+  return {
+    values,
+    errors
+  };
 };
 
 const onFormSubmit = ({ valid, values }: FormSubmitEvent) => {
@@ -83,13 +86,9 @@ const onFormSubmit = ({ valid, values }: FormSubmitEvent) => {
 const create = async (values: FormValues): Promise<boolean> => {
   try {
     isLoading.value = true;
-    try {
-      await addSensor(props.roomId, values.serialNumber.trim());
-      toast.add({ severity: 'success', summary: 'Success', detail: 'Sensor added', life: 3000 });
-      return true;
-    } catch {
-      return false;
-    }
+    await addSensor(props.roomId, values.serialNumber.trim());
+    toast.add({ severity: 'success', summary: 'Success', detail: 'Sensor added', life: 3000 });
+    return true;
   } catch (error) {
     isError.value = true;
     setTimeout(() => {
