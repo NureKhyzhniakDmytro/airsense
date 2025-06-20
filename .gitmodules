@@ -1,0 +1,15 @@
+[submodule "api"]
+	path = api
+	url = https://github.com/yooud/airsense-api/
+
+[submodule "web"]
+	path = web
+	url = https://github.com/yooud/airsense-web/
+
+[submodule "mobile"]
+	path = mobile
+	url = https://github.com/yooud/airsense-mobile/
+
+[submodule "iot"]
+	path = iot
+	url = https://github.com/NureKhyzhniakDmytro/airsense-iot/
