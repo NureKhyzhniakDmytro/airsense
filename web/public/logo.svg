@@ -1,0 +1,34 @@
+<svg width="150" height="150" viewBox="0 0 150 150" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+        <!-- Градиент для лопастей -->
+        <linearGradient id="bladeGradient" x1="0%" y1="50%" x2="100%" y2="50%">
+            <stop offset="0%" stop-color="#4A90E2"/>
+            <stop offset="100%" stop-color="#005BBB"/>
+        </linearGradient>
+        <!-- Градиент для потока -->
+        <linearGradient id="flowGradient" x1="0%" y1="50%" x2="100%" y2="50%">
+            <stop offset="0%" stop-color="#6DAFFF" stop-opacity="0.8"/>
+            <stop offset="100%" stop-color="#005BBB" stop-opacity="0.3"/>
+        </linearGradient>
+    </defs>
+
+    <!-- Внешний круг вентилятора -->
+<!--    <circle cx="75" cy="75" r="70" fill="#B0B0B0" stroke="#222" stroke-width="4"/>-->
+
+    <!-- Современные плавные лопасти (масштабируем, чтобы занять максимум) -->
+    <g transform="translate(75,75) scale(1.1667)">
+        <g fill="url(#bladeGradient)" stroke="none">
+            <path d="M0,-50 C18,-48 30,-35 28,-20 C25,-5 5,-5 0,-30 Z" transform="rotate(0)"/>
+            <path d="M0,-50 C18,-48 30,-35 28,-20 C25,-5 5,-5 0,-30 Z" transform="rotate(45)"/>
+            <path d="M0,-50 C18,-48 30,-35 28,-20 C25,-5 5,-5 0,-30 Z" transform="rotate(90)"/>
+            <path d="M0,-50 C18,-48 30,-35 28,-20 C25,-5 5,-5 0,-30 Z" transform="rotate(135)"/>
+            <path d="M0,-50 C18,-48 30,-35 28,-20 C25,-5 5,-5 0,-30 Z" transform="rotate(180)"/>
+            <path d="M0,-50 C18,-48 30,-35 28,-20 C25,-5 5,-5 0,-30 Z" transform="rotate(225)"/>
+            <path d="M0,-50 C18,-48 30,-35 28,-20 C25,-5 5,-5 0,-30 Z" transform="rotate(270)"/>
+            <path d="M0,-50 C18,-48 30,-35 28,-20 C25,-5 5,-5 0,-30 Z" transform="rotate(315)"/>
+        </g>
+    </g>
+
+    <!-- Центральная ось вентилятора -->
+    <circle cx="75" cy="75" r="14" fill="#222"/>
+</svg>

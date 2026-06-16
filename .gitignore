@@ -1,0 +1,39 @@
+# Local environment
+.env
+.env.*
+!.env.example
+*.local
+
+# IDE/editor
+.idea/
+.vscode/
+*.user
+*.suo
+
+# .NET
+**/bin/
+**/obj/
+TestResults/
+
+# Node/Web
+**/node_modules/
+**/dist/
+**/build/
+**/.next/
+**/.nuxt/
+**/.vite/
+
+# Android/Mobile
+**/.gradle/
+**/local.properties
+**/captures/
+*.apk
+*.aab
+
+# OS/logs
+.DS_Store
+Thumbs.db
+*.log
+
+# Kubernetes/local generated artifacts
+*.kubeconfig

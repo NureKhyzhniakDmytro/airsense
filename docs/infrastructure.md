@@ -1,0 +1,89 @@
+# AirSense Infrastructure Notes
+
+## Monorepo Layout
+
+The project was converted from a repository that referenced separate Git submodules into a single monorepo. The backend, web client, and mobile client are now stored as normal directories under the root repository:
+
+- `api/`
+- `web/`
+- `mobile/`
+
+The `iot/` submodule was removed from the monorepo. Device firmware is outside the current repository boundary and is represented in the platform through MQTT topics and EMQX broker integration.
+
+## Backend Service Roles
+
+The backend image is shared by several runtime roles. The active role is selected through the `Airsense__ServiceRole` configuration value.
+
+- `api` exposes REST controllers and EMQX HTTP authentication/ACL callbacks.
+- `telemetry-ingestion` subscribes to sensor telemetry topics, validates data, persists telemetry, and publishes an internal telemetry event.
+- `automation` consumes internal telemetry events, evaluates room/device automation, and publishes commands or notification events.
+- `notification` consumes notification events and delegates delivery to Firebase Cloud Messaging when configured.
+
+This keeps the deployment model service-oriented while avoiding separate build artifacts for each backend role.
+
+## Messaging and Storage
+
+- EMQX is the MQTT broker for device messages and internal service events.
+- PostgreSQL stores domain data, users, rooms, sensors, devices, settings, and telemetry history.
+- Redis is deployed as prepared infrastructure for caching/latest telemetry or queue-related use cases.
+- Firebase Cloud Messaging remains optional in local Kubernetes. When Firebase credentials are not mounted, no-op auth/notification services allow the local stack to start.
+
+## Kubernetes Deployment
+
+The local Kubernetes deployment lives in `k8s/base` and includes:
+
+- Namespace `airsense`.
+- Deployments for API, telemetry ingestion, automation, notification, EMQX, and Redis.
+- StatefulSet for PostgreSQL.
+- ClusterIP services for API, EMQX, PostgreSQL, and Redis.
+- ConfigMaps for EMQX configuration and PostgreSQL initialization scripts.
+- A demonstration Secret for local development values.
+
+The deployment script is `scripts/deploy-minikube.sh`. It performs these steps:
+
+1. Ensures Minikube profile `airsense` is running.
+2. Builds `airsense-api:local` inside the Minikube Docker daemon.
+3. Applies `k8s/base`.
+4. Restarts backend-role deployments so the local image is refreshed.
+5. Waits for CoreDNS, kube-proxy, infrastructure, and backend role rollouts.
+6. Runs smoke tests for DNS, TCP connectivity, and `/healthz`.
+
+## MQTT Resilience
+
+`MqttServiceBase` now keeps background services alive when EMQX or Kubernetes DNS is not immediately available. It uses a reconnect loop with exponential backoff and logs connection failures instead of allowing `BackgroundService` exceptions to stop the ASP.NET host. This avoids CrashLoopBackOff during normal Kubernetes startup ordering.
+
+The reconnect behavior was verified by scaling the EMQX deployment to zero. API and worker pods remained `Running`, logged retry attempts, and reconnected after EMQX was restored.
+
+## Local Incus/Minikube Requirements
+
+The verified remote development environment runs Minikube inside an Incus/LXC container. Kubernetes CNI and kube-proxy require netfilter modules to be available to the container. Missing modules caused pods to remain in `ContainerCreating`, CoreDNS readiness failures, and kube-proxy `iptables-restore` errors.
+
+The working Incus configuration included these kernel modules:
+
+```text
+overlay, br_netfilter, ip_tables, iptable_nat, iptable_filter, iptable_mangle,
+nf_tables, nft_compat, xt_comment, xt_mark, xt_conntrack, xt_tcpudp,
+xt_addrtype, xt_nat, xt_set, xt_MASQUERADE, ipt_REJECT, nf_reject_ipv4,
+ip6_tables, ip6table_filter, ip6table_mangle, ip6table_nat, ip6t_REJECT,
+nf_reject_ipv6, xt_nfacct
+```
+
+Useful checks after starting Minikube:
+
+```bash
+kubectl --context airsense -n kube-system get pods
+kubectl --context airsense -n kube-system logs -l k8s-app=kube-proxy --tail=80
+kubectl --context airsense -n airsense get pods,svc,endpoints
+```
+
+Expected result after deployment:
+
+```text
+airsense-api          1/1 Running
+telemetry-ingestion   1/1 Running
+automation            1/1 Running
+notification          1/1 Running
+emqx                  1/1 Running
+postgres              1/1 Running
+redis                 1/1 Running
+```

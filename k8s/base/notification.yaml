@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notification
+  template:
+    metadata:
+      labels:
+        app: notification
+    spec:
+      containers:
+        - name: notification
+          image: airsense-api:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ASPNETCORE_URLS
+              value: http://+:8080
+            - name: ConnectionStrings__DefaultConnection
+              valueFrom:
+                secretKeyRef:
+                  name: airsense-secret
+                  key: postgres-connection-string
+            - name: Mqtt__ConnectionUri
+              value: mqtt://emqx:1883
+            - name: Mqtt__ApiPassword
+              valueFrom:
+                secretKeyRef:
+                  name: airsense-secret
+                  key: mqtt-api-password
+            - name: Firebase__ProjectName
+              valueFrom:
+                secretKeyRef:
+                  name: airsense-secret
+                  key: firebase-project-name
+            - name: Firebase__CredentialsFileLocation
+              valueFrom:
+                secretKeyRef:
+                  name: airsense-secret
+                  key: firebase-credentials-file-location
+            - name: Airsense__ServiceRole
+              value: notification
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 20
