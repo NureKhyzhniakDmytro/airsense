@@ -1,10 +1,13 @@
 <template>
-  <div class="items-center flex-grow" :class="{ 'place-content-center': !sensor }">
-    <div v-if="!sensor" class="flex flex-col items-center justify-center">
-      <i class="pi pi-exclamation-circle text-6xl text-gray-400 mb-4"></i>
-      <h2 class="text-2xl font-semibold text-gray-700 mb-2">Sensor Not Found</h2>
-      <p class="text-gray-500">The requested sensor does not exist or has been removed</p>
-    </div>
+  <div class="detail-page">
+    <Skeleton v-if="isLoading" height="18rem" />
+
+    <EmptyState
+      v-else-if="!sensor"
+      title="Sensor not found"
+      description="The requested sensor does not exist or has been removed."
+      icon="pi pi-exclamation-circle"
+    />
 
     <div v-else>
       <SensorHeader 
@@ -12,8 +15,14 @@
         :parameters="sensor.parameters" 
       />
 
-      <div class="bg-white shadow-md rounded-lg p-4 mt-8">
-        <div class="flex flex-row items-center justify-between mb-2">
+      <section class="detail-panel">
+        <header class="detail-panel__header">
+          <div>
+            <span>History</span>
+            <h2>Parameter timeline</h2>
+          </div>
+        </header>
+        <div class="detail-toolbar">
           <ParameterSelector
             :types="sensor.types"
             :selected-param="selectedParam"
@@ -26,12 +35,15 @@
             :interval-options="INTERVAL_OPTIONS"
           />
         </div>
-        <ChartDisplay
-          :series="series"
-          :chart-options="chartOptions"
-          :is-loading="isChartLoading"
-        />
-      </div>
+        <div class="detail-chart">
+          <ChartDisplay
+            :series="series"
+            :chart-options="chartOptions"
+            :is-loading="isChartLoading"
+            height="100%"
+          />
+        </div>
+      </section>
     </div>  
   </div>
 </template>
@@ -51,6 +63,8 @@ import SensorHeader from "@/components/sensor/SensorHeader.vue";
 import ParameterSelector from "@/components/common/ParameterSelector.vue";
 import DateRangeSelector from "@/components/common/DateRangeSelector.vue";
 import ChartDisplay from "@/components/common/ChartDisplay.vue";
+import EmptyState from "@/components/common/EmptyState.vue";
+import Skeleton from 'primevue/skeleton';
 
 const route = useRoute();
 const sensorStore = useSensorStore();
@@ -153,3 +167,69 @@ watch(
   loadChartData
 );
 </script>
+
+<style scoped>
+.detail-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+}
+
+.detail-page > div {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+
+.detail-panel {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.detail-panel__header {
+  background: var(--app-surface-soft);
+  border-bottom: 1px solid var(--app-border);
+  padding: 10px 12px;
+}
+
+.detail-panel__header span {
+  color: var(--app-muted);
+  font-family: var(--app-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.detail-panel__header h2 {
+  color: var(--app-text-strong);
+  font-size: 0.95rem;
+  font-weight: 760;
+  line-height: 1.3rem;
+  margin: 2px 0 0;
+}
+
+.detail-toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 12px;
+}
+
+.detail-chart {
+  display: flex;
+  flex: 1;
+  min-height: 24rem;
+  padding: 0 12px 10px;
+}
+</style>

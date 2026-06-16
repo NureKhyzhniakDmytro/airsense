@@ -1,49 +1,44 @@
 <template>
-  <div class="flex flex-col flex-grow"
+  <div class="flex min-w-0 w-full flex-col flex-grow"
     :class="{ 'place-content-center': environment?.role === 'user' }"
   >
     <div
       v-if="environment?.role === 'user'"
       class="flex flex-col flex-grow justify-center items-center max-w-lg self-center"
     >
-      <i class="pi pi-lock text-6xl text-gray-300 mb-4"></i>
-      <h1 class="text-2xl font-semibold text-gray-800 mb-2 text-center">
-        You are not allowed to access this room
-      </h1>
-      <p class="text-gray-600 text-center">
-        Please contact your administrator if you believe this is an error.
-      </p>
+      <EmptyState
+        title="Room access is restricted"
+        description="Please contact your administrator if you believe this is an error."
+        icon="pi pi-lock"
+      />
     </div>
 
-    <div v-else>
-      <div class="flex justify-between items-center mt-8">
-        <h1 v-if="room" class="text-3xl font-bold text-gray-800">{{ room.name }}</h1>
-        <div class="flex items-center gap-2">
-          <Button label="Edit" icon="pi pi-pencil" rounded variant="text" @click="editRoomDialog = true" />
-          <Button label="Delete" icon="pi pi-trash" rounded severity="danger" @click="deleteRoom" variant="text" />
-      </div>
-      </div>
+    <div v-else class="room-page">
+      <section class="room-panel">
+        <header class="room-panel__header">
+          <div class="room-panel__title">
+            <span class="room-panel__icon" aria-hidden="true">
+              <i class="pi pi-building" />
+            </span>
+            <div class="room-panel__copy">
+              <span class="room-panel__eyebrow">Room</span>
+              <h1>{{ room?.name || 'Room' }}</h1>
+            </div>
+          </div>
 
-      <div v-if="isLoading" class="space-y-2">
-        <div class="h-10 bg-gray-300 animate-pulse rounded"></div>
-      </div>
+          <div class="room-panel__actions">
+            <Skeleton v-if="isLoading" width="8rem" height="2rem" />
+            <template v-else>
+              <Button label="Edit" icon="pi pi-pencil" severity="secondary" variant="text" @click="editRoomDialog = true" />
+              <Button label="Delete" icon="pi pi-trash" severity="danger" variant="text" @click="deleteRoom" />
+            </template>
+          </div>
+        </header>
 
-      <Tabs :value="activeTab" class="mt-8">
-        <TabList qwety="qwety" :pt="{ tabList: 'bg-inherit'}">
-          <Tab v-for="tab in items" :key="tab.label" :value="tab.value">
-            <router-link v-if="tab.route" v-slot="{ href, navigate }" :to="tab.route" custom>
-              <a :href="href" @click="navigate" class="flex items-center gap-2 text-inherit">
-                <i :class="tab.icon" />
-                <span>{{ tab.label }}</span>
-              </a>
-            </router-link>
-          </Tab>
-        </TabList>
-      </Tabs>
-
-      <div class="my-6 flex flex-grow">
-        <NuxtPage />
-      </div>
+        <div class="room-panel__content">
+          <NuxtPage />
+        </div>
+      </section>
     </div>
 
     <edit-room-dialog v-model="editRoomDialog" :envId="envId" :roomId="roomId" @refresh="refreshRoom" />
@@ -53,15 +48,14 @@
 <script setup lang="ts">
 definePageMeta({ name: 'room', layout: 'dashboard', requiresAuth: true })
 
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useEnvironmentStore } from "@/store/environmentStore";
 import { getRoom, removeRoom as deleteRoomApi } from "@/services/apiService";
-import Tabs from 'primevue/tabs';
-import TabList from 'primevue/tablist';
-import Tab from 'primevue/tab';
 import Button from 'primevue/button';
+import Skeleton from 'primevue/skeleton';
 import EditRoomDialog from "@/components/room/EditRoomDialog.vue";
+import EmptyState from "@/components/common/EmptyState.vue";
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
 
@@ -76,26 +70,8 @@ const isRefreshing = ref(false);
 const confirm = useConfirm();
 const toast = useToast();
 
-const activeTab = ref<"parameters" | "sensors" | "devices" | "settings">(
-    route.path.includes("sensors")
-        ? "sensors"
-        : route.path.includes("devices")
-            ? "devices"
-            : route.path.includes("settings")
-                ? "settings"
-                : "parameters"
-);
-
-const items = ref([
-  { route: { name: 'room-parameters', params: { envId, roomId } }, label: 'Parameters', icon: 'pi pi-chart-line', value: 'parameters' },
-  { route: { name: 'room-sensors', params: { envId, roomId } }, label: 'Sensors', icon: 'pi pi-bullseye', value: 'sensors' },
-  { route: { name: 'room-devices', params: { envId, roomId } }, label: 'Devices', icon: 'pi pi-slack', value: 'devices' },
-  { route: { name: 'room-settings', params: { envId, roomId } }, label: 'Settings', icon: 'pi pi-cog', value: 'settings' },
-]);
-
 if (route.name === "room") {
   await navigateTo({ name: "room-parameters", params: { envId, roomId } }, { replace: true });
-  activeTab.value = "parameters";
 }
 
 const { data: environmentData, pending: environmentPending } = await useAsyncData(
@@ -123,6 +99,14 @@ const refreshRoom = async () => {
   isRefreshing.value = false;
 }
 
+onMounted(async () => {
+  if (!environmentData.value) {
+    environmentData.value = await environmentStore.fetchEnvironment(envId, true);
+  }
+
+  await refreshRoom();
+});
+
 const deleteRoom = async () => {
   confirm.require({
         message: 'Are you sure you want to delete this room?',
@@ -145,3 +129,121 @@ const deleteRoom = async () => {
       });
 }
 </script>
+
+<style scoped>
+.room-page {
+  display: flex;
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.room-panel {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  width: 100%;
+}
+
+.room-panel__header {
+  align-items: center;
+  background: var(--app-surface);
+  border-bottom: 1px solid var(--app-border);
+  display: flex;
+  flex: 0 0 auto;
+  gap: 12px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 10px var(--app-panel-padding);
+}
+
+.room-panel__title {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+}
+
+.room-panel__icon {
+  align-items: center;
+  background: var(--app-surface-soft);
+  border: 1px solid var(--app-border);
+  border-radius: 5px;
+  color: var(--app-primary-strong);
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 36px;
+  justify-content: center;
+  width: 36px;
+}
+
+.room-panel__copy {
+  min-width: 0;
+}
+
+.room-panel__eyebrow {
+  color: var(--app-muted);
+  display: block;
+  font-family: var(--app-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1rem;
+  text-transform: uppercase;
+}
+
+.room-panel h1 {
+  color: var(--app-text-strong);
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.35rem;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-panel__actions {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.room-panel__content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  padding: 10px;
+  scrollbar-gutter: stable;
+}
+
+@media (max-width: 520px) {
+  .room-panel__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .room-panel__actions {
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+
+  .room-panel__actions :deep(.p-button) {
+    flex: 1 1 0;
+  }
+
+  .room-panel__content {
+    padding: 10px;
+  }
+}
+</style>

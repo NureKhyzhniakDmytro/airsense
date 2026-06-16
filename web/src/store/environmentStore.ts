@@ -19,7 +19,7 @@ export const useEnvironmentStore = defineStore("environmentStore", () => {
     isLoadingList: false,
     pendingRequests: new Map(),
     pendingListRequest: new Map(),
-    pagination: { total: 0, skip: 0, count: 6 },
+    pagination: { total: 0, skip: 0, count: 10 },
   });
 
   const fetchEnvironment = async (
@@ -53,12 +53,12 @@ export const useEnvironmentStore = defineStore("environmentStore", () => {
     }
   };
 
-  const fetchEnvironments = async (pageNumber = 0): Promise<Environment[]> => {
-    if (state.pages.has(pageNumber)) {
+  const fetchEnvironments = async (pageNumber = 0, forceRefresh = false): Promise<Environment[]> => {
+    if (!forceRefresh && state.pages.has(pageNumber)) {
       return state.pages.get(pageNumber)!;
     }
 
-    if (state.pendingListRequest.has(pageNumber)) {
+    if (!forceRefresh && state.pendingListRequest.has(pageNumber)) {
       return state.pendingListRequest.get(pageNumber)!;
     }
 

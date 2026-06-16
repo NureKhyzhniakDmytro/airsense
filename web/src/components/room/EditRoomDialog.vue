@@ -1,14 +1,15 @@
 <template>
-    <Dialog v-model:visible="isOpen" modal header="Edit Room" :draggable="false" :style="{ width: '25rem' }">
-      <Form v-slot="$form" :resolver @submit="onFormSubmit" class="flex flex-col gap-4 w-full">
-        <div class="flex flex-col gap-1">
-          <InputText name="name" type="text" placeholder="Name" fluid :default-value="room?.name" />
+    <Dialog v-model:visible="isOpen" modal header="Edit room" :draggable="false" :style="{ width: 'min(26rem, calc(100vw - 2rem))' }">
+      <Form v-slot="$form" :resolver @submit="onFormSubmit" class="entity-dialog-form">
+        <div class="entity-dialog-field">
+          <label class="entity-dialog-label" for="edit-room-name">Room name</label>
+          <InputText id="edit-room-name" name="name" type="text" placeholder="Name" fluid :default-value="room?.name" />
           <Message v-if="$form.name?.invalid" severity="error" size="small" variant="simple">{{ $form.name.error?.message }}</Message>
         </div>
         <Message v-if="isError" severity="error" :life="3000">An error occurred while updating the room</Message>
-        <div class="flex justify-end gap-2">
+        <div class="entity-dialog-actions">
           <Button type="button" label="Cancel" severity="secondary" @click="isOpen = false" />
-          <Button type="submit" label="Submit" severity="primary" :loading="isLoading" />
+          <Button type="submit" label="Save" severity="primary" :loading="isLoading" />
         </div>
       </Form>
     </Dialog>
@@ -21,7 +22,7 @@
   import Message from 'primevue/message';
   import { Form } from '@primevue/forms';
   import { computed, onMounted, ref } from "vue";
-  import { getRoom, updateEnvironment, updateRoom} from "@/services/apiService";
+  import { getRoom, updateRoom} from "@/services/apiService";
   import type { FormResolverOptions, FormSubmitEvent } from "@primevue/forms/form";
   import type { Room } from "@/types/room";
   

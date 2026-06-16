@@ -1,72 +1,69 @@
 <template>
-  <div class="items-center flex-grow">
-    <div v-if="sensors.length !== 0">
-      <div class="flex flex-row gap-4 items-center justify-between mb-4">
-        <h2 class="text-lg font-semibold text-gray-800">Sensors List</h2>
-
-        <Button 
-          icon="pi pi-plus" 
-          label="Add Sensor" 
+  <div class="section-page">
+    <AppSectionHeader
+      title="Sensors"
+      description="Connected sensor modules and latest parameter values."
+    >
+      <template v-if="hasSensors" #actions>
+        <Button
+          icon="pi pi-plus"
+          label="Add Sensor"
           @click="addSensorDialog = true"
           severity="primary"
         />
-      </div>
+      </template>
+    </AppSectionHeader>
 
-      <div v-if="isLoading" class="space-y-2">
-        <div
-            v-for="i in pagination.count"
-            :key="i"
-            class="h-16 bg-gray-200 animate-pulse rounded-lg"
-        ></div>
+    <div v-if="isLoading || hasSensors" class="asset-frame">
+      <div v-if="isLoading" class="asset-list asset-list--loading">
+        <Skeleton v-for="i in pagination.count" :key="i" height="3.75rem" />
       </div>
 
       <div
           v-else
-          class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
+          class="asset-list"
       >
-        <Card
+        <div
             v-for="sensor in sensors"
             :key="sensor.id"
-            class="cursor-pointer hover:shadow-lg transition-shadow"
+            class="asset-row app-clickable"
+            role="button"
+            tabindex="0"
             @click="goToSensor(sensor.id)"
+            @keydown.enter="goToSensor(sensor.id)"
         >
-          <template #title>
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <i class="pi pi-sensor text-purple-600"></i>
-                <span>{{ sensor.type_name }}</span>
-              </div>
-              <div class="flex items-center gap-2">
-                <Button 
-                  icon="pi pi-trash" 
-                  severity="danger" 
-                  variant="text"
-                  rounded
-                  @click="deleteSensor(sensor.id)"
-                />
-              </div>
-            </div>
-          </template>
-          <template #subtitle>
-            <span class="text-sm text-gray-500">Serial number: {{ sensor.serial_number }}</span>
-          </template>
-          <template #content>
-            <div v-if="sensor.parameters?.length" class="mt-3 space-y-1">
-              <div
-                  v-for="param in sensor.parameters"
-                  :key="param.name"
-                  class="flex items-center justify-between text-sm text-gray-700 bg-gray-50 px-3 py-1.5 rounded-md"
-              >
-                <span class="font-medium">{{ getLabel(param.name) }}:</span>
-                <span>{{ param.value }}{{ param.unit }}</span>
-              </div>
-            </div>
-            <p v-else class="text-sm text-gray-400 mt-3">Sensor offline</p>
-          </template>
-        </Card>
+          <span class="asset-row__index">SNS-{{ sensor.id }}</span>
+
+          <span class="asset-row__copy">
+            <span class="asset-row__title">{{ sensor.type_name }}</span>
+            <span class="asset-row__serial">{{ sensor.serial_number }}</span>
+          </span>
+
+          <span class="asset-row__telemetry">
+            <template v-if="sensor.parameters?.length">
+              <Tag
+                v-for="param in sensor.parameters"
+                :key="param.name"
+                severity="secondary"
+                :value="`${getLabel(param.name)} ${formatValue(param.value)}${param.unit}`"
+                rounded
+              />
+            </template>
+            <span v-else class="asset-row__muted">No telemetry</span>
+          </span>
+
+          <Button
+            icon="pi pi-trash"
+            severity="danger"
+            variant="text"
+            rounded
+            aria-label="Delete sensor"
+            @click.stop="deleteSensor(sensor.id)"
+          />
+        </div>
       </div>
 
-      <div v-if="pagination.total > pagination.count" class="flex justify-center mt-6">
+      <div v-if="pagination.total > pagination.count" class="asset-pagination">
         <Paginator
           v-model:first="pagination.skip"
           :rows="pagination.count"
@@ -77,21 +74,16 @@
       </div>
     </div>
     
-    <div v-else class="flex flex-col items-center justify-center h-full">
-      <i class="pi pi-bullseye text-5xl text-gray-400" />
-      <h3 class="text-lg font-semibold text-gray-800 mt-4">No sensors</h3>
-      <p class="text-gray-500 text-sm mt-2 text-center">
-        Add your first sensor to start monitoring.
-      </p>
-      <div class="mt-4">
-        <Button 
-          icon="pi pi-plus" 
-          label="Add Sensor" 
-          @click="addSensorDialog = true"
-          severity="primary"
-        />
-      </div>
-    </div>
+    <EmptyState
+      v-else
+      class="section-empty"
+      title="No sensors"
+      description="Add a sensor to collect room telemetry and feed automation decisions."
+      icon="pi pi-bullseye"
+      action-label="Add Sensor"
+      action-icon="pi pi-plus"
+      @action="addSensorDialog = true"
+    />
 
     <AddSensorDialog
         v-model="addSensorDialog"
@@ -102,15 +94,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { computed, ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { getRoomSensors, removeSensor as deleteSensorApi } from "@/services/apiService";
 import type { Sensor } from "@/types/sensor";
 import { PARAMETER_LABELS } from "@/types/sensor";
 import type { PaginationState, PageChangeEvent } from "@/types/pagination";
+import AppSectionHeader from "@/components/common/AppSectionHeader.vue";
+import EmptyState from "@/components/common/EmptyState.vue";
 import Button from 'primevue/button';
-import Card from 'primevue/card';
 import Paginator from 'primevue/paginator';
+import Skeleton from 'primevue/skeleton';
+import Tag from 'primevue/tag';
 import AddSensorDialog from './AddSensorDialog.vue';
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
@@ -122,9 +117,21 @@ const roomId = Number(route.params.roomId);
 const sensors = ref<Sensor[]>([]);
 const isLoading = ref(true);
 const addSensorDialog = ref(false);
-const pagination = ref<PaginationState>({ total: 0, skip: 0, count: 6 });
+const pagination = ref<PaginationState>({ total: 0, skip: 0, count: 8 });
 const confirm = useConfirm();
 const toast = useToast();
+const hasSensors = computed(() => sensors.value.length !== 0);
+
+const { data: initialSensorsData } = await useAsyncData(
+  `room-${roomId}-sensors-page-0`,
+  () => getRoomSensors(roomId, 0, pagination.value.count),
+);
+
+if (initialSensorsData.value) {
+  sensors.value = initialSensorsData.value.data || [];
+  pagination.value.total = initialSensorsData.value.pagination?.total || 0;
+  isLoading.value = false;
+}
 
 const onPageChange = (event: PageChangeEvent) => {
   pagination.value.skip = event.first;
@@ -134,6 +141,11 @@ const onPageChange = (event: PageChangeEvent) => {
 
 const getLabel = (key: string) => {
   return PARAMETER_LABELS[key] || key;
+};
+
+const formatValue = (value: number | null | undefined) => {
+  if (value === null || value === undefined) return "-";
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 };
 
 const goToSensor = (sensorId: number) => {
@@ -169,7 +181,7 @@ const deleteSensor = async (sensorId: number) => {
         },
         accept: async () => {
           await deleteSensorApi(roomId, sensorId);
-          await router.push({ name: 'room-sensors' });
+          await loadSensors();
           toast.add({ severity: 'success', summary: 'Success', detail: 'Sensor successfully deleted', life: 3000 });
         },
       });
@@ -182,3 +194,119 @@ const refresh = async () => {
 
 onMounted(loadSensors);
 </script>
+
+<style scoped>
+.section-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.asset-frame {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.asset-list {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.asset-list--loading {
+  gap: 1px;
+}
+
+.asset-pagination {
+  align-items: center;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-top: 0;
+  border-radius: 0 0 var(--app-radius) var(--app-radius);
+  display: flex;
+  justify-content: center;
+}
+
+.asset-list:has(+ .asset-pagination) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.section-empty {
+  flex: 1;
+}
+
+.asset-row {
+  align-items: center;
+  background: var(--app-surface);
+  border-bottom: 1px solid var(--app-border);
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 76px minmax(140px, 1fr) minmax(0, 1.3fr) auto;
+  min-height: 60px;
+  padding: 10px 12px;
+}
+
+.asset-row:last-child {
+  border-bottom: 0;
+}
+
+.asset-row__index,
+.asset-row__serial {
+  color: var(--app-muted);
+  font-family: var(--app-mono);
+  font-size: 0.72rem;
+}
+
+.asset-row__title {
+  color: var(--app-text-strong);
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 760;
+}
+
+.asset-row__copy,
+.asset-row__telemetry {
+  min-width: 0;
+}
+
+.asset-row__telemetry {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-start;
+}
+
+.asset-row__muted {
+  color: var(--app-muted);
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 760px) {
+  .asset-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .asset-row__index {
+    display: none;
+  }
+
+  .asset-row__telemetry {
+    grid-column: 1 / -1;
+  }
+}
+</style>

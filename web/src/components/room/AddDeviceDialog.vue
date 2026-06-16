@@ -4,14 +4,17 @@
     @update:visible="emit('update:modelValue', $event)"
     modal 
     :draggable="false" 
-    :style="{ width: '25rem' }"
-    header="Add Device"
+    :style="{ width: 'min(26rem, calc(100vw - 2rem))' }"
+    header="Add device"
   >
-    <div class="flex flex-col gap-4">
-      <div class="flex flex-col gap-2">
+    <div class="entity-dialog-form">
+      <div class="entity-dialog-field">
+        <label class="entity-dialog-label" for="device-serial-number">Serial number</label>
         <InputText
-          id="serialNumber"
+          id="device-serial-number"
           v-model="serialNumber"
+          class="w-full"
+          maxlength="20"
           placeholder="Serial number"
           :class="{ 'p-invalid': errorMessage }"
           @keyup.enter="submit"
@@ -21,9 +24,9 @@
     </div>
 
     <template #footer>
-      <div class="flex justify-end gap-2">
-        <Button label="Cancel" @click="close" text />
-        <Button label="Add" @click="submit" :loading="isLoading" />
+      <div class="entity-dialog-actions">
+        <Button type="button" label="Cancel" severity="secondary" @click="close" />
+        <Button type="button" label="Add" severity="primary" :loading="isLoading" @click="submit" />
       </div>
     </template>
   </Dialog>
@@ -32,16 +35,16 @@
 <script setup lang="ts">
 import { ref, watch } from "vue";
 import { addDevice } from "@/services/apiService";
-import Dialog from 'primevue/dialog';
-import Button from 'primevue/button';
-import InputText from 'primevue/inputtext';
+import Dialog from "primevue/dialog";
+import Button from "primevue/button";
+import InputText from "primevue/inputtext";
 
 const props = defineProps<{
   modelValue: boolean;
   roomId: number;
 }>();
 
-const emit = defineEmits(['update:modelValue', 'added']);
+const emit = defineEmits(["update:modelValue", "added"]);
 
 const serialNumber = ref("");
 const isLoading = ref(false);
@@ -56,6 +59,10 @@ const close = () => {
 const submit = async () => {
   if (!serialNumber.value.trim()) {
     errorMessage.value = "Please enter a serial number.";
+    return;
+  }
+  if (serialNumber.value.trim().length > 20) {
+    errorMessage.value = "Serial number must be 20 characters or fewer.";
     return;
   }
 

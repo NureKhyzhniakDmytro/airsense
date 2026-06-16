@@ -29,20 +29,45 @@ const clearRefreshTimer = () => {
   }
 };
 
+const isExpired = (claims: DecodedToken | null) => (
+  Boolean(claims?.exp && claims.exp * 1000 <= Date.now())
+);
+
+const parseUsableToken = (token: string | null) => {
+  if (!token) return { token: null, claims: null };
+
+  const claims = decodeToken(token);
+  if (!claims || isExpired(claims)) {
+    return { token: null, claims: null };
+  }
+
+  return { token, claims };
+};
+
+const writeBrowserTokenCookie = (token: string | null) => {
+  if (!import.meta.client) return;
+
+  if (token) {
+    document.cookie = `${AUTH_TOKEN_COOKIE}=${encodeURIComponent(token)}; Path=/; Max-Age=${60 * 60 * 24 * 7}; SameSite=Lax`;
+  } else {
+    document.cookie = `${AUTH_TOKEN_COOKIE}=; Path=/; Max-Age=0; SameSite=Lax`;
+  }
+};
+
 export const useAuthStore = defineStore("auth", {
   state: () => {
     const tokenCookie = useCookie<string | null>(AUTH_TOKEN_COOKIE);
-    const token = readBrowserToken() || tokenCookie.value || null;
+    const auth = parseUsableToken(readBrowserToken() || tokenCookie.value || null);
 
     return {
       user: null as User | null,
-      token,
-      claims: token ? decodeToken(token) : null as DecodedToken | null,
+      token: auth.token,
+      claims: auth.claims as DecodedToken | null,
     };
   },
 
   getters: {
-    isAuthenticated: (state) => Boolean(state.token),
+    isAuthenticated: (state) => Boolean(state.token && state.claims),
     currentUserEmail: (state) => state.user?.email || state.claims?.email || null,
     currentUserId: (state) => state.claims?.id || null,
   },
@@ -50,11 +75,14 @@ export const useAuthStore = defineStore("auth", {
   actions: {
     hydrateFromCookie() {
       const tokenCookie = useCookie<string | null>(AUTH_TOKEN_COOKIE);
-      const token = readBrowserToken() || tokenCookie.value || null;
+      const { token, claims } = parseUsableToken(readBrowserToken() || tokenCookie.value || null);
       if (token !== this.token) {
         this.setToken(token);
       } else {
-        this.claims = token ? decodeToken(token) : null;
+        this.claims = claims;
+        if (!token) {
+          this.setToken(null);
+        }
       }
     },
 
@@ -172,15 +200,17 @@ export const useAuthStore = defineStore("auth", {
       clearRefreshTimer();
     },
 
-    setToken(token: string | null) {
+    setToken(nextToken: string | null) {
       const tokenCookie = useCookie<string | null>(AUTH_TOKEN_COOKIE, {
         path: "/",
         sameSite: "lax",
         maxAge: 60 * 60 * 24 * 7,
       });
 
+      const { token, claims } = parseUsableToken(nextToken);
+
       this.token = token;
-      this.claims = token ? decodeToken(token) : null;
+      this.claims = claims;
       tokenCookie.value = token;
 
       if (import.meta.client) {
@@ -191,6 +221,8 @@ export const useAuthStore = defineStore("auth", {
           localStorage.removeItem("token");
           delete api.defaults.headers.Authorization;
         }
+
+        writeBrowserTokenCookie(token);
       }
     },
   },

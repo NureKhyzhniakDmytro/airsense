@@ -4,6 +4,7 @@ export interface Environment {
   id: number;
   name: string;
   role: string;
+  description?: string | null;
 }
 
 export interface EnvironmentsResponse {

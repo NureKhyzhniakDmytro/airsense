@@ -1,81 +1,128 @@
 <template>
-  <div class="items-center flex-grow">
-    <div class="flex flex-row gap-4 items-center justify-between mb-4">
-      <h2 class="text-lg font-semibold text-gray-800">Parameter Settings</h2>
-    </div>
+  <div class="section-page">
+    <section class="automation-panel">
+      <header class="automation-panel__header">
+        <div class="automation-panel__title">
+          <span class="automation-panel__icon" aria-hidden="true">
+            <i class="pi pi-sliders-h" />
+          </span>
+          <div class="automation-panel__copy">
+            <span class="automation-panel__eyebrow">Automation</span>
+            <h2>Fan response curve</h2>
+            <p>{{ selectedParam.label ? `${selectedParam.label} response profile` : 'Fan-speed response curve' }}</p>
+          </div>
+        </div>
 
-    <div class="flex flex-row gap-4 items-center justify-between">
-      <Select v-model="selectedParam" :options="parametersOptions" optionLabel="label" class="w-full md:w-56" />
-      <Button 
-        icon="pi pi-save" 
-        @click="saveChanges" 
-        severity="primary" 
-        label="Save" 
-        :disabled="!hasChanges"
-      />
-    </div>
-
-    <div v-if="isLoading" class="flex items-center justify-center h-64">
-      <span class="text-gray-500">Loading...</span>
-    </div>
-
-    <div v-else class="bg-white shadow-md rounded-lg p-4 mt-4">
-      <div class="flex flex-row items-center justify-between">
-        <h3 class="text-lg font-semibold text-gray-800 mb-4">{{ selectedParam.label }}</h3>
-        <div class="flex gap-2">
-          <Button
-            icon="pi pi-plus"
-            @click="addPoint"
-            severity="secondary"
-            text
-            tooltip="Add Point Between"
+        <div class="automation-panel__save">
+          <Tag
+            :severity="hasChanges ? 'warn' : 'success'"
+            :value="hasChanges ? 'Draft' : 'Saved'"
+            rounded
           />
           <Button
-            icon="pi pi-trash"
-            @click="deleteSelectedPoint"
-            severity="secondary"
-            text
-            :disabled="selectedPointIndex === null"
-            tooltip="Delete Selected Point"
-          />
-          <Button
-            icon="pi pi-exclamation-triangle"
-            @click="openCriticalValueDialog"
-            severity="secondary"
-            text
-            :class="{ 'text-red-500': selectedParam.critical_value }"
-            tooltip="Set Critical Value"
+            icon="pi pi-save"
+            @click="saveChanges"
+            severity="primary"
+            label="Save"
+            :disabled="!hasChanges"
           />
         </div>
-      </div>
-      
-      <div class="relative">
-        <ClientOnly>
-          <component
-            :is="ApexCharts"
-            type="line"
-            height="350"
-            :options="chartOptions"
-            :series="series"
-            ref="chart"
-          />
-          <template #fallback>
-            <div class="h-[350px] flex items-center justify-center bg-white">
-              <span class="text-gray-500">Loading chart...</span>
+      </header>
+
+      <Skeleton v-if="isLoading" class="automation-skeleton" height="31rem" />
+
+      <template v-else>
+        <div class="automation-controls">
+          <div class="automation-controls__field">
+            <label for="automation-parameter">Parameter</label>
+            <Select
+              v-model="selectedParam"
+              inputId="automation-parameter"
+              :options="parametersOptions"
+              optionLabel="label"
+              class="automation-controls__select"
+            />
+          </div>
+
+          <div class="automation-controls__actions" aria-label="Curve actions">
+            <Button
+              icon="pi pi-plus"
+              label="Point"
+              @click="addPoint"
+              severity="secondary"
+              variant="outlined"
+            />
+            <Button
+              icon="pi pi-trash"
+              @click="deleteSelectedPoint"
+              severity="secondary"
+              variant="outlined"
+              :disabled="selectedPointIndex === null"
+              aria-label="Delete selected point"
+              v-tooltip.top="'Delete selected point'"
+            />
+            <Button
+              icon="pi pi-exclamation-triangle"
+              label="Critical"
+              @click="openCriticalValueDialog"
+              severity="secondary"
+              variant="outlined"
+              :class="{ 'automation-controls__critical-button': selectedParam.critical_value !== null && selectedParam.critical_value !== undefined }"
+            />
+          </div>
+        </div>
+
+        <div class="automation-workspace">
+          <section class="chart-surface">
+            <div class="chart-surface__header">
+              <div>
+                <span>Curve</span>
+                <strong>{{ selectedParam.label || 'Parameter' }}</strong>
+              </div>
+              <Tag :value="`${pointCount} points`" severity="secondary" rounded />
             </div>
-          </template>
-        </ClientOnly>
-        <div v-if="!series[0].data.length" class="absolute inset-0 flex items-center justify-center bg-white bg-opacity-80">
-          <span class="text-gray-500">Click on the chart to add points or use the Add Point button.</span>
-        </div>
-      </div>
-    </div>
 
-    <Dialog v-model:visible="showCriticalValueDialog" modal header="Set Critical Value" :style="{ width: '400px' }">
-      <div class="flex flex-col gap-4">
-        <div class="flex flex-col gap-2">
-          <label class="text-sm font-medium text-gray-700">Critical Value</label>
+            <div class="chart-surface__body">
+              <ClientOnly>
+                <component
+                  :is="ApexCharts"
+                  type="line"
+                  height="100%"
+                  :options="chartOptions"
+                  :series="series"
+                  ref="chart"
+                />
+                <template #fallback>
+                  <Skeleton height="430px" />
+                </template>
+              </ClientOnly>
+            </div>
+          </section>
+
+          <aside class="curve-summary" aria-label="Curve summary">
+            <div class="curve-summary__item">
+              <span>Input range</span>
+              <strong>{{ inputRangeLabel }}</strong>
+            </div>
+            <div class="curve-summary__item">
+              <span>Curve points</span>
+              <strong>{{ pointCount }}</strong>
+            </div>
+            <div class="curve-summary__item">
+              <span>Critical</span>
+              <strong>{{ criticalValueLabel }}</strong>
+            </div>
+          </aside>
+        </div>
+      </template>
+    </section>
+
+    <Dialog v-model:visible="showCriticalValueDialog" modal header="Set critical value" :style="{ width: 'min(26rem, calc(100vw - 2rem))' }">
+      <div class="entity-dialog-form">
+        <div class="entity-dialog-field">
+          <label class="entity-dialog-label" for="critical-value-input">Critical value</label>
           <InputNumber 
+            inputId="critical-value-input"
             v-model="tempCriticalValue" 
             :min="selectedParam.min_value || 0" 
             :max="selectedParam.max_value || 100"
@@ -85,7 +132,7 @@
         </div>
       </div>
       <template #footer>
-        <div class="flex justify-end gap-2">
+        <div class="entity-dialog-actions">
           <Button label="Cancel" @click="showCriticalValueDialog = false" text />
           <Button label="Save" @click="saveCriticalValue" severity="primary" />
         </div>
@@ -112,6 +159,8 @@ import Button from 'primevue/button';
 import { useToast } from "primevue/usetoast";
 import Dialog from 'primevue/dialog';
 import InputNumber from 'primevue/inputnumber';
+import Skeleton from 'primevue/skeleton';
+import Tag from 'primevue/tag';
 import { useChartConfig } from "@/config/chartConfig";
 
 const ApexCharts = defineAsyncComponent(() => import("vue3-apexcharts"));
@@ -131,6 +180,24 @@ const selectedParam = ref<ExtendedParam>({ name: "", label: "", unit: "" });
 
 const { series } = useChartConfig();
 
+const formatNumber = (value: number | null | undefined) => {
+  if (value === null || value === undefined) return "-";
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+};
+
+const pointCount = computed(() => series.value[0]?.data?.length || 0);
+const inputRangeLabel = computed(() => {
+  const min = formatNumber(selectedParam.value.min_value);
+  const max = formatNumber(selectedParam.value.max_value);
+  const unit = selectedParam.value.unit || "";
+  return `${min}-${max}${unit}`;
+});
+const criticalValueLabel = computed(() => {
+  const value = selectedParam.value.critical_value;
+  if (value === null || value === undefined) return "Not set";
+  return `${formatNumber(value)}${selectedParam.value.unit || ""}`;
+});
+
 const chartOptions = computed(() => ({
   chart: {
     type: 'line' as const,
@@ -139,7 +206,7 @@ const chartOptions = computed(() => ({
     animations: {
       enabled: true,
       easing: 'easeinout',
-      speed: 800,
+      speed: 220,
     },
     events: {
       dataPointSelection: handleDataPointSelection,
@@ -149,24 +216,24 @@ const chartOptions = computed(() => ({
   stroke: {
     curve: 'straight',
     width: 3,
-    colors: ['#7C3AED']
+    colors: ['#0F766E']
   },
   markers: {
     size: 6,
-    colors: ['#fff'],
-    strokeColors: '#7C3AED',
+    colors: ['#FBFCFD'],
+    strokeColors: '#0F766E',
     strokeWidth: 3,
     hover: { size: 8 },
     selected: {
       size: 8,
-      colors: ['#fff'],
-      strokeColors: '#7C3AED',
+      colors: ['#FBFCFD'],
+      strokeColors: '#0F766E',
       strokeWidth: 3
     }
   },
   grid: {
-    borderColor: '#e0e6ed',
-    strokeDashArray: 4,
+    borderColor: '#D0D7DE',
+    strokeDashArray: 2,
   },
   xaxis: {
     type: 'numeric',
@@ -189,25 +256,28 @@ const chartOptions = computed(() => ({
     shared: false
   },
   annotations: {
-    xaxis: [{
-      x: selectedParam.value.critical_value,
-      strokeDashArray: 0,
-      borderColor: '#EF4444',
-      label: {
-        text: 'Critical',
-        style: {
-          color: '#fff',
-          background: '#EF4444',
-          fontSize: '12px',
-          padding: {
-            left: 5,
-            right: 5,
-            top: 2,
-            bottom: 2
+    xaxis:
+      selectedParam.value.critical_value !== null && selectedParam.value.critical_value !== undefined
+        ? [{
+          x: selectedParam.value.critical_value,
+          strokeDashArray: 0,
+          borderColor: '#C24135',
+          label: {
+            text: 'Critical',
+            style: {
+              color: '#fff',
+              background: '#C24135',
+              fontSize: '12px',
+              padding: {
+                left: 5,
+                right: 5,
+                top: 2,
+                bottom: 2
+              }
+            }
           }
-        }
-      }
-    }]
+        }]
+        : []
   }
 }));
 
@@ -372,12 +442,12 @@ function deleteSelectedPoint() {
 }
 
 function openCriticalValueDialog() {
-  tempCriticalValue.value = selectedParam.value.critical_value || null;
+  tempCriticalValue.value = selectedParam.value.critical_value ?? null;
   showCriticalValueDialog.value = true;
 }
 
 function saveCriticalValue() {
-  selectedParam.value.critical_value = tempCriticalValue.value || undefined;
+  selectedParam.value.critical_value = tempCriticalValue.value ?? undefined;
   showCriticalValueDialog.value = false;
   hasChanges.value = true;
 }
@@ -416,3 +486,270 @@ onMounted(async () => {
   await loadParams();
 });
 </script>
+
+<style scoped>
+.section-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.automation-panel {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  width: 100%;
+}
+
+.automation-panel__header {
+  align-items: center;
+  background: var(--app-surface);
+  border-bottom: 1px solid var(--app-border);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 12px;
+}
+
+.automation-panel__title {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+}
+
+.automation-panel__icon {
+  align-items: center;
+  background: var(--app-surface-soft);
+  border: 1px solid var(--app-border);
+  border-radius: 5px;
+  color: var(--app-text);
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 36px;
+  justify-content: center;
+  width: 36px;
+}
+
+.automation-panel__copy {
+  min-width: 0;
+}
+
+.automation-panel__eyebrow {
+  color: var(--app-muted);
+  display: block;
+  font-family: var(--app-mono);
+  font-size: 0.68rem;
+  font-weight: 650;
+  line-height: 1rem;
+  text-transform: uppercase;
+}
+
+.automation-panel h2 {
+  color: var(--app-text-strong);
+  font-size: 1rem;
+  font-weight: 780;
+  line-height: 1.25rem;
+  margin: 0;
+}
+
+.automation-panel p {
+  color: var(--app-muted);
+  font-size: 0.8125rem;
+  line-height: 1.15rem;
+  margin: 2px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.automation-panel__save {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.automation-skeleton {
+  margin: var(--app-panel-padding);
+}
+
+.automation-controls {
+  align-items: end;
+  border-bottom: 1px solid var(--app-border);
+  display: grid;
+  gap: var(--app-gap-md);
+  grid-template-columns: minmax(220px, 360px) minmax(0, 1fr);
+  padding: var(--app-panel-padding);
+}
+
+.automation-controls__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-gap-xs);
+  min-width: 0;
+}
+
+.automation-controls__field label {
+  color: var(--app-muted);
+  font-family: var(--app-mono);
+  font-size: 0.68rem;
+  font-weight: 650;
+  line-height: 1rem;
+  text-transform: uppercase;
+}
+
+.automation-controls__select {
+  width: 100%;
+}
+
+.automation-controls__actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--app-gap-sm);
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.automation-controls__critical-button {
+  border-color: color-mix(in srgb, var(--app-danger) 36%, var(--app-border));
+  color: var(--app-danger);
+}
+
+.automation-workspace {
+  display: grid;
+  flex: 1;
+  gap: var(--app-gap-md);
+  grid-template-columns: minmax(0, 1fr) minmax(190px, 230px);
+  min-height: 0;
+  min-width: 0;
+  padding: var(--app-panel-padding);
+}
+
+.chart-surface {
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.chart-surface__header {
+  align-items: center;
+  background: var(--app-surface);
+  border-bottom: 1px solid var(--app-border);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 10px var(--app-panel-padding);
+}
+
+.chart-surface__header span,
+.curve-summary__item span {
+  color: var(--app-muted);
+  display: block;
+  font-family: var(--app-mono);
+  font-size: 0.68rem;
+  font-weight: 650;
+  line-height: 1rem;
+  text-transform: uppercase;
+}
+
+.chart-surface__header strong,
+.curve-summary__item strong {
+  color: var(--app-text-strong);
+  display: block;
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.35rem;
+  margin-top: 2px;
+}
+
+.chart-surface__body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  padding: 8px var(--app-panel-padding) 10px;
+}
+
+.curve-summary {
+  align-content: start;
+  display: grid;
+  gap: var(--app-gap-sm);
+  grid-auto-rows: minmax(0, auto);
+  min-width: 0;
+}
+
+.curve-summary__item {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 76px;
+  padding: 11px 12px;
+}
+
+@media (max-width: 920px) {
+  .automation-controls,
+  .automation-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .automation-controls__actions {
+    justify-content: flex-start;
+  }
+
+  .curve-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .automation-panel__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .automation-panel__save,
+  .automation-panel__save :deep(.p-button),
+  .automation-controls__actions,
+  .automation-controls__actions :deep(.p-button) {
+    width: 100%;
+  }
+
+  .automation-controls__actions :deep(.p-button) {
+    justify-content: center;
+  }
+
+  .automation-workspace,
+  .automation-controls {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .chart-surface__body {
+    min-height: 360px;
+    padding: 8px 6px 4px;
+  }
+
+  .curve-summary {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

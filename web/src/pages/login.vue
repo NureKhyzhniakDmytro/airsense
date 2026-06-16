@@ -1,294 +1,266 @@
 <template>
-  <div class="auth-page h-screen flex flex-col overflow-hidden bg-surface-100 text-color items-center">
-    <div class="auth-shell flex-grow flex flex-col items-center place-content-center w-full max-w-md">
-      <div class="auth-card w-full bg-white p-8 rounded-lg shadow-md border border-gray-200">
-      <h2 class="text-2xl font-bold text-center text-gray-900 mb-6">Login to your account</h2>
-
-      <div class="mb-4">
-        <label class="block text-gray-700 text-sm mb-1">Email</label>
-        <input
-            v-model="email"
-            type="email"
-            placeholder="Enter email"
-            class="w-full px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-500"
-        />
+  <main class="auth-page">
+    <section class="auth-shell">
+      <div class="auth-brand">
+        <img src="/logo.svg" alt="" />
+        <span>AirSense</span>
       </div>
 
-      <div class="mb-4">
-        <label class="block text-gray-700 text-sm mb-1">Password</label>
-        <input
-            v-model="password"
-            type="password"
-            placeholder="Enter password"
-            class="w-full px-4 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-500"
-        />
-      </div>
+      <Card class="auth-card">
+        <template #title>
+          <div class="auth-title">Sign in</div>
+        </template>
 
-      <div class="flex justify-between items-center mb-6">
-        <label class="flex items-center text-gray-600 text-sm">
-          <input
-              type="checkbox"
-              class="mr-2 appearance-none h-4 w-4 border border-gray-300 rounded bg-white checked:bg-blue-600 checked:border-transparent focus:ring-2 focus:ring-blue-500"
-          />
-          Remember me
-        </label>
-        <a href="#" class="text-blue-500 text-sm hover:underline">Forgot password?</a>
-      </div>
+        <template #content>
+          <form class="auth-form" @submit.prevent="handleSubmit">
+            <Message v-if="errorMessage" severity="error" size="small">
+              {{ errorMessage }}
+            </Message>
 
+            <div class="auth-field">
+              <label for="email">Email</label>
+              <InputText
+                id="email"
+                v-model="email"
+                type="email"
+                autocomplete="email"
+                placeholder="name@example.com"
+                fluid
+              />
+            </div>
 
-      <button @click="handleSubmit"
-              class="auth-primary-button w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-md transition focus:ring-2 focus:ring-blue-500">
-          Login
-      </button>
+            <div class="auth-field">
+              <label for="password">Password</label>
+              <Password
+                id="password"
+                v-model="password"
+                autocomplete="current-password"
+                placeholder="Enter password"
+                :feedback="false"
+                toggle-mask
+                fluid
+              />
+            </div>
 
-      <div class="flex items-center my-6">
-        <div class="flex-grow border-t border-gray-300"></div>
-        <span class="px-2 text-gray-500 text-sm">or</span>
-        <div class="flex-grow border-t border-gray-300"></div>
-      </div>
+            <div class="auth-row">
+              <label class="auth-check" for="remember">
+                <Checkbox v-model="rememberMe" input-id="remember" binary />
+                <span>Remember me</span>
+              </label>
+              <a href="#" aria-disabled="true">Forgot password?</a>
+            </div>
 
-      <button @click="handleGoogleLogin"
-              class="auth-google-button w-full flex items-center justify-center gap-2 border border-gray-300 bg-white rounded-md py-2 text-gray-700 hover:bg-gray-100 transition focus:ring-2 focus:ring-blue-500">
-        <img src="/google-logo.svg" alt="Google" class="auth-google-icon"> <span>Login with Google</span>
-      </button>
-    </div>
+            <Button
+              type="submit"
+              label="Login"
+              icon="pi pi-arrow-right"
+              icon-pos="right"
+              :loading="isLoading"
+              :disabled="!canSubmit"
+              fluid
+            />
+          </form>
 
-    <p class="auth-footer text-sm text-center text-gray-600 mt-6">
-      Don't have an account?
-      <router-link to="/register" class="text-blue-500 hover:underline">Register</router-link>
-    </p>
-    </div>
-  </div>
+          <Divider align="center" class="auth-divider">
+            <span>or</span>
+          </Divider>
+
+          <Button
+            type="button"
+            severity="secondary"
+            outlined
+            :loading="isGoogleLoading"
+            fluid
+            @click="handleGoogleLogin"
+          >
+            <img src="/google-logo.svg" alt="" class="auth-google-icon">
+            <span>Login with Google</span>
+          </Button>
+        </template>
+      </Card>
+
+      <p class="auth-footer">
+        Don't have an account?
+        <NuxtLink to="/register">Register</NuxtLink>
+      </p>
+    </section>
+  </main>
 </template>
 
 <script setup lang="ts">
 definePageMeta({ name: 'login', guestOnly: true })
 
-import { onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import { useAuthStore } from "@/store/authStore";
 import { useRouter } from "vue-router";
+import Button from 'primevue/button';
+import Card from 'primevue/card';
+import Checkbox from 'primevue/checkbox';
+import Divider from 'primevue/divider';
+import InputText from 'primevue/inputtext';
+import Message from 'primevue/message';
+import Password from 'primevue/password';
 
 const authStore = useAuthStore();
 const router = useRouter();
 const email = ref("");
 const password = ref("");
+const rememberMe = ref(true);
+const isLoading = ref(false);
+const isGoogleLoading = ref(false);
+const errorMessage = ref("");
+
+const canSubmit = computed(() => Boolean(email.value && password.value) && !isLoading.value);
 
 const handleSubmit = async () => {
+  if (!canSubmit.value) return;
+
+  errorMessage.value = "";
+  isLoading.value = true;
   try {
-    await authStore.login(email.value, password.value);
+    await authStore.login(email.value.trim(), password.value);
     await router.push("/");
   } catch (error) {
+    errorMessage.value = "Unable to sign in with these credentials.";
     console.error("Error logging in:", (error as Error).message);
+  } finally {
+    isLoading.value = false;
   }
 };
 
 const handleGoogleLogin = async () => {
+  errorMessage.value = "";
+  isGoogleLoading.value = true;
   try {
     await authStore.loginWithGoogle();
     await router.push("/");
   } catch (error) {
+    errorMessage.value = "Google sign-in failed. Please try again.";
     console.error("Error logging in with Google:", error);
+  } finally {
+    isGoogleLoading.value = false;
   }
 };
 
-onMounted(async () => {
-  if (authStore.user) {
-    await router.push('/');
-  }
-})
 </script>
 
 <style scoped>
 .auth-page {
-  min-height: 100vh;
-  display: flex;
   align-items: center;
-  justify-content: center;
-  background: #f3f4f6;
-  color: #111827;
-  padding: 24px 16px;
+  background:
+    linear-gradient(90deg, rgb(27 34 41 / 0.04) 1px, transparent 1px),
+    linear-gradient(180deg, rgb(27 34 41 / 0.035) 1px, transparent 1px),
+    var(--app-bg);
+  background-size: 24px 24px;
   box-sizing: border-box;
+  color: var(--app-text-strong);
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 28px 16px;
 }
 
 .auth-shell {
+  max-width: 420px;
   width: 100%;
-  max-width: 448px;
+}
+
+.auth-brand {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-start;
+  margin-bottom: 18px;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.auth-brand img {
+  height: 38px;
+  border-radius: 5px;
+  width: 38px;
 }
 
 .auth-card {
+  border: 1px solid var(--app-border);
+  box-shadow: none;
   width: 100%;
-  box-sizing: border-box;
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  box-shadow: 0 10px 25px rgb(15 23 42 / 0.08);
-  padding: 32px;
 }
 
-.auth-card h2 {
-  margin: 0 0 24px;
-  color: #111827;
-  font-size: 24px;
-  line-height: 32px;
-  font-weight: 700;
-  text-align: center;
+.auth-title {
+  color: var(--app-text-strong);
+  font-size: 1.25rem;
+  font-weight: 780;
+  line-height: 1.7rem;
+  text-align: left;
 }
 
-.auth-card label {
-  display: block;
-  color: #374151;
-  font-size: 14px;
-  line-height: 20px;
-  margin-bottom: 4px;
+.auth-form,
+.auth-field {
+  display: flex;
+  flex-direction: column;
 }
 
-.auth-card input[type="email"],
-.auth-card input[type="password"],
-.auth-card input[type="text"] {
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  background: #fff;
-  color: #111827;
-  font-size: 16px;
-  line-height: 24px;
-  padding: 8px 16px;
-  outline: none;
+.auth-form {
+  gap: 16px;
 }
 
-.auth-card input:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgb(59 130 246 / 0.22);
+.auth-field {
+  gap: 6px;
 }
 
-.auth-card input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  margin: 0 8px 0 0;
-  flex: 0 0 16px;
+.auth-field label,
+.auth-check {
+  color: var(--app-muted);
+  font-size: 0.8125rem;
+  font-weight: 650;
 }
 
-.auth-card a,
+.auth-row {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.auth-check {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
+}
+
+.auth-row a,
 .auth-footer a {
-  color: #3b82f6;
+  color: var(--app-primary);
+  font-size: 0.875rem;
+  font-weight: 650;
   text-decoration: none;
 }
 
-.auth-card a:hover,
+.auth-row a:hover,
 .auth-footer a:hover {
+  color: var(--app-primary-strong);
   text-decoration: underline;
 }
 
-.auth-card button {
-  cursor: pointer;
-  border-radius: 6px;
-  font-size: 16px;
-  line-height: 24px;
-  transition: background-color 120ms ease, border-color 120ms ease;
+.auth-divider {
+  margin-block: 20px;
 }
 
-.auth-primary-button,
-.auth-google-button {
-  width: 100%;
-  min-height: 42px;
-  box-sizing: border-box;
-}
-
-.auth-primary-button {
-  border: 1px solid #2563eb;
-  background: #2563eb;
-  color: #fff;
-  font-weight: 600;
-}
-
-.auth-primary-button:hover {
-  background: #1d4ed8;
-}
-
-.auth-primary-button:disabled {
-  cursor: not-allowed;
-  border-color: #9ca3af;
-  background: #9ca3af;
-}
-
-.auth-google-button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  color: #374151;
-}
-
-.auth-google-button:hover {
-  background: #f9fafb;
+.auth-divider span {
+  color: var(--app-muted);
+  font-size: 0.8125rem;
 }
 
 .auth-google-icon {
-  width: 20px;
-  height: 20px;
-  flex: 0 0 20px;
+  height: 18px;
+  width: 18px;
 }
 
 .auth-footer {
-  margin: 24px 0 0;
-  color: #4b5563;
-  font-size: 14px;
-  line-height: 20px;
-  text-align: center;
-}
-
-.auth-card :deep(.text-red-500) {
-  color: #ef4444;
-}
-
-.auth-card :deep(.mb-4) {
-  margin-bottom: 16px;
-}
-
-.auth-card :deep(.mb-6) {
-  margin-bottom: 24px;
-}
-
-.auth-card :deep(.my-6) {
-  margin-top: 24px;
-  margin-bottom: 24px;
-}
-
-.auth-card :deep(.flex) {
-  display: flex;
-}
-
-.auth-card :deep(.items-center) {
-  align-items: center;
-}
-
-.auth-card :deep(.justify-between) {
-  justify-content: space-between;
-}
-
-.auth-card :deep(.flex-grow) {
-  flex-grow: 1;
-}
-
-.auth-card :deep(.border-t) {
-  border-top: 1px solid #d1d5db;
-}
-
-.auth-card :deep(.px-2) {
-  padding-left: 8px;
-  padding-right: 8px;
-}
-
-@media (max-width: 480px) {
-  .auth-page {
-    padding: 20px 12px;
-  }
-
-  .auth-card {
-    padding: 24px 20px;
-  }
+  color: var(--app-muted);
+  font-size: 0.875rem;
+  margin: 18px 0 0;
+  text-align: left;
 }
 </style>

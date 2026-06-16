@@ -8,6 +8,24 @@ const api = axios.create({
   },
 });
 
+const readCookie = (cookieHeader: string | undefined, name: string) => {
+  if (!cookieHeader) return null;
+
+  const cookie = cookieHeader
+    .split(";")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(`${name}=`));
+
+  if (!cookie) return null;
+
+  const value = cookie.slice(name.length + 1);
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
+
 const getRuntimeApiBaseUrl = () => {
   try {
     const runtimeConfig = useRuntimeConfig();
@@ -19,7 +37,8 @@ const getRuntimeApiBaseUrl = () => {
       return process.env.NUXT_API_INTERNAL_BASE_URL || process.env.NUXT_PUBLIC_API_BASE_URL || process.env.VITE_API_BASE_URL || "";
     }
 
-    return window.__NUXT__?.config?.public?.apiBaseUrl || "";
+    const nuxtPayload = globalThis.window?.__NUXT__;
+    return nuxtPayload?.config?.public?.apiBaseUrl || "";
   }
 };
 
@@ -27,15 +46,20 @@ const getAuthToken = () => {
   if (import.meta.client) {
     try {
       const tokenCookie = useCookie<string | null>(AUTH_TOKEN_COOKIE);
-      return localStorage.getItem("token") || tokenCookie.value;
+      return window.localStorage.getItem("token") || tokenCookie.value;
     } catch {
-      return localStorage.getItem("token");
+      return window.localStorage.getItem("token");
     }
   }
 
   try {
     const tokenCookie = useCookie<string | null>(AUTH_TOKEN_COOKIE);
-    return tokenCookie.value;
+    if (tokenCookie.value) {
+      return tokenCookie.value;
+    }
+
+    const headers = useRequestHeaders(["cookie"]);
+    return readCookie(headers.cookie, AUTH_TOKEN_COOKIE);
   } catch {
     return null;
   }

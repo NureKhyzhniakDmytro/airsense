@@ -1,61 +1,80 @@
 <template>
-  <div class="items-center flex-grow">
-    <div class="flex flex-row gap-4 items-center justify-between">
-      <Select
-        v-model="selectedParam"
-        :options="parametersOptions"
-        optionLabel="label"
-        class="w-full md:w-56"
-      />
+  <div class="section-page">
+    <h2 class="visually-hidden">Telemetry</h2>
+
+    <section class="telemetry-controls" aria-label="Telemetry filters">
+      <div class="telemetry-controls__parameter">
+        <label for="telemetry-parameter">Signal</label>
+        <Select
+          v-model="selectedParam"
+          inputId="telemetry-parameter"
+          :options="parametersOptions"
+          optionLabel="label"
+          class="telemetry-controls__select"
+        />
+      </div>
 
       <DateRangeSelector
         v-model:from="fromDate"
         v-model:to="toDate"
         v-model:interval="selectedInterval"
         :interval-options="INTERVAL_OPTIONS"
+        class="telemetry-controls__range"
       />
-    </div>
 
-    <div class="flex flex-col gap-4 mt-8">
-      <Skeleton v-if="isLoading" height="24rem" class="mb-2"/>
+      <div class="telemetry-controls__summary" aria-label="Telemetry summary">
+        <Tag :value="`${seriesCount} series`" severity="secondary" rounded />
+        <Tag :value="`${pointCount} points`" severity="info" rounded />
+      </div>
+    </section>
 
-      <div 
+    <div
+      class="telemetry-charts"
+      :class="{ 'telemetry-charts--single': seriesCount === 1 }"
+    >
+      <Skeleton v-if="isLoading" height="100%" class="telemetry-charts__skeleton"/>
+
+      <EmptyState
         v-else-if="Object.keys(series).length === 0"
-        class="bg-white shadow-md rounded-lg p-4 h-96 flex items-center justify-center"
-      >
-        <h3 class="text-lg font-semibold text-gray-800 mb-4">
-          No data available for the chart
-        </h3>
-      </div>
-      <div v-else
-        v-for="(deviceSeries, sensorId) in series"
-        :key="sensorId"
-        class="bg-white shadow-md rounded-lg p-4"
-      >
-        <div class="flex flex-col mb-2 ml-4">
-          <h3 class="text-lg font-semibold text-gray-800">
-            {{ sensorNames[sensorId]?.name }}
-          </h3>
-          <h5 class="text-sm text-gray-500">
-            Serial number: {{ sensorNames[sensorId]?.serial_number }}
-          </h5>
-        </div>
-        <ChartDisplay
-          :series="deviceSeries"
-          :chart-options="chartOptions"
-          :is-loading="isChartLoading"
-          empty-message="No data available for the chart"
-        />
-      </div>
+        title="No chart data"
+        description="There is no telemetry for the selected parameter and period yet."
+        icon="pi pi-chart-line"
+      />
+      <template v-else>
+        <section
+          v-for="(deviceSeries, sensorId) in series"
+          :key="sensorId"
+          class="chart-panel"
+        >
+          <header class="chart-panel__header">
+            <div>
+              <span class="chart-panel__eyebrow">Source {{ sensorId }}</span>
+              <h3>{{ sensorNames[sensorId]?.name }}</h3>
+            </div>
+            <span class="chart-panel__serial">{{ sensorNames[sensorId]?.serial_number }}</span>
+          </header>
+          <div class="chart-panel__body">
+            <ChartDisplay
+              :series="deviceSeries"
+              :chart-options="chartOptions"
+              :is-loading="isChartLoading"
+              height="100%"
+              empty-message="No data available for the chart"
+            />
+          </div>
+        </section>
+      </template>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { shallowRef, ref, onMounted, watch } from 'vue';
+import { computed, shallowRef, ref, onMounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import Select from 'primevue/select';
 import Skeleton from 'primevue/skeleton';
+import Tag from 'primevue/tag';
+import EmptyState from '@/components/common/EmptyState.vue';
 import DateRangeSelector from '@/components/common/DateRangeSelector.vue';
 import ChartDisplay from '@/components/common/ChartDisplay.vue';
 import { useSensorStore } from '@/store/sensorStore';
@@ -103,6 +122,11 @@ const fromDate = ref<Date>(
   new Date(new Date().setDate(new Date().getDate() - 1))
 );
 const toDate = ref<Date>(new Date());
+const seriesCount = computed(() => Object.keys(series.value).length);
+const pointCount = computed(() => Object.values(series.value).reduce(
+  (sum, deviceSeries) => sum + deviceSeries.reduce((innerSum, item) => innerSum + item.data.length, 0),
+  0
+));
 
 const getLabel = (name: string) => PARAMETER_LABELS[name] || name;
 
@@ -151,7 +175,7 @@ async function loadChartData() {
         ];
         if (selectedParam.value.name === 'device_speed') {
           newNames[deviceData.id] = {
-            name: `Device №${deviceData.id}`,
+            name: `Device #${deviceData.id}`,
             serial_number: deviceData.serial_number,
           }
         } else {
@@ -206,3 +230,226 @@ watch(
   loadChartDataDebounced
 );
 </script>
+
+<style scoped>
+.section-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--app-gap-md);
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  width: 100%;
+}
+
+.visually-hidden {
+  border: 0;
+  clip: rect(0 0 0 0);
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+.telemetry-controls {
+  align-items: end;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  display: grid;
+  flex: 0 0 auto;
+  gap: var(--app-gap-md);
+  grid-template-areas: "parameter range summary";
+  grid-template-columns: minmax(190px, 260px) minmax(0, 1fr) auto;
+  padding: var(--app-panel-padding);
+}
+
+.telemetry-controls__parameter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  grid-area: parameter;
+  min-width: 0;
+}
+
+.telemetry-controls__parameter label {
+  color: var(--app-muted);
+  font-family: var(--app-mono);
+  font-size: 0.68rem;
+  font-weight: 650;
+  line-height: 1rem;
+  text-transform: uppercase;
+}
+
+.telemetry-controls__select {
+  min-width: 0;
+  width: 100%;
+}
+
+.telemetry-controls__range {
+  grid-area: range;
+  min-width: 0;
+}
+
+.telemetry-controls__summary {
+  align-items: center;
+  display: flex;
+  gap: var(--app-gap-sm);
+  grid-area: summary;
+  justify-content: flex-end;
+}
+
+.telemetry-charts {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--app-gap-md);
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.telemetry-charts--single {
+  overflow: hidden;
+}
+
+.telemetry-charts__skeleton {
+  flex: 1;
+  min-height: 24rem;
+}
+
+.chart-panel {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  min-height: 24rem;
+  overflow: hidden;
+}
+
+.chart-panel__header {
+  align-items: center;
+  background: var(--app-surface-soft);
+  border-bottom: 1px solid var(--app-border);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 10px var(--app-panel-padding);
+}
+
+.chart-panel__eyebrow,
+.chart-panel__serial {
+  color: var(--app-muted);
+  font-family: var(--app-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1rem;
+  text-transform: uppercase;
+}
+
+.chart-panel h3 {
+  color: var(--app-text-strong);
+  font-size: 0.95rem;
+  font-weight: 760;
+  line-height: 1.3rem;
+  margin: 0;
+}
+
+.chart-panel__body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  padding: 8px var(--app-panel-padding) 10px;
+}
+
+@media (min-width: 901px) {
+  .telemetry-charts--single .chart-panel {
+    height: 100%;
+    min-height: 0;
+  }
+}
+
+@media (max-width: 1180px) {
+  .telemetry-controls {
+    grid-template-areas:
+      "parameter summary"
+      "range range";
+    grid-template-columns: minmax(190px, 1fr) auto;
+  }
+}
+
+@media (min-width: 641px) {
+  .telemetry-controls__range :deep(.date-range-selector),
+  .telemetry-controls__range :deep(.date-range-selector__dates) {
+    align-items: center;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .telemetry-controls__range :deep(.date-range-selector__dates) {
+    flex: 0 1 auto;
+    min-width: 0;
+    width: auto;
+  }
+
+  .telemetry-controls__range :deep(.date-range-selector__separator) {
+    display: inline-flex;
+    flex: 0 0 auto;
+  }
+
+  .telemetry-controls__range :deep(.p-datepicker),
+  .telemetry-controls__range :deep(.p-inputwrapper),
+  .telemetry-controls__range :deep(.p-selectbutton) {
+    min-width: 0;
+    width: auto;
+  }
+
+  .telemetry-controls__range :deep(.date-range-selector__interval) {
+    flex: 0 0 auto;
+  }
+
+  .telemetry-controls__range :deep(.p-datepicker-input) {
+    width: 10.75rem;
+  }
+}
+
+@media (max-width: 900px) {
+  .section-page {
+    height: auto;
+    overflow: visible;
+  }
+
+  .telemetry-controls__summary {
+    align-self: center;
+  }
+
+  .telemetry-charts,
+  .telemetry-charts--single {
+    overflow: visible;
+  }
+}
+
+@media (max-width: 640px) {
+  .telemetry-controls {
+    align-items: stretch;
+    grid-template-areas:
+      "parameter"
+      "range"
+      "summary";
+    grid-template-columns: 1fr;
+  }
+
+  .telemetry-controls__summary {
+    justify-content: flex-start;
+  }
+}
+</style>

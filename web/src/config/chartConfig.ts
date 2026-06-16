@@ -18,9 +18,9 @@ export function useChartConfig() {
       animations: {
         enabled: true,
         easing: 'easeinout',
-        speed: 800,
+        speed: 220,
       },
-      fontFamily: 'Inter, sans-serif',
+      fontFamily: 'Work Sans, Inter, sans-serif',
     },
     dataLabels: {
       enabled: false
@@ -28,7 +28,7 @@ export function useChartConfig() {
     stroke: {
       curve: 'smooth',
       width: 2,
-      colors: ['#7C3AED']
+      colors: ['#0F766E']
     },
     fill: {
       type: 'gradient',
@@ -38,8 +38,8 @@ export function useChartConfig() {
         opacityTo: 0.2,
         stops: [0, 90, 100],
         colorStops: [
-          { offset: 0, color: "#7C3AED", opacity: 0.4 },
-          { offset: 100, color: "#ffffff", opacity: 0 }
+          { offset: 0, color: "#0F766E", opacity: 0.24 },
+          { offset: 100, color: "#FBFCFD", opacity: 0 }
         ]
       }
     },
@@ -48,7 +48,7 @@ export function useChartConfig() {
       labels: {
         style: { 
           fontSize: '12px',
-          colors: '#6B7280'
+          colors: '#68737E'
         },
         datetimeFormatter: {
           year: 'yyyy',
@@ -62,11 +62,11 @@ export function useChartConfig() {
       },
       axisBorder: {
         show: true,
-        color: '#E5E7EB'
+        color: '#D0D7DE'
       },
       axisTicks: {
         show: true,
-        color: '#E5E7EB'
+        color: '#D0D7DE'
       }
     },
     yaxis: {
@@ -76,25 +76,25 @@ export function useChartConfig() {
       labels: {
         style: {
           fontSize: '12px',
-          colors: '#6B7280'
+          colors: '#68737E'
         },
         formatter: (val: number) => val.toFixed(1)
       },
       axisBorder: {
         show: true,
-        color: '#E5E7EB'
+        color: '#D0D7DE'
       }
     },
     markers: {
       size: 4,
-      colors: ['#fff'],
-      strokeColors: '#7C3AED',
+      colors: ['#FBFCFD'],
+      strokeColors: '#0F766E',
       strokeWidth: 2,
       hover: { size: 6 },
     },
     grid: {
-      borderColor: '#E5E7EB',
-      strokeDashArray: 4,
+      borderColor: '#D0D7DE',
+      strokeDashArray: 2,
       padding: {
         top: 0,
         right: 0,

@@ -2,6 +2,7 @@ import PrimeVue from 'primevue/config'
 import ConfirmationService from 'primevue/confirmationservice'
 import ToastService from 'primevue/toastservice'
 import Ripple from 'primevue/ripple'
+import Tooltip from 'primevue/tooltip'
 import Aura from '@primeuix/themes/aura'
 import { definePreset } from '@primeuix/themes'
 
@@ -38,6 +39,7 @@ export default defineNuxtPlugin((nuxtApp) => {
     ripple: true,
   })
   nuxtApp.vueApp.directive('ripple', Ripple)
+  nuxtApp.vueApp.directive('tooltip', Tooltip)
   nuxtApp.vueApp.use(ToastService)
   nuxtApp.vueApp.use(ConfirmationService)
 })

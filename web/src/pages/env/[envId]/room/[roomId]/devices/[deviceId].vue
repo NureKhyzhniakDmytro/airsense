@@ -1,17 +1,25 @@
 <template>
-  <div class="items-center flex-grow" :class="{ 'place-content-center': !device }">
-    <div v-if="!device" class="flex flex-col items-center justify-center">
-      <i class="pi pi-exclamation-circle text-6xl text-gray-400 mb-4"></i>
-      <h2 class="text-2xl font-semibold text-gray-700 mb-2">Device Not Found</h2>
-      <p class="text-gray-500">The requested device does not exist or has been removed</p>
-    </div>
+  <div class="detail-page">
+    <Skeleton v-if="isLoading" height="18rem" />
+
+    <EmptyState
+      v-else-if="!device"
+      title="Device not found"
+      description="The requested device does not exist or has been removed."
+      icon="pi pi-exclamation-circle"
+    />
 
     <div v-else>
       <DeviceHeader :device="device" /> 
 
-      <div class="bg-white shadow-md rounded-lg p-4 mt-8">
-        <div class="flex flex-row items-center justify-between mb-2">
-          <h3 class="text-lg font-semibold text-gray-800 mb-4">Speed</h3>
+      <section class="detail-panel">
+        <header class="detail-panel__header">
+          <div>
+            <span>History</span>
+            <h2>Speed timeline</h2>
+          </div>
+        </header>
+        <div class="detail-toolbar">
           <DateRangeSelector
             v-model:from="fromDate"
             v-model:to="toDate"
@@ -21,13 +29,16 @@
             to-label="End"
           />
         </div>
-        <ChartDisplay
-          :series="series"
-          :chart-options="chartOptions"
-          :is-loading="isChartLoading"
-          empty-message="No speed data available for the selected period"
-        />
-      </div>
+        <div class="detail-chart">
+          <ChartDisplay
+            :series="series"
+            :chart-options="chartOptions"
+            :is-loading="isChartLoading"
+            empty-message="No speed data available for the selected period"
+            height="100%"
+          />
+        </div>
+      </section>
     </div>
   </div>
 </template>
@@ -43,8 +54,10 @@ import { useDeviceStore } from "@/store/deviceStore";
 import DateRangeSelector from "@/components/common/DateRangeSelector.vue";
 import ChartDisplay from "@/components/common/ChartDisplay.vue";
 import DeviceHeader from "@/components/device/DeviceHeader.vue";
+import EmptyState from "@/components/common/EmptyState.vue";
 import { INTERVAL_OPTIONS, type HistoryEntry } from "@/types/sensor";
 import { useChartConfig } from "@/config/chartConfig";
+import Skeleton from 'primevue/skeleton';
 
 const route = useRoute();
 const deviceStore = useDeviceStore();
@@ -83,7 +96,7 @@ const loadChartData = async () => {
 
     const res = await api.get(
       `/room/${roomId}/history/${deviceId}`,
-      { params: { from, to, interval: selectedInterval.value } }
+      { params: { from, to, interval: selectedInterval.value.value } }
     );
 
     const history: HistoryEntry[] = res.data?.data?.history || [];
@@ -94,7 +107,6 @@ const loadChartData = async () => {
         y: h.value
       }));
     }
-    console.log(series.value);
   } catch (err) {
     console.error("Failed to load chart data:", err);
   } finally {
@@ -109,3 +121,66 @@ onMounted(async () => {
 
 watch([selectedInterval, fromDate, toDate], loadChartData);
 </script>
+
+<style scoped>
+.detail-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+}
+
+.detail-page > div {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+
+.detail-panel {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.detail-panel__header {
+  background: var(--app-surface-soft);
+  border-bottom: 1px solid var(--app-border);
+  padding: 10px 12px;
+}
+
+.detail-panel__header span {
+  color: var(--app-muted);
+  font-family: var(--app-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.detail-panel__header h2 {
+  color: var(--app-text-strong);
+  font-size: 0.95rem;
+  font-weight: 760;
+  line-height: 1.3rem;
+  margin: 2px 0 0;
+}
+
+.detail-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px;
+}
+
+.detail-chart {
+  display: flex;
+  flex: 1;
+  min-height: 24rem;
+  padding: 0 12px 10px;
+}
+</style>

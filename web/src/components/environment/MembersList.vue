@@ -1,51 +1,43 @@
 <template>
-  <div class="items-center flex-grow">
-
-    <div class="flex justify-between items-center">
-      <div>
-        <h2 class="text-xl font-semibold text-gray-800">Members</h2>
-        <h2 class="text-sm text-gray-500">List of all users in your environment.</h2>
-      </div>
-
+  <div class="section-page">
+    <AppSectionHeader
+      title="Members"
+      description="Users with access to this environment."
+    >
+      <template #actions>
       <Button
           @click="inviteMemberDialog = true"
           label="Invite"
           icon="pi pi-plus"
           :disabled="environment?.role === 'user'"
       />
-      <invite-member-dialog v-model="inviteMemberDialog" :envId="envId" @refresh="refreshMembers" />
-    </div>
+      </template>
+    </AppSectionHeader>
 
-    <Card class="mt-8" :pt="{ body: 'p-0' }" >
-      <template #content>
+    <section class="members-panel">
         <ContextMenu ref="contextMenu" :model="items" />
         <DataTable
+            class="members-table"
             :value="members"
+            :first="pagination.skip"
             paginator
+            lazy
+            scrollable
+            scrollHeight="flex"
+            dataKey="id"
+            :loading="isLoading"
             @page="changePage"
             :rows="pagination.count"
             :total-records="pagination.total"
-            class="mt-3 rounded-t-xl"
-            :pt="{
-              pcPaginator: {
-                root: 'rounded-b-xl rounded-none'
-              }
-            }"
         >
-          <Column field="name" header="Name"/>
-          <Column field="email" header="Email"/>
-          <Column field="role" header="Role">
+          <Column field="name" header="Name" style="min-width: 12rem" />
+          <Column field="email" header="Email" style="min-width: 16rem" />
+          <Column field="role" header="Role" style="width: 8rem">
             <template #body="slotProps">
-              <span
-                  v-if="slotProps.data"
-                  class="px-3 py-1 rounded-full text-xs font-medium"
-                  :class="getRoleBadge(slotProps.data.role)"
-              >
-                {{ slotProps.data.role }}
-              </span>
+              <RoleTag v-if="slotProps.data" :role="slotProps.data.role" />
             </template>
           </Column>
-          <Column>
+          <Column style="width: 3.5rem">
             <template #body="slotProps">
               <div v-if="slotProps.data" class="flex justify-end">
                 <Button
@@ -61,24 +53,32 @@
               </div>
             </template>
           </Column>
-        </DataTable>
-      </template>
-    </Card>
 
+          <template #empty>
+            <div class="members-empty">
+              <i class="pi pi-users" />
+              <span>No members yet</span>
+            </div>
+          </template>
+        </DataTable>
+    </section>
+
+    <invite-member-dialog v-model="inviteMemberDialog" :envId="envId" @refresh="refreshMembers" />
     <edit-member-dialog v-if="selectedMember" v-model="editMemberDialog" :env-id="envId" :member="selectedMember" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { useRoute } from "vue-router";
 import { getMembers, removeUser } from "@/services/apiService";
 import type { Environment } from "@/types/environment";
-import { getRoleBadge } from "@/utils/environment";
 import { useEnvironmentStore } from "@/store/environmentStore";
 import { useAuthStore } from "@/store/authStore";
-import Card from 'primevue/card';
+import AppSectionHeader from "@/components/common/AppSectionHeader.vue";
+import RoleTag from "@/components/common/RoleTag.vue";
 import DataTable from 'primevue/datatable';
+import type { DataTablePageEvent } from 'primevue/datatable';
 import Column from 'primevue/column';
 import Button from "primevue/button";
 import InviteMemberDialog from "@/components/environment/InviteMemberDialog.vue";
@@ -86,7 +86,6 @@ import { useConfirm } from "primevue/useconfirm";
 import type { MenuItemCommandEvent } from "primevue/menuitem";
 import ContextMenu from 'primevue/contextmenu';
 import type { ContextMenuMethods } from 'primevue/contextmenu';
-import type { DataViewPageEvent } from "primevue/dataview";
 import { useToast } from 'primevue/usetoast';
 import EditMemberDialog from "@/components/environment/EditMemberDialog.vue";
 import type { User } from "@/types/user";
@@ -94,12 +93,13 @@ import type { User } from "@/types/user";
 const route = useRoute();
 const authStore = useAuthStore();
 const members = ref<User[]>([]);
-const pagination = ref({ total: 0, skip: 0, count: 5 });
+const pagination = ref({ total: 0, skip: 0, count: 12 });
 const environment = ref<Environment | null>(null);
 const environmentStore = useEnvironmentStore();
 const envId = Number(route.params.envId);
 const inviteMemberDialog = ref(false);
 const editMemberDialog = ref(false);
+const isLoading = ref(false);
 const contextMenu = ref<ContextMenuMethods | null>(null);
 const selectedRow = ref<User | null>(null);
 const confirm = useConfirm();
@@ -177,7 +177,8 @@ const deleteUser = async (user: User) => {
   }
 };
 
-const changePage = async (event: DataViewPageEvent) => {
+const changePage = async (event: DataTablePageEvent | { first?: number }) => {
+  isLoading.value = true;
   if (!environment.value) {
     environment.value = await environmentStore.fetchEnvironment(envId);
   }
@@ -186,9 +187,73 @@ const changePage = async (event: DataViewPageEvent) => {
   const { members: memberList, pagination: pag } = await getMembers(environment.value.id, pagination.value.skip, pagination.value.count);
   members.value = memberList;
   pagination.value = pag;
+  isLoading.value = false;
 };
 
 const refreshMembers = async () => {
-  await changePage({ first: pagination.value.skip } as DataViewPageEvent);
+  await changePage({ first: pagination.value.skip });
 };
+
+onMounted(refreshMembers);
 </script>
+
+<style scoped>
+.section-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.members-panel {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.members-table {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.members-table :deep(.p-datatable-table-container) {
+  flex: 1;
+  min-height: 0;
+}
+
+.members-table :deep(.p-paginator) {
+  border-top: 1px solid var(--app-border);
+  flex: 0 0 auto;
+}
+
+.members-table :deep(.p-datatable-tbody > tr > td) {
+  height: 48px;
+  padding-bottom: 8px;
+  padding-top: 8px;
+}
+
+.members-empty {
+  align-items: center;
+  color: var(--app-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+  min-height: 180px;
+}
+
+.members-empty i {
+  color: var(--app-primary);
+  font-size: 1.5rem;
+}
+</style>

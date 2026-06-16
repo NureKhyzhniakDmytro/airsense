@@ -1,8 +1,8 @@
 <template>
   <footer
-      class="w-full shadow p-4 text-center text-color bg-surface-0"
+      class="w-full border-t border-surface-200 bg-surface-0/80 p-4 text-center text-sm text-muted-color"
   >
-    &copy; 2025 AirSense
+    AirSense control platform
   </footer>
 </template>
 

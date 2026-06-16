@@ -44,9 +44,9 @@ public class RoomRepository(IDbConnection connection) : IRoomRepository
                                AVG(lsd.value) AS ParamValue
                            FROM rooms r
                                     LEFT JOIN devices d ON r.id = d.room_id
-                                    LEFT JOIN latest_device_data ldd ON d.id = ldd.device_id AND ldd.applied_at > NOW() - INTERVAL '1 minute'
+                                    LEFT JOIN latest_device_data ldd ON d.id = ldd.device_id AND ldd.applied_at > NOW() - INTERVAL '15 minutes'
                                     LEFT JOIN sensors s ON r.id = s.room_id
-                                    LEFT JOIN latest_sensor_data lsd ON s.id = lsd.sensor_id AND lsd.timestamp > NOW() - INTERVAL '1 minute'
+                                    LEFT JOIN latest_sensor_data lsd ON s.id = lsd.sensor_id AND lsd.timestamp > NOW() - INTERVAL '15 minutes'
                            WHERE r.environment_id = @envId
                            GROUP BY r.id, r.name, lsd.parameter, lsd.unit, lsd.min_value, lsd.max_value
                            ORDER BY r.id
@@ -144,9 +144,9 @@ public class RoomRepository(IDbConnection connection) : IRoomRepository
                                AVG(lsd.value) AS ParamValue
                            FROM rooms r
                                     LEFT JOIN devices d ON r.id = d.room_id
-                                    LEFT JOIN latest_device_data ldd ON d.id = ldd.device_id AND ldd.applied_at > NOW() - INTERVAL '1 minute'
+                                    LEFT JOIN latest_device_data ldd ON d.id = ldd.device_id AND ldd.applied_at > NOW() - INTERVAL '15 minutes'
                                     LEFT JOIN sensors s ON r.id = s.room_id
-                                    LEFT JOIN latest_sensor_data lsd ON s.id = lsd.sensor_id AND lsd.timestamp > NOW() - INTERVAL '1 minute'
+                                    LEFT JOIN latest_sensor_data lsd ON s.id = lsd.sensor_id AND lsd.timestamp > NOW() - INTERVAL '15 minutes'
                            WHERE r.id = @roomId
                            GROUP BY r.id, r.name, lsd.parameter, lsd.unit, lsd.min_value, lsd.max_value
                            ORDER BY r.id

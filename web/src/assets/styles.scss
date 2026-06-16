@@ -1,2 +1,276 @@
 @import 'primeicons/primeicons.css';
 @import 'https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined';
+@import 'https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600&family=Work+Sans:wght@400;500;600;700;800&display=swap';
+
+:root {
+  --app-bg: #eef1f4;
+  --app-surface: #fbfcfd;
+  --app-surface-soft: #f3f5f7;
+  --app-surface-raised: #ffffff;
+  --app-border: #d0d7de;
+  --app-border-strong: #9aa7b2;
+  --app-text-strong: #1b2229;
+  --app-muted: #68737e;
+  --app-primary: #0f766e;
+  --app-primary-strong: #0b4f4a;
+  --app-soft-accent: #dcefeb;
+  --app-success: #16855c;
+  --app-warning: #b7791f;
+  --app-danger: #c24135;
+  --app-radius: 6px;
+  --app-shadow-sm: none;
+  --app-gap-xs: 4px;
+  --app-gap-sm: 8px;
+  --app-gap-md: 12px;
+  --app-gap-lg: 16px;
+  --app-control-height: 36px;
+  --app-row-height: 60px;
+  --app-panel-padding: 12px;
+  --app-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --app-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --app-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --app-sans: "Work Sans", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+html,
+body,
+#__nuxt {
+  min-height: 100%;
+}
+
+body {
+  background:
+    linear-gradient(90deg, rgb(27 34 41 / 0.035) 1px, transparent 1px),
+    linear-gradient(180deg, rgb(27 34 41 / 0.028) 1px, transparent 1px),
+    var(--app-bg);
+  background-size: 24px 24px;
+  color: var(--app-text-strong);
+  font-family: var(--app-sans);
+  margin: 0;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  letter-spacing: 0;
+}
+
+.material-symbols-outlined {
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.app-shell {
+  background: var(--app-bg);
+  color: var(--app-text-strong);
+}
+
+.app-container {
+  margin-inline: auto;
+  max-width: 1280px;
+  min-width: 0;
+  width: 100%;
+}
+
+.app-panel {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  box-shadow: var(--app-shadow-sm);
+}
+
+.app-clickable {
+  transition:
+    background-color 140ms var(--app-ease-out),
+    border-color 140ms var(--app-ease-out),
+    transform 120ms var(--app-ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .app-clickable:hover {
+    background: var(--app-surface-soft);
+    border-color: var(--app-border-strong);
+  }
+}
+
+.app-clickable:active,
+.p-button:active,
+.p-avatar:active {
+  transform: scale(0.975);
+}
+
+.p-card,
+.p-dialog,
+.p-datatable,
+.p-dataview,
+.p-inputtext,
+.p-password-input,
+.p-select,
+.p-datepicker-input {
+  border-radius: var(--app-radius);
+}
+
+.p-card {
+  border: 1px solid var(--app-border);
+  box-shadow: var(--app-shadow-sm);
+}
+
+.p-card-body {
+  padding: 1rem;
+}
+
+.p-button {
+  font-weight: 650;
+  min-height: var(--app-control-height);
+  transition:
+    background-color 140ms var(--app-ease-out),
+    border-color 140ms var(--app-ease-out),
+    color 140ms var(--app-ease-out),
+    transform 120ms var(--app-ease-out),
+    box-shadow 140ms var(--app-ease-out);
+}
+
+.p-inputtext,
+.p-password-input,
+.p-select-label,
+.p-datepicker-input {
+  font-size: 0.875rem;
+}
+
+.p-inputtext,
+.p-password-input,
+.p-select {
+  min-height: var(--app-control-height);
+}
+
+.p-select-label {
+  align-items: center;
+  display: inline-flex;
+  min-height: calc(var(--app-control-height) - 2px);
+}
+
+.p-dialog {
+  border: 1px solid var(--app-border);
+  box-shadow: 0 22px 70px rgb(27 34 41 / 0.18);
+}
+
+.p-dialog-header {
+  border-bottom: 1px solid var(--app-border);
+  padding: 0.875rem 1rem;
+}
+
+.p-dialog-title {
+  color: var(--app-text-strong);
+  font-size: 1rem;
+  font-weight: 780;
+}
+
+.p-dialog-content {
+  padding: 1rem;
+}
+
+.p-dialog-footer {
+  border-top: 1px solid var(--app-border);
+  padding: 0.75rem 1rem;
+}
+
+.p-button:focus-visible,
+.p-inputtext:focus,
+.p-password-input:focus,
+.p-select:not(.p-disabled).p-focus {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-primary) 18%, transparent);
+}
+
+.p-tag {
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 4px;
+  font-family: var(--app-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1rem;
+  text-transform: uppercase;
+}
+
+.p-breadcrumb {
+  background: transparent;
+  font-size: 0.8125rem;
+}
+
+.p-dataview-content,
+.p-datatable-table-container {
+  border-radius: var(--app-radius) var(--app-radius) 0 0;
+}
+
+.p-datatable-table {
+  font-size: 0.875rem;
+}
+
+.p-datatable-thead > tr > th {
+  background: var(--app-surface-soft);
+  color: var(--app-muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+  padding-bottom: 0.625rem;
+  padding-top: 0.625rem;
+  text-transform: uppercase;
+}
+
+.p-datatable-tbody > tr > td {
+  border-color: var(--app-border);
+}
+
+.p-paginator {
+  border-radius: 0 0 var(--app-radius) var(--app-radius);
+}
+
+.entity-dialog-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-gap-md);
+  width: 100%;
+}
+
+.entity-dialog-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--app-gap-xs);
+}
+
+.entity-dialog-label {
+  color: var(--app-muted);
+  font-family: var(--app-mono);
+  font-size: 0.68rem;
+  font-weight: 650;
+  line-height: 1rem;
+  text-transform: uppercase;
+}
+
+.entity-dialog-actions {
+  display: flex;
+  gap: var(--app-gap-sm);
+  justify-content: flex-end;
+}
+
+@media (max-width: 520px) {
+  .entity-dialog-actions {
+    flex-direction: column-reverse;
+  }
+
+  .entity-dialog-actions .p-button {
+    justify-content: center;
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

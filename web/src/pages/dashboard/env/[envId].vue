@@ -1,31 +1,25 @@
 <template>
-  <div class="flex flex-col flex-grow">
-    <div class="flex justify-between items-center mt-8">
-      <h1 v-if="environment" class="text-3xl font-bold text-gray-800">{{ environment.name }}</h1>
-      <div class="flex items-center gap-2">
+  <div class="entity-page">
+    <AppPageHeader
+      :title="environment?.name || 'Environment'"
+      description="Rooms, members, and operating access for this AirSense environment."
+      eyebrow="Environment"
+    >
+      <template #badge>
+        <RoleTag v-if="environment?.role" :role="environment.role" />
+      </template>
+
+      <template #actions>
         <Button label="Edit" icon="pi pi-pencil" rounded variant="text" @click="editEnvironmentDialog = true" />
         <Button label="Delete" icon="pi pi-trash" rounded severity="danger" @click="deleteEnvironment" variant="text" />
-      </div>
+      </template>
+    </AppPageHeader>
+
+    <div v-if="isLoading" class="entity-page__loading">
+      <Skeleton width="12rem" height="2rem" />
     </div>
 
-    <div v-if="isLoading" class="space-y-2">
-      <div class="h-10 bg-gray-300 animate-pulse rounded"></div>
-    </div>
-
-    <Tabs :value="activeTab" class="mt-8">
-      <TabList qwety="qwety" :pt="{ tabList: 'bg-inherit'}">
-        <Tab v-for="tab in items" :key="tab.label" :value="tab.value">
-          <router-link v-if="tab.route" v-slot="{ href, navigate }" :to="tab.route" custom>
-            <a :href="href" @click="navigate" class="flex items-center gap-2 text-inherit">
-              <i :class="tab.icon" />
-              <span>{{ tab.label }}</span>
-            </a>
-          </router-link>
-        </Tab>
-      </TabList>
-    </Tabs>
-
-    <div class="my-6 flex flex-grow">
+    <div class="entity-page__content">
       <NuxtPage />
     </div>
 
@@ -36,15 +30,15 @@
 <script setup lang="ts">
 definePageMeta({ name: 'environment', layout: 'dashboard', requiresAuth: true })
 
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useEnvironmentStore } from "@/store/environmentStore"
 import EditEnvironmentDialog from "@/components/environment/EditEnvironmentDialog.vue";
 import { deleteEnvironment as deleteEnvironmentApi } from "@/services/apiService";
-import Tabs from 'primevue/tabs';
-import TabList from 'primevue/tablist';
-import Tab from 'primevue/tab';
+import AppPageHeader from "@/components/common/AppPageHeader.vue";
+import RoleTag from "@/components/common/RoleTag.vue";
 import Button from 'primevue/button';
+import Skeleton from 'primevue/skeleton';
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
 
@@ -52,19 +46,13 @@ const route = useRoute();
 const router = useRouter();
 const envId = Number(route.params.envId);
 const environmentStore = useEnvironmentStore();
-const activeTab = ref<"rooms" | "members">(route.path.split("/").slice(-1)[0] === "members" ? "members" : "rooms");
 const confirm = useConfirm();
 const toast = useToast();
 const isRefreshing = ref(false);
 const editEnvironmentDialog = ref(false);
-const items = ref([
-  { route: { name: 'environment-rooms', params: { envId } }, label: 'Rooms', icon: 'pi pi-list', value: 'rooms' },
-  { route: { name: 'environment-members', params: { envId } }, label: 'Members', icon: 'pi pi-users', value: 'members' },
-]);
 
 if (route.name === 'environment') {
   await navigateTo({ name: 'environment-rooms', params: { envId } }, { replace: true });
-  activeTab.value = "rooms";
 }
 
 const { data: environmentData, pending } = await useAsyncData(
@@ -72,7 +60,11 @@ const { data: environmentData, pending } = await useAsyncData(
   () => environmentStore.fetchEnvironment(envId),
 );
 
-const environment = computed(() => environmentData.value ?? null);
+const environment = computed(() => (
+  environmentData.value
+    ?? environmentStore.environments.find((item) => item.id === envId)
+    ?? null
+));
 const isLoading = computed(() => pending.value || isRefreshing.value);
 
 const refreshEnvironment = async () => {
@@ -80,6 +72,12 @@ const refreshEnvironment = async () => {
   environmentData.value = await environmentStore.fetchEnvironment(envId, true);
   isRefreshing.value = false;
 }
+
+onMounted(async () => {
+  if (!environmentData.value) {
+    environmentData.value = await environmentStore.fetchEnvironment(envId, true);
+  }
+});
 
 const deleteEnvironment = async () => {
   confirm.require({
@@ -103,3 +101,27 @@ const deleteEnvironment = async () => {
       });
 }
 </script>
+
+<style scoped>
+.entity-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--app-gap-md);
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+}
+
+.entity-page__loading {
+  min-height: 36px;
+}
+
+.entity-page__content {
+  display: flex;
+  flex: 1;
+  max-width: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+</style>

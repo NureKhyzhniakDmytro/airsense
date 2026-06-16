@@ -1,46 +1,48 @@
 <template>
-  <Dialog v-model:visible="isOpen" modal header="Add Sensor" :draggable="false" :style="{ width: '25rem' }">
-    <Form v-slot="$form" :resolver="resolver" @submit="onFormSubmit" class="flex flex-col gap-4 w-full">
-      <div class="flex flex-col gap-1">
-        <InputText 
-          name="serialNumber" 
-          type="text" 
-          class="w-full" 
-          placeholder="Serial number"
-          :class="{ 'p-invalid': $form.serialNumber?.invalid }"
+  <Dialog
+    v-model:visible="isOpen"
+    modal
+    header="Add sensor"
+    :draggable="false"
+    :style="{ width: 'min(26rem, calc(100vw - 2rem))' }"
+  >
+    <div class="entity-dialog-form">
+      <div class="entity-dialog-field">
+        <label class="entity-dialog-label" for="sensor-serial-number">Serial number</label>
+        <InputText
+          id="sensor-serial-number"
+          v-model="serialNumber"
+          class="w-full"
+          maxlength="20"
+          placeholder="Sensor serial number"
+          :class="{ 'p-invalid': errorMessage }"
+          @keyup.enter="submit"
         />
-        <Message v-if="$form.serialNumber?.invalid" severity="error" size="small" variant="simple">
-          {{ $form.serialNumber.error?.message }}
-        </Message>
+        <small v-if="errorMessage" class="p-error">{{ errorMessage }}</small>
       </div>
+    </div>
 
-      <Message v-if="isError" severity="error" :life="3000">
-        Error adding sensor
-      </Message>
-
-      <div class="flex justify-end gap-2">
-        <Button type="button" label="Cancel" severity="secondary" @click="isOpen = false" />
-        <Button type="submit" severity="primary" label="Add" :loading="isLoading" />
+    <template #footer>
+      <div class="entity-dialog-actions">
+        <Button type="button" label="Cancel" severity="secondary" @click="close" />
+        <Button type="button" severity="primary" label="Add" :loading="isLoading" @click="submit" />
       </div>
-    </Form>
+    </template>
   </Dialog>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from "vue";
+import { computed, ref, watch } from "vue";
 import Dialog from "primevue/dialog";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
-import Message from "primevue/message";
-import FloatLabel from "primevue/floatlabel";
-import { Form } from "@primevue/forms";
-import type { FormResolverOptions, FormSubmitEvent, FormValues } from "@/types/form";
 import { useToast } from "primevue/usetoast";
 import { addSensor } from "@/services/apiService";
 
 const toast = useToast();
 const isLoading = ref(false);
-const isError = ref(false);
+const serialNumber = ref("");
+const errorMessage = ref("");
 
 const props = defineProps<{
   modelValue: boolean;
@@ -57,48 +59,44 @@ const isOpen = computed({
   set: (val) => emit('update:modelValue', val)
 });
 
-const resolver = ({ values }: FormResolverOptions) => {
-  const errors: Record<string, Array<{ message: string }>> = {};
-
-  if (!values.serialNumber) {
-    errors.serialNumber = [{ message: "Serial number is required" }];
-  }
-
-  return {
-    values,
-    errors
-  };
+const reset = () => {
+  serialNumber.value = "";
+  errorMessage.value = "";
 };
 
-const onFormSubmit = ({ valid, values }: FormSubmitEvent) => {
-  if (valid) {
-    create(values).then(
-      isSuccess => {
-        if (isSuccess) {
-          isOpen.value = false;
-          emit('added');
-        }
-      }
-    );
-  }
+const close = () => {
+  isOpen.value = false;
+  reset();
 };
 
-const create = async (values: FormValues): Promise<boolean> => {
+const submit = async () => {
+  const value = serialNumber.value.trim();
+  if (!value) {
+    errorMessage.value = "Serial number is required.";
+    return;
+  }
+  if (value.length !== 20) {
+    errorMessage.value = "Serial number must be exactly 20 characters.";
+    return;
+  }
+
   try {
     isLoading.value = true;
-    await addSensor(props.roomId, values.serialNumber.trim());
+    errorMessage.value = "";
+    await addSensor(props.roomId, value);
     toast.add({ severity: 'success', summary: 'Success', detail: 'Sensor added', life: 3000 });
-    return true;
+    emit('added');
+    close();
   } catch (error) {
-    isError.value = true;
-    setTimeout(() => {
-      isError.value = false;
-    }, 3500);
-    return false;
+    errorMessage.value = "Failed to add sensor.";
   } finally {
     isLoading.value = false;
   }
 };
+
+watch(() => props.modelValue, (open) => {
+  if (!open) reset();
+});
 
 defineExpose({
   isOpen

@@ -1,16 +1,16 @@
 <template>
-  <Breadcrumb :home="home" :model="items" class="bg-surface-100 p-0">
+  <Breadcrumb :home="home" :model="items" class="app-breadcrumbs">
     <template #item="{ item, props }">
       <Skeleton v-if="item.isLoading" :width="skeletonWidth" />
       <div v-else>
         <router-link v-if="item.route" v-slot="{ href, navigate }" :to="item.route" custom>
-          <a :href="href" v-bind="props.action" @click="navigate" class="gap-0">
-            <span :class="[item.icon? item.icon : 'hidden']" class="h-6 w-6 text-color p-1 hover:text-color-emphasis" />
-            <span class="text-primary font-semibold hover:text-primary-emphasis">{{ item.label }}</span>
+          <a :href="href" v-bind="props.action" @click="navigate" class="app-breadcrumbs__item">
+            <span v-if="item.icon" :class="item.icon" class="app-breadcrumbs__icon" />
+            <span class="app-breadcrumbs__label">{{ item.label }}</span>
           </a>
         </router-link>
-        <a v-else :href="item.url" :target="item.target" v-bind="props.action">
-          <span class="text-surface-700">{{ item.label }}</span>
+        <a v-else :href="item.url" :target="item.target" v-bind="props.action" class="app-breadcrumbs__item">
+          <span class="app-breadcrumbs__plain">{{ item.label }}</span>
         </a>
       </div>
     </template>
@@ -121,3 +121,52 @@ watch(() => route.params, async () => {
   clearBreadcrumbs();
 }, { immediate: true });
 </script>
+
+<style scoped>
+.app-breadcrumbs {
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+.app-breadcrumbs :deep(.p-breadcrumb-list) {
+  gap: 4px;
+}
+
+.app-breadcrumbs :deep(.p-breadcrumb-separator) {
+  color: var(--app-muted);
+  font-size: 0.7rem;
+}
+
+.app-breadcrumbs__item {
+  align-items: center;
+  border-radius: 4px;
+  color: var(--app-text);
+  display: inline-flex;
+  gap: 5px;
+  min-height: 28px;
+  padding: 3px 5px;
+  text-decoration: none;
+  transition: background-color 120ms var(--app-ease-out), color 120ms var(--app-ease-out);
+}
+
+.app-breadcrumbs__item:hover {
+  background: var(--app-surface-soft);
+  color: var(--app-text-strong);
+}
+
+.app-breadcrumbs__icon {
+  color: var(--app-muted);
+  font-size: 0.82rem;
+}
+
+.app-breadcrumbs__label,
+.app-breadcrumbs__plain {
+  color: inherit;
+  font-family: var(--app-mono);
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0;
+  line-height: 1rem;
+}
+</style>

@@ -1,6 +1,6 @@
 <template>
-  <div class="flex flex-row gap-4 items-center">
-    <div class="flex flex-row gap-4 items-center">
+  <div class="date-range-selector">
+    <div class="date-range-selector__dates">
       <FloatLabel variant="on">
         <DatePicker 
           :modelValue="props.from" 
@@ -13,7 +13,7 @@
         />
         <label for="from_date">{{ fromLabel }}</label>
       </FloatLabel>
-      <i class="pi pi-minus my-auto" style="font-size: 1rem"></i>
+      <i class="pi pi-minus date-range-selector__separator"></i>
       <FloatLabel variant="on">
         <DatePicker 
           :modelValue="props.to" 
@@ -32,6 +32,7 @@
       :modelValue="props.interval" 
       :options="intervalOptions" 
       optionLabel="name"
+      class="date-range-selector__interval"
       @update:modelValue="(value) => emit('update:interval', value)" 
     />
   </div>
@@ -50,3 +51,72 @@ const props = withDefaults(defineProps<DateRangeProps>(), {
 
 const emit = defineEmits<DateRangeEmits>();
 </script> 
+
+<style scoped>
+.date-range-selector {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--app-gap-sm);
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.date-range-selector__dates {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--app-gap-sm);
+  min-width: 0;
+}
+
+.date-range-selector__separator {
+  color: var(--app-muted);
+  font-size: 0.875rem;
+}
+
+.date-range-selector__interval {
+  flex: 0 0 auto;
+}
+
+.date-range-selector :deep(.p-datepicker-input) {
+  height: var(--app-control-height);
+  width: 10.5rem;
+}
+
+.date-range-selector :deep(.p-datepicker) {
+  max-width: 10.5rem;
+}
+
+.date-range-selector :deep(.p-floatlabel label) {
+  font-size: 0.72rem;
+}
+
+.date-range-selector :deep(.p-selectbutton) {
+  display: inline-flex;
+}
+
+.date-range-selector :deep(.p-togglebutton) {
+  min-height: var(--app-control-height);
+  padding: 0.35rem 0.65rem;
+}
+
+@media (max-width: 760px) {
+  .date-range-selector,
+  .date-range-selector__dates {
+    align-items: stretch;
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .date-range-selector :deep(.p-datepicker),
+  .date-range-selector :deep(.p-inputwrapper),
+  .date-range-selector :deep(.p-selectbutton) {
+    width: 100%;
+  }
+
+  .date-range-selector__separator {
+    display: none;
+  }
+}
+</style>

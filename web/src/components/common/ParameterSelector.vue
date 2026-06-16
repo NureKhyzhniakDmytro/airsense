@@ -1,24 +1,20 @@
 <template>
-  <div class="flex flex-wrap gap-2">
-    <span
-      v-for="type in types"
-      :key="type"
-      @click="$emit('select', type)"
-      :class="[
-        'px-3 py-1 text-sm rounded-full cursor-pointer transition-all',
-        PARAMETER_STYLES[type] || 'bg-gray-100 text-gray-700',
-        selectedParam === type ? 'ring-2 ring-blue-500 ring-offset-2' : ''
-      ]"
-    >
-      {{ PARAMETER_LABELS[type] || type }}
-    </span>
-  </div>
+  <SelectButton
+    :model-value="selectedParam"
+    :options="options"
+    option-label="label"
+    option-value="value"
+    class="parameter-selector"
+    @update:modelValue="value => value && $emit('select', value)"
+  />
 </template>
 
 <script setup lang="ts">
-import { PARAMETER_LABELS, PARAMETER_STYLES } from '@/types/sensor';
+import { computed } from 'vue';
+import SelectButton from 'primevue/selectbutton';
+import { PARAMETER_LABELS } from '@/types/sensor';
 
-defineProps<{
+const props = defineProps<{
   types: string[];
   selectedParam: string;
 }>();
@@ -26,4 +22,26 @@ defineProps<{
 defineEmits<{
   (e: 'select', type: string): void;
 }>();
-</script> 
+
+const options = computed(() => props.types.map(type => ({
+  label: PARAMETER_LABELS[type] || type,
+  value: type,
+})));
+</script>
+
+<style scoped>
+.parameter-selector {
+  max-width: 100%;
+}
+
+.parameter-selector :deep(.p-togglebutton) {
+  min-height: var(--app-control-height);
+  padding: 0.35rem 0.7rem;
+}
+
+@media (max-width: 760px) {
+  .parameter-selector {
+    width: 100%;
+  }
+}
+</style>

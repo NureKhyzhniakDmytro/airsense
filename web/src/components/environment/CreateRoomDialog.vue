@@ -1,14 +1,15 @@
 <template>
-  <Dialog v-model:visible="isOpen" modal header="Create new Room" :draggable="false" :style="{ width: '25rem' }">
-    <Form v-slot="$form" :resolver @submit="onFormSubmit" class="flex flex-col gap-4 w-full">
-      <div class="flex flex-col gap-1">
-        <InputText name="name" type="text" placeholder="Name" fluid />
+  <Dialog v-model:visible="isOpen" modal header="Create room" :draggable="false" :style="{ width: 'min(26rem, calc(100vw - 2rem))' }">
+    <Form v-slot="$form" :resolver @submit="onFormSubmit" class="entity-dialog-form">
+      <div class="entity-dialog-field">
+        <label class="entity-dialog-label" for="room-name">Room name</label>
+        <InputText id="room-name" name="name" type="text" placeholder="Lab A" maxlength="20" fluid />
         <Message v-if="$form.name?.invalid" severity="error" size="small" variant="simple">{{ $form.name.error?.message }}</Message>
       </div>
       <Message v-if="isError" severity="error" :life="3000">An error occurred while creating the room</Message>
-      <div class="flex justify-end gap-2">
+      <div class="entity-dialog-actions">
         <Button type="button" label="Cancel" severity="secondary" @click="isOpen = false" />
-        <Button type="submit" severity="primary" label="Submit" :loading="isLoading" />
+        <Button type="submit" severity="primary" label="Create" :loading="isLoading" />
       </div>
     </Form>
   </Dialog>
@@ -48,16 +49,14 @@ defineExpose({
 });
 
 const resolver = ({ values }: FormResolverOptions) => {
-  const errors: Record<string, Record<string, string>[]> = {
-    name: []
-  };
+  const errors: Record<string, Record<string, string>[]> = {};
 
   if (!values.name) {
-    errors.name.push({ message: 'Name is required.' });
-  }
-
-  if (values.name?.length < 3) {
-    errors.name.push({ type: 'minimum', message: 'Name must be at least 3 characters long.' });
+    errors.name = [{ message: 'Name is required.' }];
+  } else if (values.name.length < 3) {
+    errors.name = [{ type: 'minimum', message: 'Name must be at least 3 characters long.' }];
+  } else if (values.name.length > 20) {
+    errors.name = [{ type: 'maximum', message: 'Name must be 20 characters or fewer.' }];
   }
 
   return {
@@ -84,6 +83,7 @@ const create = async (values: Record<string, any>): Promise<boolean> => {
     await router.push({
       name: 'room',
       params: {
+        envId: props.envId,
         roomId: newRoom.id,
       }
     })

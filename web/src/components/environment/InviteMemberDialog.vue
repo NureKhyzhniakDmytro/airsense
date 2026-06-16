@@ -1,14 +1,15 @@
 <template>
-  <Dialog v-model:visible="isOpen" modal header="Invite member" :draggable="false" :style="{ width: '25rem' }">
-    <Form v-slot="$form" :resolver @submit="onFormSubmit" class="flex flex-col gap-4 w-full">
-      <div class="flex flex-col gap-1">
-        <InputText name="email" type="text" placeholder="Email" fluid />
+  <Dialog v-model:visible="isOpen" modal header="Invite member" :draggable="false" :style="{ width: 'min(26rem, calc(100vw - 2rem))' }">
+    <Form v-slot="$form" :resolver @submit="onFormSubmit" class="entity-dialog-form">
+      <div class="entity-dialog-field">
+        <label class="entity-dialog-label" for="invite-member-email">Email</label>
+        <InputText id="invite-member-email" name="email" type="email" placeholder="person@example.com" fluid />
         <Message v-if="$form.email?.invalid" severity="error" size="small" variant="simple">{{ $form.email.error?.message }}</Message>
       </div>
       <Message v-if="isError" severity="error" :life="3000">An error occurred while inviting a participant</Message>
-      <div class="flex justify-end gap-2">
+      <div class="entity-dialog-actions">
         <Button type="button" label="Cancel" severity="secondary" @click="isOpen = false" />
-        <Button type="submit" severity="primary" label="Submit" :loading="isLoading" />
+        <Button type="submit" severity="primary" label="Invite" :loading="isLoading" />
       </div>
     </Form>
   </Dialog>

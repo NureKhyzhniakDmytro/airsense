@@ -1,14 +1,15 @@
 <template>
-  <Dialog v-model:visible="isOpen" modal header="Edit member" :draggable="false" :style="{ width: '25rem' }">
-    <Form v-slot="$form" :resolver @submit="onFormSubmit" class="flex flex-col gap-4 w-full">
-      <div class="flex flex-col gap-1">
-        <Select v-model="selectedValue" name="role" :options="roles" optionLabel="name" placeholder="Select a Role" fluid />
+  <Dialog v-model:visible="isOpen" modal header="Edit member" :draggable="false" :style="{ width: 'min(26rem, calc(100vw - 2rem))' }">
+    <Form v-slot="$form" :resolver @submit="onFormSubmit" class="entity-dialog-form">
+      <div class="entity-dialog-field">
+        <label class="entity-dialog-label" for="member-role">Role</label>
+        <Select inputId="member-role" v-model="selectedValue" name="role" :options="roles" optionLabel="name" placeholder="Select a role" fluid />
         <Message v-if="$form.role?.invalid" severity="error" size="small" variant="simple">{{ $form.role.error?.message }}</Message>
       </div>
       <Message v-if="isError" severity="error" :life="3000">An error occurred while updating the member</Message>
-      <div class="flex justify-end gap-2">
+      <div class="entity-dialog-actions">
         <Button type="button" label="Cancel" severity="secondary" @click="isOpen = false" />
-        <Button type="submit" severity="primary" label="Submit" :loading="isLoading" />
+        <Button type="submit" severity="primary" label="Save" :loading="isLoading" />
       </div>
     </Form>
   </Dialog>
@@ -23,7 +24,7 @@ import { Form } from '@primevue/forms';
 import { computed, onMounted, ref } from "vue";
 import { changeUserRole } from "@/services/apiService";
 import type { FormResolverOptions, FormSubmitEvent } from "@primevue/forms/form";
-import type { User } from "@/services/apiService";
+import type { User } from "@/types/user";
 
 const roles = ref([
   { name: 'Admin', value: 'admin' },
@@ -56,12 +57,12 @@ defineExpose({
 });
 
 const resolver = ({ values }: FormResolverOptions) => {
-  const errors: Record<string, Record<string, string>[]> = {
-    role: []
-  };
+  const errors: Record<string, Record<string, string>[]> = {};
 
-  if (selectedValue.value.value === props.member.role) {
-    errors.role.push({ message: 'The selected role is the same as the current role' })
+  if (!selectedValue.value) {
+    errors.role = [{ message: 'Role is required' }]
+  } else if (selectedValue.value.value === props.member.role) {
+    errors.role = [{ message: 'The selected role is the same as the current role' }]
   }
 
   return {

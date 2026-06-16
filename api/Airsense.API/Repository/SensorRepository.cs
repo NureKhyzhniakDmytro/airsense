@@ -30,7 +30,7 @@ public class SensorRepository(IDbConnection connection) : ISensorRepository
                                    sensor_id, parameter_id, value, timestamp
                                FROM sensor_data
                                ORDER BY sensor_id, parameter_id, timestamp DESC
-                           ) sd ON s.id = sd.sensor_id AND sd.timestamp > NOW() - INTERVAL '1 minute'
+                           ) sd ON s.id = sd.sensor_id AND sd.timestamp > NOW() - INTERVAL '15 minutes'
                            LEFT JOIN parameters dp ON dp.id = sd.parameter_id
                            WHERE s.room_id = @roomId
                            ORDER BY s.id
