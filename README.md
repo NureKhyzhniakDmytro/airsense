@@ -5,13 +5,23 @@ AirSense is a smart indoor air-quality monitoring and automation system. The rep
 ## Repository Structure
 
 - `api/` - ASP.NET Core backend, REST API, MQTT integration, service-role workers, PostgreSQL schema.
-- `web/` - web client application.
+- `web/` - Nuxt 3 web client application.
 - `mobile/` - mobile client application.
 - `charts/airsense/` - Helm chart for local Kubernetes/Minikube deployment.
 - `scripts/` - project automation scripts.
 - `docs/` - architecture and infrastructure notes.
 
 The IoT firmware code is intentionally not included in this monorepo. In the diploma scope it is treated as an external device-side component that communicates with the platform through MQTT.
+
+## Web Client
+
+The web client in `web/` is a Nuxt 3 SPA. It uses file-based routing, a dashboard layout, Pinia stores, PrimeVue components, Firebase authentication, and Axios integration with the backend API.
+
+```bash
+cd web
+npm install
+npm run dev
+```
 
 ## Local Kubernetes Deployment
 

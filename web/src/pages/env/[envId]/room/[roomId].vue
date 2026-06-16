@@ -42,7 +42,7 @@
       </Tabs>
 
       <div class="my-6 flex flex-grow">
-        <router-view />
+        <NuxtPage />
       </div>
     </div>
 
@@ -51,6 +51,8 @@
 </template>
 
 <script setup lang="ts">
+definePageMeta({ name: 'room', layout: 'dashboard', requiresAuth: true })
+
 import { ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useEnvironmentStore } from "@/store/environmentStore";

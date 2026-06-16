@@ -2,7 +2,8 @@ import { getRoom } from "@/services/apiService";
 import { useEnvironmentStore } from "@/store/environmentStore";
 import { useSensorStore } from "@/store/sensorStore";
 import { useDeviceStore } from "@/store/deviceStore";
-import { RouteParamsGeneric } from "vue-router";
+
+type RouteParamsGeneric = Record<string, string | string[]>;
 
 const breadcrumbCache = new Map<string, string>();
 

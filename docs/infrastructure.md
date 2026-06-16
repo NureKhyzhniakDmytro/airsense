@@ -28,6 +28,10 @@ This keeps the deployment model service-oriented while avoiding separate build a
 - Redis is deployed as prepared infrastructure for caching/latest telemetry or queue-related use cases.
 - Firebase Cloud Messaging remains optional in local Kubernetes. When Firebase credentials are not mounted, no-op auth/notification services allow the local stack to start.
 
+## Web Client
+
+The web client is implemented as a Nuxt 3 single-page application. Nuxt file-based routing replaces the previous manual Vue Router setup, while the existing dashboard pages, Pinia stores, PrimeVue UI components, Firebase authentication, and Axios API integration are preserved. Public runtime configuration is used for the API base URL and Firebase client settings.
+
 ## Kubernetes Deployment
 
 The local Kubernetes deployment is described by the Helm chart in `charts/airsense`. Helm is used as the primary deployment mechanism instead of maintaining separate raw manifests.

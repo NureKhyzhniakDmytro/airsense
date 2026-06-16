@@ -84,6 +84,8 @@
 </template>
 
 <script setup lang="ts">
+definePageMeta({ name: 'dashboard', layout: 'dashboard', requiresAuth: true })
+
 import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useEnvironmentStore } from "@/store/environmentStore";

@@ -35,7 +35,7 @@
             iconClass="text-xl"
         />
         <div>
-          <Avatar icon="pi pi-user" class="size-[42px] hover:bg-surface-100 active:bg-surface-300" shape="circle" @click.nativa="toggle" />
+          <Avatar icon="pi pi-user" class="size-[42px] hover:bg-surface-100 active:bg-surface-300" shape="circle" @click="toggle" />
           <Menu ref="profileMenu" :model="items" id="overlay_menu" :popup="true" />
         </div>
       </div>

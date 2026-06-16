@@ -1,6 +1,6 @@
 import { ref } from 'vue';
 import type { SeriesData } from '@/types/sensor';
-import { ChartConfig } from '@/types/chart';
+import type { ChartConfig } from '@/types/chart';
 
 export function useChartConfig() {
   const series = ref<SeriesData[]>([

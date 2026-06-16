@@ -22,9 +22,9 @@ import Message from 'primevue/message';
 import { Form } from '@primevue/forms';
 import { computed, onMounted, ref } from "vue";
 import { updateEnvironment} from "@/services/apiService";
-import { FormResolverOptions, FormSubmitEvent } from "@primevue/forms/form";
+import type { FormResolverOptions, FormSubmitEvent } from "@primevue/forms/form";
 import { useEnvironmentStore } from "@/store/environmentStore";
-import { Environment } from "@/types/environment";
+import type { Environment } from "@/types/environment";
 
 const isLoading = ref(false);
 const isError = ref(false);

@@ -12,7 +12,7 @@
 
     <div class="flex-grow flex flex-col items-center min-h-0 overflow-y-auto">
       <main class="w-full max-w-7xl flex flex-grow p-6">
-        <router-view />
+        <slot />
       </main>
       <dashboard-footer />
     </div>

@@ -69,9 +69,9 @@ import {
   type HistoryParams,
   type SeriesData,
   type Parameter,
+  type ChartLabel,
   INTERVAL_OPTIONS,
   PARAMETER_LABELS,
-  ChartLabel,
 } from '@/types/sensor';
 import { useChartConfig } from '@/config/chartConfig';
 

@@ -5,9 +5,9 @@ import {
   signInWithEmailAndPassword,
   updateProfile,
   getIdToken,
-  User,
   onAuthStateChanged,
 } from "firebase/auth";
+import type { User } from "firebase/auth";
 import { register } from "@/services/apiService";
 import { decodeToken } from "@/utils/jwt";
 import api from "@/api";

@@ -1,6 +1,6 @@
 import { defineStore } from "pinia";
 import { reactive, computed } from "vue";
-import { Device, DevicesResponse } from "@/services/apiService";
+import type { Device, DevicesResponse } from "@/types/sensor";
 import api from "@/api";
 
 export const useDeviceStore = defineStore("deviceStore", () => {

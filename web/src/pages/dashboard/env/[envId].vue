@@ -26,7 +26,7 @@
     </Tabs>
 
     <div class="my-6 flex flex-grow">
-      <router-view />
+      <NuxtPage />
     </div>
 
     <edit-environment-dialog v-model="editEnvironmentDialog" :envId="envId" @refresh="refreshEnvironment" />
@@ -34,6 +34,8 @@
 </template>
 
 <script setup lang="ts">
+definePageMeta({ name: 'environment', layout: 'dashboard', requiresAuth: true })
+
 import { ref, onMounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { Environment } from "@/types/environment";

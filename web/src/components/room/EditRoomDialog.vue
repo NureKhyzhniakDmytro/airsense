@@ -22,8 +22,8 @@
   import { Form } from '@primevue/forms';
   import { computed, onMounted, ref } from "vue";
   import { getRoom, updateEnvironment, updateRoom} from "@/services/apiService";
-  import { FormResolverOptions, FormSubmitEvent } from "@primevue/forms/form";
-  import { Room } from "@/types/room";
+  import type { FormResolverOptions, FormSubmitEvent } from "@primevue/forms/form";
+  import type { Room } from "@/types/room";
   
   const isLoading = ref(false);
   const isError = ref(false);

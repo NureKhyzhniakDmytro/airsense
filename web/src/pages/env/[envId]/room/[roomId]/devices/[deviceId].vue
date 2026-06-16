@@ -33,9 +33,11 @@
 </template>
 
 <script setup lang="ts">
+definePageMeta({ name: 'device', requiresAuth: true })
+
 import { ref, onMounted, watch } from "vue";
 import { useRoute } from "vue-router";
-import { Device } from "@/types/sensor";
+import type { Device } from "@/types/sensor";
 import api from "@/api";
 import { useDeviceStore } from "@/store/deviceStore";
 import DateRangeSelector from "@/components/common/DateRangeSelector.vue";

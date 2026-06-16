@@ -22,7 +22,7 @@ import Message from 'primevue/message';
 import { Form } from '@primevue/forms';
 import { computed, ref } from "vue";
 import { createRoom } from "@/services/apiService";
-import { FormResolverOptions, FormSubmitEvent } from "@primevue/forms/form";
+import type { FormResolverOptions, FormSubmitEvent } from "@primevue/forms/form";
 import { useRouter } from "vue-router";
 
 const router = useRouter();

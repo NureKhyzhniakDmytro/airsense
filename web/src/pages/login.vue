@@ -62,6 +62,8 @@
 </template>
 
 <script setup lang="ts">
+definePageMeta({ name: 'login', guestOnly: true })
+
 import { onMounted, ref } from "vue";
 import { useAuthStore } from "@/store/authStore";
 import { useRouter } from "vue-router";

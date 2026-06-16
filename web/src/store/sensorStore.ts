@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { reactive, ref, computed } from 'vue';
-import { Sensor, SensorsResponse } from '@/types/sensor';
+import type { Sensor, SensorsResponse } from '@/types/sensor';
 import api from '@/api';
 
 export const useSensorStore = defineStore('sensorStore', () => {

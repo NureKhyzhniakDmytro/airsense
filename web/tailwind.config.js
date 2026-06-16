@@ -1,14 +1,17 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
-    "./index.html",
-    "./src/**/*.{vue,js,ts,jsx,tsx}",
+    "./src/app.vue",
+    "./src/components/**/*.{vue,js,ts}",
+    "./src/layouts/**/*.{vue,js,ts}",
+    "./src/pages/**/*.{vue,js,ts}",
+    "./src/plugins/**/*.{js,ts}",
   ],
   theme: {
     extend: {},
   },
   plugins: [
-      require("daisyui"),
-      require("tailwindcss-primeui")
+    require("daisyui"),
+    require("tailwindcss-primeui")
   ],
 }

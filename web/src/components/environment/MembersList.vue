@@ -90,7 +90,7 @@ import type { ContextMenuMethods } from 'primevue/contextmenu';
 import type { DataViewPageEvent } from "primevue/dataview";
 import { useToast } from 'primevue/usetoast';
 import EditMemberDialog from "@/components/environment/EditMemberDialog.vue";
-import { User } from "@/types/user";
+import type { User } from "@/types/user";
 
 const route = useRoute();
 const authStore = useAuthStore();

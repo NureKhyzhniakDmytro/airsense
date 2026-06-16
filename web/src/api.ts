@@ -1,7 +1,9 @@
 import axios from "axios";
 
+const runtimeConfig = useRuntimeConfig();
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL,
+  baseURL: runtimeConfig.public.apiBaseUrl || import.meta.env.VITE_API_BASE_URL,
   headers: {
     "Content-Type": "application/json",
   },

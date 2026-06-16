@@ -22,7 +22,7 @@ import Message from 'primevue/message';
 import { Form } from '@primevue/forms';
 import { computed, onMounted, ref } from "vue";
 import { changeUserRole } from "@/services/apiService";
-import { FormResolverOptions, FormSubmitEvent } from "@primevue/forms/form";
+import type { FormResolverOptions, FormSubmitEvent } from "@primevue/forms/form";
 import type { User } from "@/services/apiService";
 
 const roles = ref([

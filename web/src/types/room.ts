@@ -1,4 +1,4 @@
-import { Pagination } from "@/types/api";
+import type { Pagination } from "@/types/api";
 import type { Parameter } from '@/types/sensor';
 
 export interface Room {

@@ -89,6 +89,8 @@
 </template>
 
 <script setup lang="ts">
+definePageMeta({ name: 'register', guestOnly: true })
+
 import { ref, computed, onMounted } from "vue";
 import { useAuthStore } from "@/store/authStore";
 import { useRouter } from "vue-router";

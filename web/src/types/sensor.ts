@@ -1,5 +1,5 @@
 import type { Pagination } from "@/types/api";
-import { IntervalOption } from "@/types/date";
+import type { IntervalOption } from "@/types/date";
 
 export interface Parameter {
   name: string;

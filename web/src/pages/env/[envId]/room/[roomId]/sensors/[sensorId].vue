@@ -37,19 +37,16 @@
 </template>
 
 <script setup lang="ts">
+definePageMeta({ name: 'sensor', requiresAuth: true })
+
 import { ref, onMounted, watch } from "vue";
 import { useRoute } from "vue-router";
 import { getAvailableParameters } from "@/services/apiService";
 import api from "@/api";
 import { useSensorStore } from "@/store/sensorStore";
 import { useChartConfig } from "@/config/chartConfig";
-import { 
-  INTERVAL_OPTIONS, 
-  PARAMETER_LABELS, 
-  type HistoryEntry, 
-  Sensor, 
-  Parameter
-} from "@/types/sensor";
+import { INTERVAL_OPTIONS, PARAMETER_LABELS, type HistoryEntry } from "@/types/sensor";
+import type { Sensor, Parameter } from "@/types/sensor";
 import SensorHeader from "@/components/sensor/SensorHeader.vue";
 import ParameterSelector from "@/components/common/ParameterSelector.vue";
 import DateRangeSelector from "@/components/common/DateRangeSelector.vue";
