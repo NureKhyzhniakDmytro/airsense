@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: emqx
+  labels:
+    {{- include "airsense.labels" . | nindent 4 }}
+    app.kubernetes.io/component: emqx
+spec:
+  selector:
+    app: emqx
+  ports:
+    - name: mqtt
+      port: {{ .Values.emqx.service.mqttPort }}
+      targetPort: {{ .Values.emqx.service.mqttPort }}
+    - name: dashboard
+      port: {{ .Values.emqx.service.dashboardPort }}
+      targetPort: {{ .Values.emqx.service.dashboardPort }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: emqx
+  labels:
+    {{- include "airsense.labels" . | nindent 4 }}
+    app.kubernetes.io/component: emqx
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: emqx
+  template:
+    metadata:
+      labels:
+        app: emqx
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: emqx
+      annotations:
+        checksum/emqx-config: {{ include (print $.Template.BasePath "/configmaps.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: emqx
+          image: "{{ .Values.emqx.image.repository }}:{{ .Values.emqx.image.tag }}"
+          imagePullPolicy: {{ .Values.emqx.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.emqx.service.mqttPort }}
+            - containerPort: {{ .Values.emqx.service.dashboardPort }}
+          startupProbe:
+            tcpSocket:
+              port: {{ .Values.emqx.service.mqttPort }}
+            failureThreshold: {{ .Values.emqx.startupProbe.failureThreshold }}
+            periodSeconds: {{ .Values.emqx.startupProbe.periodSeconds }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.emqx.service.mqttPort }}
+            initialDelaySeconds: {{ .Values.emqx.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.emqx.readinessProbe.periodSeconds }}
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.emqx.service.mqttPort }}
+            initialDelaySeconds: {{ .Values.emqx.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.emqx.livenessProbe.periodSeconds }}
+          resources:
+            {{- toYaml .Values.emqx.resources | nindent 12 }}
+          volumeMounts:
+            - name: emqx-config
+              mountPath: /opt/emqx/etc/emqx.conf
+              subPath: emqx.conf
+      volumes:
+        - name: emqx-config
+          configMap:
+            name: emqx-config

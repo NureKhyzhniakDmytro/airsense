@@ -4,7 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROFILE="${MINIKUBE_PROFILE:-airsense}"
 NAMESPACE="${K8S_NAMESPACE:-airsense}"
-KUSTOMIZE_DIR="${KUSTOMIZE_DIR:-k8s/base}"
+RELEASE_NAME="${HELM_RELEASE_NAME:-airsense}"
+CHART_DIR="${HELM_CHART_DIR:-charts/airsense}"
 POSTGRES_USER="${POSTGRES_USER:-postgres}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-airsense1234}"
 POSTGRES_DATABASE="${POSTGRES_DATABASE:-airsensedb}"
@@ -34,19 +35,54 @@ run_smoke_pod() {
     -- "$@"
 }
 
+adopt_existing_resources() {
+  kubectl --context "$PROFILE" create namespace "$NAMESPACE" --dry-run=client -o yaml \
+    | kubectl --context "$PROFILE" apply -f -
 
-apply_local_secret() {
-  kubectl --context "$PROFILE" apply -f "${KUSTOMIZE_DIR}/namespace.yaml"
-  kubectl --context "$PROFILE" -n "$NAMESPACE" create secret generic airsense-secret \
-    --from-literal=postgres-user="$POSTGRES_USER" \
-    --from-literal=postgres-password="$POSTGRES_PASSWORD" \
-    --from-literal=postgres-database="$POSTGRES_DATABASE" \
-    --from-literal=postgres-connection-string="$POSTGRES_CONNECTION_STRING" \
-    --from-literal=mqtt-api-password="$MQTT_API_PASSWORD" \
-    --from-literal=firebase-project-name="$FIREBASE_PROJECT_NAME" \
-    --from-literal=firebase-credentials-file-location="$FIREBASE_CREDENTIALS_FILE_LOCATION" \
-    --dry-run=client \
-    -o yaml | kubectl --context "$PROFILE" apply -f -
+  local resources=(
+    secret/airsense-secret
+    configmap/emqx-config
+    configmap/postgres-initdb
+    service/airsense-api
+    service/emqx
+    service/postgres
+    service/redis
+    deployment/airsense-api
+    deployment/telemetry-ingestion
+    deployment/automation
+    deployment/notification
+    deployment/emqx
+    deployment/redis
+    statefulset/postgres
+  )
+
+  for resource in "${resources[@]}"; do
+    if kubectl --context "$PROFILE" -n "$NAMESPACE" get "$resource" >/dev/null 2>&1; then
+      kubectl --context "$PROFILE" -n "$NAMESPACE" annotate "$resource" \
+        meta.helm.sh/release-name="$RELEASE_NAME" \
+        meta.helm.sh/release-namespace="$NAMESPACE" \
+        --overwrite >/dev/null
+      kubectl --context "$PROFILE" -n "$NAMESPACE" label "$resource" \
+        app.kubernetes.io/managed-by=Helm \
+        --overwrite >/dev/null
+    fi
+  done
+}
+
+helm_deploy() {
+  helm upgrade --install "$RELEASE_NAME" "$CHART_DIR" \
+    --kube-context "$PROFILE" \
+    --namespace "$NAMESPACE" \
+    --create-namespace \
+    --take-ownership \
+    --server-side=false \
+    --set-string secret.postgresUser="$POSTGRES_USER" \
+    --set-string secret.postgresPassword="$POSTGRES_PASSWORD" \
+    --set-string secret.postgresDatabase="$POSTGRES_DATABASE" \
+    --set-string secret.postgresConnectionString="$POSTGRES_CONNECTION_STRING" \
+    --set-string secret.mqttApiPassword="$MQTT_API_PASSWORD" \
+    --set-string secret.firebaseProjectName="$FIREBASE_PROJECT_NAME" \
+    --set-string secret.firebaseCredentialsFileLocation="$FIREBASE_CREDENTIALS_FILE_LOCATION"
 }
 
 run_smoke_tests() {
@@ -74,11 +110,11 @@ run_smoke_tests() {
 
 minikube -p "$PROFILE" status >/dev/null 2>&1 || minikube -p "$PROFILE" start --driver=docker --cni=false
 
-apply_local_secret
+adopt_existing_resources
 
 eval "$(minikube -p "$PROFILE" docker-env)"
 docker build -f api/Airsense.API/Dockerfile --target final -t airsense-api:local api
-kubectl --context "$PROFILE" apply -k "$KUSTOMIZE_DIR"
+helm_deploy
 
 for deployment in airsense-api telemetry-ingestion automation notification; do
   kubectl --context "$PROFILE" -n "$NAMESPACE" rollout restart "deployment/${deployment}"

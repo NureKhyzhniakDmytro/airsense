@@ -1,0 +1,8 @@
+AirSense has been installed into namespace {{ .Release.Namespace }}.
+
+API health check:
+  kubectl --context <context> -n {{ .Release.Namespace }} port-forward svc/airsense-api 8080:8080
+  curl http://localhost:8080/healthz
+
+EMQX dashboard:
+  kubectl --context <context> -n {{ .Release.Namespace }} port-forward svc/emqx 18083:18083

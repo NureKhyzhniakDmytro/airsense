@@ -7,7 +7,7 @@ AirSense is a smart indoor air-quality monitoring and automation system. The rep
 - `api/` - ASP.NET Core backend, REST API, MQTT integration, service-role workers, PostgreSQL schema.
 - `web/` - web client application.
 - `mobile/` - mobile client application.
-- `k8s/` - Kubernetes manifests for local Minikube deployment.
+- `charts/airsense/` - Helm chart for local Kubernetes/Minikube deployment.
 - `scripts/` - project automation scripts.
 - `docs/` - architecture and infrastructure notes.
 
@@ -21,7 +21,7 @@ A dedicated Minikube profile named `airsense` is used by default:
 ./scripts/deploy-minikube.sh
 ```
 
-The script builds the backend image, applies `k8s/base`, restarts API-derived workloads, waits for rollouts, and runs smoke tests for Kubernetes DNS, TCP service access, and API health.
+The script builds the backend image, installs or upgrades the `airsense` Helm release from `charts/airsense`, restarts API-derived workloads, waits for rollouts, and runs smoke tests for Kubernetes DNS, TCP service access, and API health.
 
 Manual API access:
 

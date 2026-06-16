@@ -2,18 +2,24 @@ apiVersion: v1
 kind: Service
 metadata:
   name: postgres
+  labels:
+    {{- include "airsense.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
 spec:
   selector:
     app: postgres
   ports:
     - name: postgres
-      port: 5432
-      targetPort: 5432
+      port: {{ .Values.postgres.service.port }}
+      targetPort: {{ .Values.postgres.service.port }}
 ---
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: postgres
+  labels:
+    {{- include "airsense.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
 spec:
   serviceName: postgres
   replicas: 1
@@ -24,50 +30,50 @@ spec:
     metadata:
       labels:
         app: postgres
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: postgres
+      annotations:
+        checksum/postgres-initdb: {{ include (print $.Template.BasePath "/configmaps.yaml") . | sha256sum }}
     spec:
       containers:
         - name: postgres
-          image: postgres:15
+          image: "{{ .Values.postgres.image.repository }}:{{ .Values.postgres.image.tag }}"
+          imagePullPolicy: {{ .Values.postgres.image.pullPolicy }}
           ports:
-            - containerPort: 5432
+            - containerPort: {{ .Values.postgres.service.port }}
           env:
             - name: POSTGRES_DB
               valueFrom:
                 secretKeyRef:
-                  name: airsense-secret
+                  name: {{ .Values.secret.name }}
                   key: postgres-database
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
-                  name: airsense-secret
+                  name: {{ .Values.secret.name }}
                   key: postgres-user
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: airsense-secret
+                  name: {{ .Values.secret.name }}
                   key: postgres-password
           startupProbe:
             exec:
               command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
-            failureThreshold: 60
-            periodSeconds: 2
+            failureThreshold: {{ .Values.postgres.startupProbe.failureThreshold }}
+            periodSeconds: {{ .Values.postgres.startupProbe.periodSeconds }}
           readinessProbe:
             exec:
               command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
-            initialDelaySeconds: 5
-            periodSeconds: 10
+            initialDelaySeconds: {{ .Values.postgres.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.postgres.readinessProbe.periodSeconds }}
           livenessProbe:
             exec:
               command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
-            initialDelaySeconds: 30
-            periodSeconds: 20
+            initialDelaySeconds: {{ .Values.postgres.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.postgres.livenessProbe.periodSeconds }}
           resources:
-            requests:
-              cpu: 100m
-              memory: 256Mi
-            limits:
-              cpu: 1000m
-              memory: 768Mi
+            {{- toYaml .Values.postgres.resources | nindent 12 }}
           volumeMounts:
             - name: postgres-data
               mountPath: /var/lib/postgresql/data

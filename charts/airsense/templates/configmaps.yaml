@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-initdb
+  labels:
+    {{- include "airsense.labels" . | nindent 4 }}
+data:
+  01-script.sql: |-
+{{ .Files.Get "files/postgres-init/script.sql" | indent 4 }}
+  02-functions.sql: |-
+{{ .Files.Get "files/postgres-init/functions.sql" | indent 4 }}
+  03-data.sql: |-
+{{ .Files.Get "files/postgres-init/data.sql" | indent 4 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: emqx-config
+  labels:
+    {{- include "airsense.labels" . | nindent 4 }}
+data:
+  emqx.conf: |-
+{{ .Files.Get "files/emqx/emqx.conf" | indent 4 }}
