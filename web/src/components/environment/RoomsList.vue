@@ -10,10 +10,10 @@
           <h2 class="text-sm text-gray-500">List of all rooms in your environment.</h2>
         </div>
 
-        <Button 
-            @click="createRoomDialog = true" 
+        <Button
+            @click="createRoomDialog = true"
             label="New Room"
-            icon="pi pi-plus" 
+            icon="pi pi-plus"
             :disabled="environment?.role === 'user'"
         />
         <create-room-dialog v-model="createRoomDialog" :envId="envId" />
@@ -104,7 +104,7 @@
         Start by creating a new room.
       </p>
       <div class="mt-4">
-        <Button @click="createRoomDialog = true" label="New Room" />
+        <Button @click="createRoomDialog = true" label="New Room" :disabled="environment?.role === 'user'" />
         <create-room-dialog v-model="createRoomDialog" :envId="envId" />
       </div>
     </div>
@@ -131,7 +131,7 @@ const envId = Number(route.params.envId);
 const rooms = ref<Room[]>([]);
 const pagination = ref({ total: 0, skip: 0, count: 3 });
 const isLoading = ref(true);
-const environment = ref<Environment>();
+const environment = ref<Environment | null>(null);
 let refreshInterval: ReturnType<typeof setInterval> | null = null;
 const createRoomDialog = ref(false);
 let currentPage = 0;
@@ -140,10 +140,26 @@ const getParameterLabel = (name: string) => {
   const labels: Record<string, string> = {
     temperature: "Temperature",
     humidity: "Humidity",
-    co2: "CO₂",
+    co2: "CO2",
   };
   return labels[name] || name;
 };
+
+const { data: initialRoomsData } = await useAsyncData(
+  `environment-${envId}-rooms-page-0`,
+  async () => {
+    const env = await environmentStore.fetchEnvironment(envId);
+    const result = await getRooms(envId, 0, pagination.value.count);
+    return { environment: env, ...result };
+  },
+);
+
+if (initialRoomsData.value) {
+  environment.value = initialRoomsData.value.environment;
+  rooms.value = initialRoomsData.value.rooms;
+  pagination.value = initialRoomsData.value.pagination;
+  isLoading.value = false;
+}
 
 const startAutoRefresh = () => {
   refreshInterval = setInterval(
@@ -171,30 +187,22 @@ const goToRoom = (roomId: number) => {
   });
 };
 
-onMounted(async () => {
-  if (!environment.value) {
-    environment.value = await environmentStore.fetchEnvironment(envId);
-  }
-  await changePage({ page: 0 } as DataViewPageEvent);
+onMounted(() => {
   startAutoRefresh();
 });
 
 const changePage = async (event: DataViewPageEvent) => {
-  currentPage = event.page;
+  currentPage = event.page ?? Math.floor((event.first ?? 0) / pagination.value.count);
 
   isLoading.value = true;
-  if (!environment.value) return;
+  if (!environment.value) {
+    environment.value = await environmentStore.fetchEnvironment(envId);
+  }
 
-  const { rooms: roomList, pagination: pag } = await getRooms(envId, pagination.value.skip, pagination.value.count);
-  roomList.forEach((room) => {
-    const index = rooms.value.findIndex(r => r.id === room.id);
-    if (index !== -1) {
-      rooms.value[index] = room;
-    } else {
-      rooms.value.push(room);
-    }
-  });
-  pagination.value.total = pag.total;
+  const skip = currentPage * pagination.value.count;
+  const { rooms: roomList, pagination: pag } = await getRooms(envId, skip, pagination.value.count);
+  rooms.value = roomList;
+  pagination.value = pag;
 
   isLoading.value = false;
 };

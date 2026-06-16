@@ -18,7 +18,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from "vue";
+import { ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import Breadcrumb from 'primevue/breadcrumb';
 import Skeleton from 'primevue/skeleton';
@@ -48,11 +48,7 @@ const home = ref<BreadcrumbItem>({
   }
 });
 const items = ref<BreadcrumbItem[]>([]);
-
-const skeletonWidth = computed(() => {
-  const value = (Math.random() * 2 + 5).toFixed(2);
-  return `${value}rem`;
-});
+const skeletonWidth = "6rem";
 
 const fetchBreadcrumbData = async (param: string) => {
   const config = breadcrumbConfig[param];
@@ -61,7 +57,8 @@ const fetchBreadcrumbData = async (param: string) => {
   return {
     label: await config.fetchData(route.params),
     route: {
-      name: config.path
+      name: config.path,
+      params: route.params,
     }
   }
 };
@@ -72,6 +69,8 @@ const reformatBreadcrumbData = async (start: number) => {
 
     const param = Object.keys(route.params)[i];
     const item = await fetchBreadcrumbData(param);
+    if (!item) continue;
+
     items.value[i].label = item.label;
     items.value[i].route = item.route;
 

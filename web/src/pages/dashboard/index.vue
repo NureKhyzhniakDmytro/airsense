@@ -86,7 +86,7 @@
 <script setup lang="ts">
 definePageMeta({ name: 'dashboard', layout: 'dashboard', requiresAuth: true })
 
-import { ref, onMounted } from "vue";
+import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { useEnvironmentStore } from "@/store/environmentStore";
 import { getRoleBadge } from "@/utils/environment";
@@ -99,13 +99,13 @@ import CreateEnvironmentDialog from "@/components/environment/CreateEnvironmentD
 const router = useRouter();
 const environmentStore = useEnvironmentStore();
 const createEnvironmentDialog = ref(false);
-const isLoading = ref(true);
+const isLoading = ref(false);
 
-onMounted(async () => await changePage({ page: 0 } as DataViewPageEvent));
+await useAsyncData('dashboard-environments-page-0', () => environmentStore.fetchEnvironments(0));
 
 const changePage = async (event: DataViewPageEvent) => {
   isLoading.value = true;
-  await environmentStore.fetchEnvironments(event.page);
+  await environmentStore.fetchEnvironments(event.page ?? 0);
   isLoading.value = false;
 };
 

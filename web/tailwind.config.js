@@ -1,3 +1,6 @@
+import daisyui from "daisyui";
+import primeui from "tailwindcss-primeui";
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: [
@@ -11,7 +14,7 @@ export default {
     extend: {},
   },
   plugins: [
-    require("daisyui"),
-    require("tailwindcss-primeui")
+    daisyui,
+    primeui,
   ],
-}
+};

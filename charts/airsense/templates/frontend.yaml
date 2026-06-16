@@ -1,0 +1,87 @@
+{{- if .Values.frontend.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.frontend.name }}
+  labels:
+    {{- include "airsense.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ .Values.frontend.name }}
+spec:
+  selector:
+    app: {{ .Values.frontend.name }}
+  ports:
+    - name: http
+      port: {{ .Values.frontend.service.port }}
+      targetPort: {{ .Values.frontend.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.frontend.name }}
+  labels:
+    {{- include "airsense.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ .Values.frontend.name }}
+spec:
+  replicas: {{ .Values.frontend.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.frontend.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.frontend.name }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: {{ .Values.frontend.name }}
+    spec:
+      containers:
+        - name: {{ .Values.frontend.name }}
+          image: {{ .Values.frontend.image.repository }}:{{ .Values.frontend.image.tag }}
+          imagePullPolicy: {{ .Values.frontend.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.frontend.port }}
+          env:
+            - name: NITRO_HOST
+              value: "0.0.0.0"
+            - name: NITRO_PORT
+              value: {{ .Values.frontend.port | quote }}
+            - name: NUXT_API_INTERNAL_BASE_URL
+              value: {{ .Values.frontend.apiInternalBaseUrl | quote }}
+            - name: NUXT_PUBLIC_API_BASE_URL
+              value: {{ .Values.frontend.publicApiBaseUrl | quote }}
+            - name: NUXT_PUBLIC_FIREBASE_API_KEY
+              value: {{ .Values.frontend.firebase.apiKey | quote }}
+            - name: NUXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+              value: {{ .Values.frontend.firebase.authDomain | quote }}
+            - name: NUXT_PUBLIC_FIREBASE_PROJECT_ID
+              value: {{ .Values.frontend.firebase.projectId | quote }}
+            - name: NUXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+              value: {{ .Values.frontend.firebase.storageBucket | quote }}
+            - name: NUXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+              value: {{ .Values.frontend.firebase.messagingSenderId | quote }}
+            - name: NUXT_PUBLIC_FIREBASE_APP_ID
+              value: {{ .Values.frontend.firebase.appId | quote }}
+            - name: NUXT_PUBLIC_FIREBASE_MEASUREMENT_ID
+              value: {{ .Values.frontend.firebase.measurementId | quote }}
+            - name: NUXT_PUBLIC_FIREBASE_VAPID_KEY
+              value: {{ .Values.frontend.firebase.vapidKey | quote }}
+          startupProbe:
+            httpGet:
+              path: /login
+              port: {{ .Values.frontend.port }}
+            failureThreshold: {{ .Values.frontend.startupProbe.failureThreshold }}
+            periodSeconds: {{ .Values.frontend.startupProbe.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: /login
+              port: {{ .Values.frontend.port }}
+            initialDelaySeconds: {{ .Values.frontend.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.frontend.readinessProbe.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: /login
+              port: {{ .Values.frontend.port }}
+            initialDelaySeconds: {{ .Values.frontend.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.frontend.livenessProbe.periodSeconds }}
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+{{- end }}

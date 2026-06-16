@@ -7,16 +7,15 @@
         <h2 class="text-sm text-gray-500">List of all users in your environment.</h2>
       </div>
 
-      <Button 
-          @click="inviteMemberDialog = true" 
-          label="Invite"  
-          icon="pi pi-plus" 
+      <Button
+          @click="inviteMemberDialog = true"
+          label="Invite"
+          icon="pi pi-plus"
           :disabled="environment?.role === 'user'"
       />
       <invite-member-dialog v-model="inviteMemberDialog" :envId="envId" @refresh="refreshMembers" />
     </div>
 
-    <!-- TODO: убрать обводку снизу для пагинации -->
     <Card class="mt-8" :pt="{ body: 'p-0' }" >
       <template #content>
         <ContextMenu ref="contextMenu" :model="items" />
@@ -38,7 +37,7 @@
           <Column field="role" header="Role">
             <template #body="slotProps">
               <span
-                  v-if="slotProps.data" 
+                  v-if="slotProps.data"
                   class="px-3 py-1 rounded-full text-xs font-medium"
                   :class="getRoleBadge(slotProps.data.role)"
               >
@@ -71,7 +70,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from "vue";
+import { ref, computed } from "vue";
 import { useRoute } from "vue-router";
 import { getMembers, removeUser } from "@/services/apiService";
 import type { Environment } from "@/types/environment";
@@ -99,16 +98,15 @@ const pagination = ref({ total: 0, skip: 0, count: 5 });
 const environment = ref<Environment | null>(null);
 const environmentStore = useEnvironmentStore();
 const envId = Number(route.params.envId);
-const isLoading = ref(true);
 const inviteMemberDialog = ref(false);
 const editMemberDialog = ref(false);
 const contextMenu = ref<ContextMenuMethods | null>(null);
-const selectedRow = ref(null);
+const selectedRow = ref<User | null>(null);
 const confirm = useConfirm();
 const toast = useToast();
 const selectedMember = ref<User | null>(null);
 
-const currentUser = computed(() => authStore.user);
+const currentUserEmail = computed(() => authStore.currentUserEmail);
 
 const items = ref([
   {
@@ -116,8 +114,8 @@ const items = ref([
     icon: 'pi pi-pen-to-square',
     command: (event: MenuItemCommandEvent) => {
       selectedMember.value = selectedRow.value;
-      if (contextMenu.value) contextMenu.value.hide();
-      editMemberDialog.value = true;      
+      contextMenu.value?.hide();
+      editMemberDialog.value = true;
     }
   },
   {
@@ -148,12 +146,27 @@ const items = ref([
   }
 ]);
 
-function onMenuButtonClick(event: Event, rowData: User) {
-  selectedRow.value = rowData;
-  contextMenu.value.show(event);
+const { data: initialMembersData } = await useAsyncData(
+  `environment-${envId}-members-page-0`,
+  async () => {
+    const env = await environmentStore.fetchEnvironment(envId);
+    const result = await getMembers(envId, 0, pagination.value.count);
+    return { environment: env, ...result };
+  },
+);
+
+if (initialMembersData.value) {
+  environment.value = initialMembersData.value.environment;
+  members.value = initialMembersData.value.members;
+  pagination.value = initialMembersData.value.pagination;
 }
 
-const canModify = (user: User) => user.role !== "owner" && user.email !== currentUser.value?.email;
+function onMenuButtonClick(event: Event, rowData: User) {
+  selectedRow.value = rowData;
+  contextMenu.value?.show(event);
+}
+
+const canModify = (user: User) => user.role !== "owner" && user.email !== currentUserEmail.value;
 
 const deleteUser = async (user: User) => {
   try {
@@ -165,27 +178,17 @@ const deleteUser = async (user: User) => {
 };
 
 const changePage = async (event: DataViewPageEvent) => {
-  isLoading.value = true;
-  if (!environment.value) return;
+  if (!environment.value) {
+    environment.value = await environmentStore.fetchEnvironment(envId);
+  }
 
   pagination.value.skip = event.first ?? 0;
   const { members: memberList, pagination: pag } = await getMembers(environment.value.id, pagination.value.skip, pagination.value.count);
-  for (let i = 0; i < memberList.length; i++) 
-    members.value[pagination.value.skip + i] = memberList[i]
-  pagination.value.total = pag.total;
-
-  isLoading.value = false;
+  members.value = memberList;
+  pagination.value = pag;
 };
 
 const refreshMembers = async () => {
   await changePage({ first: pagination.value.skip } as DataViewPageEvent);
 };
-
-onMounted(async () => {
-  environment.value = await environmentStore.fetchEnvironment(envId);
-  await changePage({ first: 0 } as DataViewPageEvent);
-
-  members.value.push(...Array(pagination.value.total - pagination.value.count).fill(null));
-
-});
 </script>

@@ -1,63 +1,112 @@
 import { initializeApp } from "firebase/app";
+import type { FirebaseApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
-import type { User } from "firebase/auth";
+import type { Auth, User } from "firebase/auth";
 import { getMessaging, getToken, onMessage } from "firebase/messaging";
+import type { Messaging } from "firebase/messaging";
 
-const runtimeConfig = useRuntimeConfig();
+let app: FirebaseApp | null = null;
+let auth: Auth | null = null;
+let messaging: Messaging | null = null;
+let googleProvider: GoogleAuthProvider | null = null;
 
-const firebaseConfig = {
-  apiKey: runtimeConfig.public.firebaseApiKey || import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: runtimeConfig.public.firebaseAuthDomain || import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: runtimeConfig.public.firebaseProjectId || import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: runtimeConfig.public.firebaseStorageBucket || import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: runtimeConfig.public.firebaseMessagingSenderId || import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: runtimeConfig.public.firebaseAppId || import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: runtimeConfig.public.firebaseMeasurementId || import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+const getFirebaseConfig = () => {
+  const runtimeConfig = useRuntimeConfig();
+
+  return {
+    apiKey: runtimeConfig.public.firebaseApiKey,
+    authDomain: runtimeConfig.public.firebaseAuthDomain,
+    projectId: runtimeConfig.public.firebaseProjectId,
+    storageBucket: runtimeConfig.public.firebaseStorageBucket,
+    messagingSenderId: runtimeConfig.public.firebaseMessagingSenderId,
+    appId: runtimeConfig.public.firebaseAppId,
+    measurementId: runtimeConfig.public.firebaseMeasurementId,
+  };
 };
 
-const app = initializeApp(firebaseConfig);
+export const isFirebaseConfigured = () => {
+  if (import.meta.server) return false;
 
-const messaging = getMessaging(app);
+  const config = getFirebaseConfig();
+  return Boolean(config.apiKey && config.authDomain && config.projectId && config.appId);
+};
 
-export const auth = getAuth(app);
+const ensureFirebaseApp = () => {
+  if (import.meta.server || !isFirebaseConfigured()) {
+    return null;
+  }
+
+  if (!app) {
+    app = initializeApp(getFirebaseConfig());
+  }
+
+  return app;
+};
+
+export const getFirebaseAuth = () => {
+  const firebaseApp = ensureFirebaseApp();
+  if (!firebaseApp) {
+    throw new Error("Firebase is not configured for this environment.");
+  }
+
+  auth ??= getAuth(firebaseApp);
+  return auth;
+};
+
+const getFirebaseMessaging = () => {
+  const firebaseApp = ensureFirebaseApp();
+  if (!firebaseApp) {
+    return null;
+  }
+
+  messaging ??= getMessaging(firebaseApp);
+  return messaging;
+};
+
+const getGoogleProvider = () => {
+  googleProvider ??= new GoogleAuthProvider();
+  return googleProvider;
+};
+
 export type AuthUser = User | null;
-export const googleProvider = new GoogleAuthProvider();
 
 export const getFcmToken = async (): Promise<string | null> => {
   try {
-    const token = await getToken(messaging, {
-      vapidKey: runtimeConfig.public.firebaseVapidKey || import.meta.env.VITE_FIREBASE_VAPID_KEY,
+    const messagingInstance = getFirebaseMessaging();
+    if (!messagingInstance) return null;
+
+    const runtimeConfig = useRuntimeConfig();
+    const token = await getToken(messagingInstance, {
+      vapidKey: runtimeConfig.public.firebaseVapidKey,
     });
-    if (token) {
-      console.log('FCM Token:', token);
-      return token;
-    } else {
-      console.warn('?? ??????? ???????? ?????');
-      return null;
-    }
+
+    return token || null;
   } catch (error) {
-    console.error('?????? ??? ????????? ??????:', error);
+    console.error("Error while getting FCM token:", error);
     return null;
   }
 };
 
 export const onMessageListener = (callback: (payload: any) => void) => {
-  onMessage(messaging, (payload) => {
-    console.log("???????? ?????????:", payload);
+  const messagingInstance = getFirebaseMessaging();
+  if (!messagingInstance) return;
+
+  onMessage(messagingInstance, (payload) => {
     callback(payload);
   });
 };
 
 export const signInWithGoogle = async (): Promise<User | null> => {
   try {
-    const result = await signInWithPopup(auth, googleProvider);
+    const result = await signInWithPopup(getFirebaseAuth(), getGoogleProvider());
     return result.user;
   } catch (error) {
-    console.error("?????? ????? ????? Google:", error);
+    console.error("Google sign-in error:", error);
     throw error;
   }
 };
 
 export const logout = async () => {
-  await signOut(auth);
+  if (import.meta.server) return;
+  await signOut(getFirebaseAuth());
 };

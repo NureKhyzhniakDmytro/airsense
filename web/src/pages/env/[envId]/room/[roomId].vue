@@ -53,12 +53,10 @@
 <script setup lang="ts">
 definePageMeta({ name: 'room', layout: 'dashboard', requiresAuth: true })
 
-import { ref, onMounted } from "vue";
+import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useEnvironmentStore } from "@/store/environmentStore";
 import { getRoom, removeRoom as deleteRoomApi } from "@/services/apiService";
-import type { Environment } from "@/types/environment";
-import type { Room } from "@/types/room";
 import Tabs from 'primevue/tabs';
 import TabList from 'primevue/tablist';
 import Tab from 'primevue/tab';
@@ -73,10 +71,8 @@ const envId = Number(route.params.envId);
 const roomId = Number(route.params.roomId);
 
 const environmentStore = useEnvironmentStore();
-const environment = ref<Environment | null>(null);
-const room = ref<Room | null>(null);
 const editRoomDialog = ref(false);
-const isLoading = ref(true);
+const isRefreshing = ref(false);
 const confirm = useConfirm();
 const toast = useToast();
 
@@ -91,16 +87,40 @@ const activeTab = ref<"parameters" | "sensors" | "devices" | "settings">(
 );
 
 const items = ref([
-  { route: { name: 'room-parameters' }, label: 'Parameters', icon: 'pi pi-chart-line', value: 'parameters' },
-  { route: { name: 'room-sensors' }, label: 'Sensors', icon: 'pi pi-bullseye', value: 'sensors' },
-  { route: { name: 'room-devices' }, label: 'Devices', icon: 'pi pi-slack', value: 'devices' },
-  { route: { name: 'room-settings' }, label: 'Settings', icon: 'pi pi-cog', value: 'settings' },
+  { route: { name: 'room-parameters', params: { envId, roomId } }, label: 'Parameters', icon: 'pi pi-chart-line', value: 'parameters' },
+  { route: { name: 'room-sensors', params: { envId, roomId } }, label: 'Sensors', icon: 'pi pi-bullseye', value: 'sensors' },
+  { route: { name: 'room-devices', params: { envId, roomId } }, label: 'Devices', icon: 'pi pi-slack', value: 'devices' },
+  { route: { name: 'room-settings', params: { envId, roomId } }, label: 'Settings', icon: 'pi pi-cog', value: 'settings' },
 ]);
 
+if (route.name === "room") {
+  await navigateTo({ name: "room-parameters", params: { envId, roomId } }, { replace: true });
+  activeTab.value = "parameters";
+}
+
+const { data: environmentData, pending: environmentPending } = await useAsyncData(
+  `environment-${envId}`,
+  () => environmentStore.fetchEnvironment(envId),
+);
+
+const { data: roomData, pending: roomPending } = await useAsyncData(
+  `room-${envId}-${roomId}`,
+  async () => {
+    const env = environmentData.value ?? await environmentStore.fetchEnvironment(envId);
+    if (env?.role === "user") return null;
+    return getRoom(envId, roomId);
+  },
+);
+
+const environment = computed(() => environmentData.value ?? null);
+const room = computed(() => roomData.value ?? null);
+const isLoading = computed(() => environmentPending.value || roomPending.value || isRefreshing.value);
+
 const refreshRoom = async () => {
-  isLoading.value = true;
-  room.value = await getRoom(envId, roomId);
-  isLoading.value = false;
+  if (environment.value?.role === "user") return;
+  isRefreshing.value = true;
+  roomData.value = await getRoom(envId, roomId);
+  isRefreshing.value = false;
 }
 
 const deleteRoom = async () => {
@@ -119,25 +139,9 @@ const deleteRoom = async () => {
         },
         accept: async () => {
           await deleteRoomApi(envId, roomId);
-          router.push({ name: 'environment-rooms' });
+          router.push({ name: 'environment-rooms', params: { envId } });
           toast.add({ severity: 'success', summary: 'Success', detail: 'Room successfully deleted', life: 3000 });
         },
       });
 }
-
-onMounted(async () => {
-  if (route.name === "room") {
-    await router.replace({ name: "room-parameters" });
-    activeTab.value = "parameters";
-  }
-
-  isLoading.value = true;
-  environment.value = await environmentStore.fetchEnvironment(envId);
-  if (environment.value?.role === "user") {
-    isLoading.value = false;
-    return;
-  }
-  room.value = await getRoom(envId, roomId);
-  isLoading.value = false;
-});
 </script>

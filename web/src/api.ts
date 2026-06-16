@@ -1,20 +1,82 @@
 import axios from "axios";
-
-const runtimeConfig = useRuntimeConfig();
+import type { AxiosRequestConfig } from "axios";
+import { AUTH_TOKEN_COOKIE } from "@/constants/auth";
 
 const api = axios.create({
-  baseURL: runtimeConfig.public.apiBaseUrl || import.meta.env.VITE_API_BASE_URL,
   headers: {
     "Content-Type": "application/json",
   },
 });
 
+const getRuntimeApiBaseUrl = () => {
+  try {
+    const runtimeConfig = useRuntimeConfig();
+    return import.meta.server
+      ? runtimeConfig.apiInternalBaseUrl || runtimeConfig.public.apiBaseUrl
+      : runtimeConfig.public.apiBaseUrl;
+  } catch {
+    if (import.meta.server) {
+      return process.env.NUXT_API_INTERNAL_BASE_URL || process.env.NUXT_PUBLIC_API_BASE_URL || process.env.VITE_API_BASE_URL || "";
+    }
+
+    return window.__NUXT__?.config?.public?.apiBaseUrl || "";
+  }
+};
+
+const getAuthToken = () => {
+  if (import.meta.client) {
+    try {
+      const tokenCookie = useCookie<string | null>(AUTH_TOKEN_COOKIE);
+      return localStorage.getItem("token") || tokenCookie.value;
+    } catch {
+      return localStorage.getItem("token");
+    }
+  }
+
+  try {
+    const tokenCookie = useCookie<string | null>(AUTH_TOKEN_COOKIE);
+    return tokenCookie.value;
+  } catch {
+    return null;
+  }
+};
+
+export const createApiRequestConfig = (config: AxiosRequestConfig = {}): AxiosRequestConfig => {
+  const token = getAuthToken();
+
+  return {
+    ...config,
+    baseURL: config.baseURL || getRuntimeApiBaseUrl(),
+    headers: {
+      ...config.headers,
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  };
+};
+
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
+  config.baseURL ||= getRuntimeApiBaseUrl();
+
+  const token = getAuthToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  } else {
+    delete config.headers.Authorization;
   }
+
   return config;
 });
+
+export const apiGet = <T = any>(url: string, config?: AxiosRequestConfig) =>
+  api.get<T>(url, createApiRequestConfig(config));
+
+export const apiPost = <T = any>(url: string, data?: any, config?: AxiosRequestConfig) =>
+  api.post<T>(url, data, createApiRequestConfig(config));
+
+export const apiPatch = <T = any>(url: string, data?: any, config?: AxiosRequestConfig) =>
+  api.patch<T>(url, data, createApiRequestConfig(config));
+
+export const apiDelete = <T = any>(url: string, config?: AxiosRequestConfig) =>
+  api.delete<T>(url, createApiRequestConfig(config));
 
 export default api;

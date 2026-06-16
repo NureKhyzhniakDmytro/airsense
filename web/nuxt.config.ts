@@ -1,16 +1,17 @@
 import { fileURLToPath } from 'node:url'
 
 export default defineNuxtConfig({
-  ssr: false,
+  ssr: true,
   srcDir: 'src/',
   dir: {
     public: '../public',
   },
   modules: ['@pinia/nuxt'],
-  css: ['@/assets/styles.scss'],
+  css: ['@/assets/tailwind.css', '@/assets/styles.scss'],
   runtimeConfig: {
+    apiInternalBaseUrl: process.env.NUXT_API_INTERNAL_BASE_URL || process.env.API_INTERNAL_BASE_URL || process.env.NUXT_PUBLIC_API_BASE_URL || process.env.VITE_API_BASE_URL || 'http://airsense-api:8080',
     public: {
-      apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || process.env.VITE_API_BASE_URL || '',
+      apiBaseUrl: process.env.NUXT_PUBLIC_API_BASE_URL || process.env.VITE_API_BASE_URL || '/api',
       firebaseApiKey: process.env.NUXT_PUBLIC_FIREBASE_API_KEY || process.env.VITE_FIREBASE_API_KEY || '',
       firebaseAuthDomain: process.env.NUXT_PUBLIC_FIREBASE_AUTH_DOMAIN || process.env.VITE_FIREBASE_AUTH_DOMAIN || '',
       firebaseProjectId: process.env.NUXT_PUBLIC_FIREBASE_PROJECT_ID || process.env.VITE_FIREBASE_PROJECT_ID || '',

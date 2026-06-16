@@ -36,9 +36,8 @@
 <script setup lang="ts">
 definePageMeta({ name: 'environment', layout: 'dashboard', requiresAuth: true })
 
-import { ref, onMounted } from "vue";
+import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import type { Environment } from "@/types/environment";
 import { useEnvironmentStore } from "@/store/environmentStore"
 import EditEnvironmentDialog from "@/components/environment/EditEnvironmentDialog.vue";
 import { deleteEnvironment as deleteEnvironmentApi } from "@/services/apiService";
@@ -52,22 +51,34 @@ import { useToast } from "primevue/usetoast";
 const route = useRoute();
 const router = useRouter();
 const envId = Number(route.params.envId);
-const environment = ref<Environment | null>(null);
 const environmentStore = useEnvironmentStore();
 const activeTab = ref<"rooms" | "members">(route.path.split("/").slice(-1)[0] === "members" ? "members" : "rooms");
 const confirm = useConfirm();
 const toast = useToast();
-const isLoading = ref(true);
+const isRefreshing = ref(false);
 const editEnvironmentDialog = ref(false);
 const items = ref([
-  { route: { name: 'environment-rooms' }, label: 'Rooms', icon: 'pi pi-list', value: 'rooms' },
-  { route: { name: 'environment-members' }, label: 'Members', icon: 'pi pi-users', value: 'members' },
+  { route: { name: 'environment-rooms', params: { envId } }, label: 'Rooms', icon: 'pi pi-list', value: 'rooms' },
+  { route: { name: 'environment-members', params: { envId } }, label: 'Members', icon: 'pi pi-users', value: 'members' },
 ]);
 
+if (route.name === 'environment') {
+  await navigateTo({ name: 'environment-rooms', params: { envId } }, { replace: true });
+  activeTab.value = "rooms";
+}
+
+const { data: environmentData, pending } = await useAsyncData(
+  `environment-${envId}`,
+  () => environmentStore.fetchEnvironment(envId),
+);
+
+const environment = computed(() => environmentData.value ?? null);
+const isLoading = computed(() => pending.value || isRefreshing.value);
+
 const refreshEnvironment = async () => {
-  isLoading.value = true;
-  environment.value = await environmentStore.fetchEnvironment(envId, true);
-  isLoading.value = false;
+  isRefreshing.value = true;
+  environmentData.value = await environmentStore.fetchEnvironment(envId, true);
+  isRefreshing.value = false;
 }
 
 const deleteEnvironment = async () => {
@@ -91,15 +102,4 @@ const deleteEnvironment = async () => {
         },
       });
 }
-
-onMounted(async () => {
-  if (route.name === 'environment') {
-    await router.replace({ name: 'environment-rooms' });
-    activeTab.value = "rooms";
-  }
-
-  isLoading.value = true;
-  environment.value = await environmentStore.fetchEnvironment(envId);
-  isLoading.value = false;
-});
 </script>

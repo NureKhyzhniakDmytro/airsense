@@ -50,13 +50,21 @@
       </div>
       
       <div class="relative">
-        <ApexCharts
-          type="line" 
-          height="350" 
-          :options="chartOptions" 
-          :series="series"
-          ref="chart"
-        />
+        <ClientOnly>
+          <component
+            :is="ApexCharts"
+            type="line"
+            height="350"
+            :options="chartOptions"
+            :series="series"
+            ref="chart"
+          />
+          <template #fallback>
+            <div class="h-[350px] flex items-center justify-center bg-white">
+              <span class="text-gray-500">Loading chart...</span>
+            </div>
+          </template>
+        </ClientOnly>
         <div v-if="!series[0].data.length" class="absolute inset-0 flex items-center justify-center bg-white bg-opacity-80">
           <span class="text-gray-500">Click on the chart to add points or use the Add Point button.</span>
         </div>
@@ -87,7 +95,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch, computed } from "vue";
+import { ref, onMounted, watch, computed, defineAsyncComponent } from "vue";
 import { useRoute } from "vue-router";
 import { 
   getRoomCurve, 
@@ -101,11 +109,12 @@ import type {
 } from "@/types/chart";
 import Select from 'primevue/select';
 import Button from 'primevue/button';
-import ApexCharts from "vue3-apexcharts";
 import { useToast } from "primevue/usetoast";
 import Dialog from 'primevue/dialog';
 import InputNumber from 'primevue/inputnumber';
 import { useChartConfig } from "@/config/chartConfig";
+
+const ApexCharts = defineAsyncComponent(() => import("vue3-apexcharts"));
 
 const route = useRoute();
 const roomId = Number(route.params.roomId);

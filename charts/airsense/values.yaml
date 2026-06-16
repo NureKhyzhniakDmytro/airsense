@@ -125,3 +125,49 @@ emqx:
   livenessProbe:
     initialDelaySeconds: 30
     periodSeconds: 20
+
+
+frontend:
+  enabled: true
+  name: airsense-web
+  replicaCount: 1
+  image:
+    repository: airsense-web
+    tag: local
+    pullPolicy: Never
+  port: 3000
+  service:
+    port: 3000
+  apiInternalBaseUrl: http://airsense-api:8080
+  publicApiBaseUrl: /api
+  firebase:
+    apiKey: ""
+    authDomain: ""
+    projectId: ""
+    storageBucket: ""
+    messagingSenderId: ""
+    appId: ""
+    measurementId: ""
+    vapidKey: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  startupProbe:
+    failureThreshold: 30
+    periodSeconds: 2
+  readinessProbe:
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  livenessProbe:
+    initialDelaySeconds: 20
+    periodSeconds: 20
+  ingress:
+    enabled: true
+    className: nginx
+    host: ""
+    annotations: {}
+    tls: []
