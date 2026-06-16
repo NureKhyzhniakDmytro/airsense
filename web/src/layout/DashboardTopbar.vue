@@ -1,7 +1,7 @@
 <template>
   <header class="bg-surface-0 shadow py-4">
-    <div class="max-w-7xl mx-auto flex items-center justify-between">
-      <div class="flex items-center gap-6">
+    <div class="w-full max-w-7xl mx-auto flex items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+      <div class="min-w-0 flex items-center gap-6">
         <router-link to="/">
           <img src="/logo.svg" alt="Logo" class="h-10 w-10 object-contain rounded-full shadow-sm" />
         </router-link>
@@ -20,7 +20,7 @@
         </nav>
       </div>
 
-      <div class="flex items-center gap-4 relative">
+      <div class="shrink-0 flex items-center gap-4 relative">
         <div>
           <Button @click="createEnvironmentDialog = true" label="New Environment" icon="pi pi-plus" />
           <create-environment-dialog v-model="createEnvironmentDialog"/>

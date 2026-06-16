@@ -2,19 +2,28 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PROFILE="${MINIKUBE_PROFILE:-airsense}"
-NAMESPACE="${K8S_NAMESPACE:-airsense}"
-RELEASE_NAME="${HELM_RELEASE_NAME:-airsense}"
-CHART_DIR="${HELM_CHART_DIR:-charts/airsense}"
+ENV_FILE="${AIRSENSE_ENV_FILE:-$ROOT_DIR/.env}"
+if [[ -f "$ENV_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
+
+PROFILE="airsense"
+NAMESPACE="airsense"
+RELEASE_NAME="airsense"
+CHART_DIR="charts/airsense"
 POSTGRES_USER="${POSTGRES_USER:-postgres}"
 POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-airsense1234}"
 POSTGRES_DATABASE="${POSTGRES_DATABASE:-airsensedb}"
-POSTGRES_CONNECTION_STRING="${POSTGRES_CONNECTION_STRING:-Host=postgres;Port=5432;Database=${POSTGRES_DATABASE};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}}"
+POSTGRES_CONNECTION_STRING="Host=postgres;Port=5432;Database=${POSTGRES_DATABASE};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
 MQTT_API_PASSWORD="${MQTT_API_PASSWORD:-airsense-api-secret}"
 FIREBASE_PROJECT_NAME="${FIREBASE_PROJECT_NAME:-}"
-FIREBASE_CREDENTIALS_FILE_LOCATION="${FIREBASE_CREDENTIALS_FILE_LOCATION:-}"
-FRONTEND_API_INTERNAL_BASE_URL="${FRONTEND_API_INTERNAL_BASE_URL:-http://airsense-api:8080}"
-FRONTEND_PUBLIC_API_BASE_URL="${FRONTEND_PUBLIC_API_BASE_URL:-/api}"
+FIREBASE_CREDENTIALS_JSON_FILE="${FIREBASE_CREDENTIALS_JSON_FILE:-}"
+FIREBASE_CREDENTIALS_FILE_LOCATION="/var/run/secrets/airsense/firebase-service-account.json"
+FRONTEND_API_INTERNAL_BASE_URL="http://airsense-api:8080"
+FRONTEND_PUBLIC_API_BASE_URL="/api"
 FRONTEND_FIREBASE_API_KEY="${FRONTEND_FIREBASE_API_KEY:-}"
 FRONTEND_FIREBASE_AUTH_DOMAIN="${FRONTEND_FIREBASE_AUTH_DOMAIN:-}"
 FRONTEND_FIREBASE_PROJECT_ID="${FRONTEND_FIREBASE_PROJECT_ID:-}"
@@ -23,10 +32,10 @@ FRONTEND_FIREBASE_MESSAGING_SENDER_ID="${FRONTEND_FIREBASE_MESSAGING_SENDER_ID:-
 FRONTEND_FIREBASE_APP_ID="${FRONTEND_FIREBASE_APP_ID:-}"
 FRONTEND_FIREBASE_MEASUREMENT_ID="${FRONTEND_FIREBASE_MEASUREMENT_ID:-}"
 FRONTEND_FIREBASE_VAPID_KEY="${FRONTEND_FIREBASE_VAPID_KEY:-}"
-ENABLE_MINIKUBE_INGRESS="${ENABLE_MINIKUBE_INGRESS:-true}"
-FRONTEND_INGRESS_ENABLED="${FRONTEND_INGRESS_ENABLED:-true}"
-FRONTEND_INGRESS_CLASS_NAME="${FRONTEND_INGRESS_CLASS_NAME:-nginx}"
-FRONTEND_INGRESS_HOST="${FRONTEND_INGRESS_HOST:-}"
+ENABLE_MINIKUBE_INGRESS="true"
+FRONTEND_INGRESS_ENABLED="true"
+FRONTEND_INGRESS_CLASS_NAME="nginx"
+FRONTEND_INGRESS_HOST=""
 cd "$ROOT_DIR"
 
 wait_rollout() {
@@ -98,32 +107,44 @@ adopt_existing_resources() {
 }
 
 helm_deploy() {
-  helm upgrade --install "$RELEASE_NAME" "$CHART_DIR" \
-    --kube-context "$PROFILE" \
-    --namespace "$NAMESPACE" \
-    --create-namespace \
-    --take-ownership \
-    --server-side=false \
-    --set-string secret.postgresUser="$POSTGRES_USER" \
-    --set-string secret.postgresPassword="$POSTGRES_PASSWORD" \
-    --set-string secret.postgresDatabase="$POSTGRES_DATABASE" \
-    --set-string secret.postgresConnectionString="$POSTGRES_CONNECTION_STRING" \
-    --set-string secret.mqttApiPassword="$MQTT_API_PASSWORD" \
-    --set-string secret.firebaseProjectName="$FIREBASE_PROJECT_NAME" \
-    --set-string secret.firebaseCredentialsFileLocation="$FIREBASE_CREDENTIALS_FILE_LOCATION" \
-    --set-string frontend.apiInternalBaseUrl="$FRONTEND_API_INTERNAL_BASE_URL" \
-    --set-string frontend.publicApiBaseUrl="$FRONTEND_PUBLIC_API_BASE_URL" \
-    --set-string frontend.firebase.apiKey="$FRONTEND_FIREBASE_API_KEY" \
-    --set-string frontend.firebase.authDomain="$FRONTEND_FIREBASE_AUTH_DOMAIN" \
-    --set-string frontend.firebase.projectId="$FRONTEND_FIREBASE_PROJECT_ID" \
-    --set-string frontend.firebase.storageBucket="$FRONTEND_FIREBASE_STORAGE_BUCKET" \
-    --set-string frontend.firebase.messagingSenderId="$FRONTEND_FIREBASE_MESSAGING_SENDER_ID" \
-    --set-string frontend.firebase.appId="$FRONTEND_FIREBASE_APP_ID" \
-    --set-string frontend.firebase.measurementId="$FRONTEND_FIREBASE_MEASUREMENT_ID" \
-    --set-string frontend.firebase.vapidKey="$FRONTEND_FIREBASE_VAPID_KEY" \
-    --set-string frontend.ingress.enabled="$FRONTEND_INGRESS_ENABLED" \
-    --set-string frontend.ingress.className="$FRONTEND_INGRESS_CLASS_NAME" \
-    --set-string frontend.ingress.host="$FRONTEND_INGRESS_HOST"
+  local helm_args=(
+    upgrade --install "$RELEASE_NAME" "$CHART_DIR"
+    --kube-context "$PROFILE"
+    --namespace "$NAMESPACE"
+    --create-namespace
+    --take-ownership
+    --server-side=false
+    --set-string "secret.postgresUser=$POSTGRES_USER"
+    --set-string "secret.postgresPassword=$POSTGRES_PASSWORD"
+    --set-string "secret.postgresDatabase=$POSTGRES_DATABASE"
+    --set-string "secret.postgresConnectionString=$POSTGRES_CONNECTION_STRING"
+    --set-string "secret.mqttApiPassword=$MQTT_API_PASSWORD"
+    --set-string "secret.firebaseProjectName=$FIREBASE_PROJECT_NAME"
+    --set-string "secret.firebaseCredentialsFileLocation=$FIREBASE_CREDENTIALS_FILE_LOCATION"
+    --set-string "frontend.apiInternalBaseUrl=$FRONTEND_API_INTERNAL_BASE_URL"
+    --set-string "frontend.publicApiBaseUrl=$FRONTEND_PUBLIC_API_BASE_URL"
+    --set-string "frontend.firebase.apiKey=$FRONTEND_FIREBASE_API_KEY"
+    --set-string "frontend.firebase.authDomain=$FRONTEND_FIREBASE_AUTH_DOMAIN"
+    --set-string "frontend.firebase.projectId=$FRONTEND_FIREBASE_PROJECT_ID"
+    --set-string "frontend.firebase.storageBucket=$FRONTEND_FIREBASE_STORAGE_BUCKET"
+    --set-string "frontend.firebase.messagingSenderId=$FRONTEND_FIREBASE_MESSAGING_SENDER_ID"
+    --set-string "frontend.firebase.appId=$FRONTEND_FIREBASE_APP_ID"
+    --set-string "frontend.firebase.measurementId=$FRONTEND_FIREBASE_MEASUREMENT_ID"
+    --set-string "frontend.firebase.vapidKey=$FRONTEND_FIREBASE_VAPID_KEY"
+    --set-string "frontend.ingress.enabled=$FRONTEND_INGRESS_ENABLED"
+    --set-string "frontend.ingress.className=$FRONTEND_INGRESS_CLASS_NAME"
+    --set-string "frontend.ingress.host=$FRONTEND_INGRESS_HOST"
+  )
+
+  if [[ -n "$FIREBASE_CREDENTIALS_JSON_FILE" ]]; then
+    if [[ ! -f "$FIREBASE_CREDENTIALS_JSON_FILE" ]]; then
+      echo "Firebase credentials file does not exist: $FIREBASE_CREDENTIALS_JSON_FILE" >&2
+      exit 1
+    fi
+    helm_args+=(--set-file "secret.firebaseCredentialsJson=$FIREBASE_CREDENTIALS_JSON_FILE")
+  fi
+
+  helm "${helm_args[@]}"
 }
 
 run_smoke_tests() {

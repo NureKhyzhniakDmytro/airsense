@@ -15,9 +15,11 @@ The backend roles use one Docker image and are separated by `Airsense__ServiceRo
 
 ## Local install
 
-The repository deployment script builds the backend image in the Minikube Docker daemon and installs the chart:
+The repository deployment script builds the backend and frontend images in the Minikube Docker daemon and installs the chart. Local secrets and Firebase settings are read from `.env` when it exists. Kubernetes, Helm, ingress, and frontend API wiring are fixed for the local Minikube stand:
 
 ```bash
+cp .env.example .env
+# edit .env
 ./scripts/deploy-minikube.sh
 ```
 

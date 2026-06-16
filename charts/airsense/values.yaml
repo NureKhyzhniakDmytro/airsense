@@ -9,6 +9,7 @@ secret:
   mqttApiPassword: airsense-api-secret
   firebaseProjectName: ""
   firebaseCredentialsFileLocation: ""
+  firebaseCredentialsJson: ""
 
 backend:
   image:

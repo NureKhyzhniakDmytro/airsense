@@ -1,14 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROFILE="${MINIKUBE_PROFILE:-airsense}"
-NAMESPACE="${INGRESS_NAMESPACE:-ingress-nginx}"
-SERVICE="${INGRESS_SERVICE:-svc/ingress-nginx-controller}"
-BIND_ADDRESS="${AIRSENSE_INGRESS_BIND_ADDRESS:-10.10.0.42}"
-BIND_PORT="${AIRSENSE_INGRESS_BIND_PORT:-18080}"
-TARGET_PORT="${AIRSENSE_INGRESS_TARGET_PORT:-80}"
-LOG_FILE="${AIRSENSE_INGRESS_LOG_FILE:-/tmp/airsense-ingress-port-forward.log}"
-PID_FILE="${AIRSENSE_INGRESS_PID_FILE:-/tmp/airsense-ingress-port-forward.pid}"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ENV_FILE="${AIRSENSE_ENV_FILE:-$ROOT_DIR/.env}"
+if [[ -f "$ENV_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
+
+PROFILE="airsense"
+NAMESPACE="ingress-nginx"
+SERVICE="svc/ingress-nginx-controller"
+BIND_ADDRESS="10.10.0.42"
+BIND_PORT="18080"
+TARGET_PORT="80"
+LOG_FILE="/tmp/airsense-ingress-port-forward.log"
+PID_FILE="/tmp/airsense-ingress-port-forward.pid"
 
 if [[ -f "$PID_FILE" ]]; then
   old_pid="$(cat "$PID_FILE")"

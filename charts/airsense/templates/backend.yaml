@@ -74,6 +74,12 @@ spec:
               port: {{ $.Values.backend.port }}
             failureThreshold: {{ $.Values.backend.startupProbe.failureThreshold }}
             periodSeconds: {{ $.Values.backend.startupProbe.periodSeconds }}
+{{- if $.Values.secret.firebaseCredentialsJson }}
+          volumeMounts:
+            - name: firebase-service-account
+              mountPath: /var/run/secrets/airsense
+              readOnly: true
+{{- end }}
           resources:
             {{- toYaml $.Values.backend.resources | nindent 12 }}
           readinessProbe:
@@ -88,5 +94,14 @@ spec:
               port: {{ $.Values.backend.port }}
             initialDelaySeconds: {{ $.Values.backend.livenessProbe.initialDelaySeconds }}
             periodSeconds: {{ $.Values.backend.livenessProbe.periodSeconds }}
+{{- if $.Values.secret.firebaseCredentialsJson }}
+      volumes:
+        - name: firebase-service-account
+          secret:
+            secretName: {{ $.Values.secret.name }}
+            items:
+              - key: firebase-service-account.json
+                path: firebase-service-account.json
+{{- end }}
 ---
 {{- end }}

@@ -38,3 +38,4 @@ Thumbs.db
 # Kubernetes/local generated artifacts
 *.kubeconfig
 charts/airsense/values.local.yaml
+secrets/

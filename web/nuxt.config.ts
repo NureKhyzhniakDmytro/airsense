@@ -26,6 +26,12 @@ export default defineNuxtConfig({
     strict: true,
     typeCheck: false,
   },
+  postcss: {
+    plugins: {
+      tailwindcss: {},
+      autoprefixer: {},
+    },
+  },
   vite: {
     resolve: {
       alias: {
