@@ -46,11 +46,28 @@ spec:
                 secretKeyRef:
                   name: airsense-secret
                   key: postgres-password
+          startupProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            failureThreshold: 60
+            periodSeconds: 2
           readinessProbe:
             exec:
-              command: ["pg_isready", "-U", "postgres", "-d", "airsensedb"]
-            initialDelaySeconds: 10
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            initialDelaySeconds: 5
             periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\""]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 768Mi
           volumeMounts:
             - name: postgres-data
               mountPath: /var/lib/postgresql/data

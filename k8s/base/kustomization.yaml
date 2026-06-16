@@ -4,7 +4,6 @@ namespace: airsense
 
 resources:
   - namespace.yaml
-  - secret.yaml
   - postgres.yaml
   - redis.yaml
   - emqx.yaml
@@ -16,9 +15,9 @@ resources:
 configMapGenerator:
   - name: postgres-initdb
     files:
-      - script.sql=postgres-init/script.sql
-      - functions.sql=postgres-init/functions.sql
-      - data.sql=postgres-init/data.sql
+      - 01-script.sql=postgres-init/script.sql
+      - 02-functions.sql=postgres-init/functions.sql
+      - 03-data.sql=postgres-init/data.sql
   - name: emqx-config
     files:
       - emqx.conf=emqx.conf

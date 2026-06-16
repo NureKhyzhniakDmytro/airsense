@@ -37,16 +37,23 @@ The local Kubernetes deployment lives in `k8s/base` and includes:
 - StatefulSet for PostgreSQL.
 - ClusterIP services for API, EMQX, PostgreSQL, and Redis.
 - ConfigMaps for EMQX configuration and PostgreSQL initialization scripts.
-- A demonstration Secret for local development values.
+- A generated local Secret for development values, with `secret.example.yaml` kept as documentation of the required keys.
 
 The deployment script is `scripts/deploy-minikube.sh`. It performs these steps:
 
 1. Ensures Minikube profile `airsense` is running.
-2. Builds `airsense-api:local` inside the Minikube Docker daemon.
-3. Applies `k8s/base`.
-4. Restarts backend-role deployments so the local image is refreshed.
-5. Waits for CoreDNS, kube-proxy, infrastructure, and backend role rollouts.
-6. Runs smoke tests for DNS, TCP connectivity, and `/healthz`.
+2. Applies the namespace and generates `airsense-secret` from local environment variables.
+3. Builds `airsense-api:local` inside the Minikube Docker daemon.
+4. Applies `k8s/base`.
+5. Restarts backend-role deployments so the local image is refreshed.
+6. Waits for CoreDNS, kube-proxy, infrastructure, and backend role rollouts.
+7. Runs smoke tests for DNS, TCP connectivity, and `/healthz`.
+
+## Kubernetes Hardening
+
+The local manifests include startup probes, readiness probes, and liveness probes for API-derived services, PostgreSQL, Redis, and EMQX. Resource requests and limits are defined for each workload to make the Minikube deployment more predictable and closer to a production Kubernetes description.
+
+Local credentials are not committed as an active manifest. `k8s/base/secret.example.yaml` documents the required keys, while `scripts/deploy-minikube.sh` creates `airsense-secret` inside the target namespace from environment variables.
 
 ## MQTT Resilience
 

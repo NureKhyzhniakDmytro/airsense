@@ -33,11 +33,28 @@ spec:
           ports:
             - containerPort: 1883
             - containerPort: 18083
+          startupProbe:
+            tcpSocket:
+              port: 1883
+            failureThreshold: 60
+            periodSeconds: 2
           readinessProbe:
             tcpSocket:
               port: 1883
-            initialDelaySeconds: 20
+            initialDelaySeconds: 10
             periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 1883
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 768Mi
           volumeMounts:
             - name: emqx-config
               mountPath: /opt/emqx/etc/emqx.conf

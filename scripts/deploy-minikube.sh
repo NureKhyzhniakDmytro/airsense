@@ -5,6 +5,13 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROFILE="${MINIKUBE_PROFILE:-airsense}"
 NAMESPACE="${K8S_NAMESPACE:-airsense}"
 KUSTOMIZE_DIR="${KUSTOMIZE_DIR:-k8s/base}"
+POSTGRES_USER="${POSTGRES_USER:-postgres}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-airsense1234}"
+POSTGRES_DATABASE="${POSTGRES_DATABASE:-airsensedb}"
+POSTGRES_CONNECTION_STRING="${POSTGRES_CONNECTION_STRING:-Host=postgres;Port=5432;Database=${POSTGRES_DATABASE};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}}"
+MQTT_API_PASSWORD="${MQTT_API_PASSWORD:-airsense-api-secret}"
+FIREBASE_PROJECT_NAME="${FIREBASE_PROJECT_NAME:-}"
+FIREBASE_CREDENTIALS_FILE_LOCATION="${FIREBASE_CREDENTIALS_FILE_LOCATION:-}"
 cd "$ROOT_DIR"
 
 wait_rollout() {
@@ -25,6 +32,21 @@ run_smoke_pod() {
     -i \
     --quiet \
     -- "$@"
+}
+
+
+apply_local_secret() {
+  kubectl --context "$PROFILE" apply -f "${KUSTOMIZE_DIR}/namespace.yaml"
+  kubectl --context "$PROFILE" -n "$NAMESPACE" create secret generic airsense-secret \
+    --from-literal=postgres-user="$POSTGRES_USER" \
+    --from-literal=postgres-password="$POSTGRES_PASSWORD" \
+    --from-literal=postgres-database="$POSTGRES_DATABASE" \
+    --from-literal=postgres-connection-string="$POSTGRES_CONNECTION_STRING" \
+    --from-literal=mqtt-api-password="$MQTT_API_PASSWORD" \
+    --from-literal=firebase-project-name="$FIREBASE_PROJECT_NAME" \
+    --from-literal=firebase-credentials-file-location="$FIREBASE_CREDENTIALS_FILE_LOCATION" \
+    --dry-run=client \
+    -o yaml | kubectl --context "$PROFILE" apply -f -
 }
 
 run_smoke_tests() {
@@ -51,6 +73,8 @@ run_smoke_tests() {
 }
 
 minikube -p "$PROFILE" status >/dev/null 2>&1 || minikube -p "$PROFILE" start --driver=docker --cni=false
+
+apply_local_secret
 
 eval "$(minikube -p "$PROFILE" docker-env)"
 docker build -f api/Airsense.API/Dockerfile --target final -t airsense-api:local api
