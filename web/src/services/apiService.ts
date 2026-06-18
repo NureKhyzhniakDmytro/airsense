@@ -4,9 +4,83 @@ import type { Environment, EnvironmentsResponse, CreateEnvironmentPayload, Updat
 import type { CreateRoomPayload, Room, RoomLayout, RoomsResponse, UpdateRoomPayload } from '@/types/room';
 import type { Sensor, Device, HistoryEntry, Parameter, HistoryParams, CurveData } from '@/types/sensor';
 import type { AiRecommendationAudit, RoomAiInsights } from "@/types/ai";
+import type {
+  DemoBackfillPayload,
+  DemoBackfillResult,
+  DemoBootstrapPayload,
+  DemoDataStatus,
+  DemoResetResult,
+  DemoRoomAssetsPayload,
+  DemoRoomCreatePayload,
+  DemoRoomProfilePayload,
+  DemoRoomReadingsPayload,
+  DemoRoomUpdatePayload,
+} from "@/types/demoData";
 
 export const register = async (payload: RegisterPayload) => {
   const response = await apiPost("/auth", payload);
+  return response.data;
+};
+
+export const getDemoDataStatus = async (): Promise<DemoDataStatus> => {
+  const response = await apiGet("/demo-data/status");
+  return response.data;
+};
+
+export const bootstrapDemoData = async (payload: DemoBootstrapPayload): Promise<DemoDataStatus> => {
+  const response = await apiPost("/demo-data/bootstrap", payload);
+  return response.data;
+};
+
+export const backfillDemoData = async (payload: DemoBackfillPayload): Promise<DemoBackfillResult> => {
+  const response = await apiPost("/demo-data/backfill", payload);
+  return response.data;
+};
+
+export const resetDemoDataHistory = async (): Promise<DemoResetResult> => {
+  const response = await apiDelete("/demo-data/history");
+  return response.data;
+};
+
+export const createDemoRoom = async (payload: DemoRoomCreatePayload): Promise<DemoDataStatus> => {
+  const response = await apiPost("/demo-data/rooms", payload);
+  return response.data;
+};
+
+export const updateDemoRoom = async (
+  roomId: number,
+  payload: DemoRoomUpdatePayload,
+): Promise<DemoDataStatus> => {
+  const response = await apiPatch(`/demo-data/rooms/${roomId}`, payload);
+  return response.data;
+};
+
+export const addDemoRoomAssets = async (
+  roomId: number,
+  payload: DemoRoomAssetsPayload,
+): Promise<DemoDataStatus> => {
+  const response = await apiPost(`/demo-data/rooms/${roomId}/assets`, payload);
+  return response.data;
+};
+
+export const applyDemoRoomReadings = async (
+  roomId: number,
+  payload: DemoRoomReadingsPayload,
+): Promise<DemoDataStatus> => {
+  const response = await apiPost(`/demo-data/rooms/${roomId}/readings`, payload);
+  return response.data;
+};
+
+export const updateDemoRoomProfile = async (
+  roomId: number,
+  payload: DemoRoomProfilePayload,
+): Promise<DemoDataStatus> => {
+  const response = await apiPatch(`/demo-data/rooms/${roomId}/profile`, payload);
+  return response.data;
+};
+
+export const clearDemoRoomProfile = async (roomId: number): Promise<DemoDataStatus> => {
+  const response = await apiDelete(`/demo-data/rooms/${roomId}/profile`);
   return response.data;
 };
 
