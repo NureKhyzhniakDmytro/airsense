@@ -50,6 +50,8 @@ import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useEnvironmentStore } from "@/store/environmentStore";
 import { getRoom, removeRoom as deleteRoomApi } from "@/services/apiService";
+import type { Environment } from "@/types/environment";
+import type { Room } from "@/types/room";
 import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
 import EditRoomDialog from "@/components/room/EditRoomDialog.vue";
@@ -62,10 +64,15 @@ const route = useRoute();
 const router = useRouter();
 const envId = Number(route.params.envId);
 const roomId = Number(route.params.roomId);
+const dataLoadTimeoutMs = 5000;
 
 const environmentStore = useEnvironmentStore();
 const editRoomDialog = ref(false);
 const isRefreshing = ref(false);
+const environmentData = ref<Environment | null>(null);
+const roomData = ref<Room | null>(null);
+const environmentPending = ref(true);
+const roomPending = ref(true);
 const confirm = useConfirm();
 const toast = useToast();
 
@@ -73,37 +80,66 @@ if (route.name === "room") {
   await navigateTo({ name: "room-parameters", params: { envId, roomId } }, { replace: true });
 }
 
-const { data: environmentData, pending: environmentPending } = await useAsyncData(
-  `environment-${envId}`,
-  () => environmentStore.fetchEnvironment(envId),
-);
-
-const { data: roomData, pending: roomPending } = await useAsyncData(
-  `room-${envId}-${roomId}`,
-  async () => {
-    const env = environmentData.value ?? await environmentStore.fetchEnvironment(envId);
-    if (env?.role === "user") return null;
-    return getRoom(envId, roomId);
-  },
-);
-
 const environment = computed(() => environmentData.value ?? null);
 const room = computed(() => roomData.value ?? null);
 const isLoading = computed(() => environmentPending.value || roomPending.value || isRefreshing.value);
 
+const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  return Promise.race([
+    promise.finally(() => {
+      if (timeoutId) clearTimeout(timeoutId);
+    }),
+    new Promise<T>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error("Room request timed out")), timeoutMs);
+    }),
+  ]);
+};
+
+const loadEnvironment = async (forceRefresh = false) => {
+  environmentPending.value = true;
+  try {
+    environmentData.value = await withTimeout(
+      environmentStore.fetchEnvironment(envId, forceRefresh),
+      dataLoadTimeoutMs,
+    );
+  } catch {
+    environmentData.value = null;
+  } finally {
+    environmentPending.value = false;
+  }
+};
+
+const loadRoom = async () => {
+  roomPending.value = true;
+  try {
+    if (environment.value?.role === "user") {
+      roomData.value = null;
+      return;
+    }
+
+    roomData.value = await withTimeout(getRoom(envId, roomId), dataLoadTimeoutMs);
+  } catch {
+    roomData.value = null;
+  } finally {
+    roomPending.value = false;
+  }
+};
+
 const refreshRoom = async () => {
-  if (environment.value?.role === "user") return;
   isRefreshing.value = true;
-  roomData.value = await getRoom(envId, roomId);
-  isRefreshing.value = false;
+  try {
+    await loadEnvironment(true);
+    await loadRoom();
+  } finally {
+    isRefreshing.value = false;
+  }
 }
 
 onMounted(async () => {
-  if (!environmentData.value) {
-    environmentData.value = await environmentStore.fetchEnvironment(envId, true);
-  }
-
-  await refreshRoom();
+  await loadEnvironment();
+  await loadRoom();
 });
 
 const deleteRoom = async () => {

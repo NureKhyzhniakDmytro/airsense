@@ -42,13 +42,23 @@ const getRuntimeApiBaseUrl = () => {
   }
 };
 
+const readLocalStorageToken = () => {
+  if (!import.meta.client || typeof window === "undefined") return null;
+
+  try {
+    return window.localStorage?.getItem("token") ?? null;
+  } catch {
+    return null;
+  }
+};
+
 const getAuthToken = () => {
   if (import.meta.client) {
     try {
       const tokenCookie = useCookie<string | null>(AUTH_TOKEN_COOKIE);
-      return window.localStorage.getItem("token") || tokenCookie.value;
+      return readLocalStorageToken() || tokenCookie.value;
     } catch {
-      return window.localStorage.getItem("token");
+      return readLocalStorageToken();
     }
   }
 

@@ -441,6 +441,7 @@ const route = useRoute();
 const toast = useToast();
 const envId = Number(route.params.envId);
 const roomId = Number(route.params.roomId);
+const layoutLoadTimeoutMs = 5000;
 const boardRef = ref<HTMLElement | null>(null);
 const layout = ref<RoomLayout>(createDefaultLayout());
 const savedLayout = ref<RoomLayout>(createDefaultLayout());
@@ -865,6 +866,19 @@ function normalizeItem(item: RoomLayoutItem, roomWidth = layout.value.width, roo
   };
 }
 
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  return Promise.race([
+    promise.finally(() => {
+      if (timeoutId) clearTimeout(timeoutId);
+    }),
+    new Promise<T>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error("Layout request timed out")), timeoutMs);
+    }),
+  ]);
+}
+
 function normalizeCurrentLayout() {
   layout.value.geometry = normalizeGeometry(layout.value.geometry, layout.value.width, layout.value.height);
   keepRoomBoundItemsInsideRoom();
@@ -875,15 +889,18 @@ async function loadLayout() {
   errorMessage.value = "";
 
   try {
-    const result = normalizeLayout(await getRoomLayout(envId, roomId));
+    const result = normalizeLayout(await withTimeout(getRoomLayout(envId, roomId), layoutLoadTimeoutMs));
     layout.value = cloneLayout(result);
     savedLayout.value = cloneLayout(result);
     selectedId.value = result.items[0]?.id ?? null;
     hasLoaded.value = true;
   } catch (error) {
-    errorMessage.value = "Unable to load room layout.";
-    layout.value = createDefaultLayout();
-    savedLayout.value = createDefaultLayout();
+    const fallback = createDefaultLayout();
+    errorMessage.value = "Unable to load room layout. Showing an empty draft.";
+    layout.value = fallback;
+    savedLayout.value = cloneLayout(fallback);
+    selectedId.value = null;
+    hasLoaded.value = true;
   } finally {
     isLoading.value = false;
   }

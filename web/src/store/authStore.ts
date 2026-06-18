@@ -16,10 +16,16 @@ import api from "@/api";
 
 let authReadyPromise: Promise<User | null> | null = null;
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
+const authReadyTimeoutMs = 1500;
 
 const readBrowserToken = () => {
-  if (import.meta.server) return null;
-  return localStorage.getItem("token");
+  if (import.meta.server || typeof window === "undefined") return null;
+
+  try {
+    return window.localStorage?.getItem("token") ?? null;
+  } catch {
+    return null;
+  }
 };
 
 const clearRefreshTimer = () => {
@@ -75,15 +81,8 @@ export const useAuthStore = defineStore("auth", {
   actions: {
     hydrateFromCookie() {
       const tokenCookie = useCookie<string | null>(AUTH_TOKEN_COOKIE);
-      const { token, claims } = parseUsableToken(readBrowserToken() || tokenCookie.value || null);
-      if (token !== this.token) {
-        this.setToken(token);
-      } else {
-        this.claims = claims;
-        if (!token) {
-          this.setToken(null);
-        }
-      }
+      const { token } = parseUsableToken(readBrowserToken() || tokenCookie.value || null);
+      this.setToken(token);
     },
 
     async startAuthListener() {
@@ -105,6 +104,19 @@ export const useAuthStore = defineStore("auth", {
       authReadyPromise = new Promise<User | null>((resolve) => {
         const auth = getFirebaseAuth();
         let initialStateResolved = false;
+        let initialStateTimer: ReturnType<typeof setTimeout> | undefined;
+
+        const resolveInitialState = (user: User | null) => {
+          if (initialStateResolved) return;
+
+          initialStateResolved = true;
+          if (initialStateTimer) clearTimeout(initialStateTimer);
+          resolve(user);
+        };
+
+        initialStateTimer = setTimeout(() => {
+          resolveInitialState(auth.currentUser);
+        }, authReadyTimeoutMs);
 
         onAuthStateChanged(auth, async (user) => {
           this.user = user;
@@ -119,12 +131,12 @@ export const useAuthStore = defineStore("auth", {
           } else if (!this.token) {
             this.setToken(null);
             clearRefreshTimer();
+          } else {
+            this.setToken(this.token);
+            clearRefreshTimer();
           }
 
-          if (!initialStateResolved) {
-            initialStateResolved = true;
-            resolve(user);
-          }
+          resolveInitialState(user);
         });
       });
 
@@ -215,10 +227,18 @@ export const useAuthStore = defineStore("auth", {
 
       if (import.meta.client) {
         if (token) {
-          localStorage.setItem("token", token);
+          try {
+            window.localStorage?.setItem("token", token);
+          } catch {
+            // Browser storage can be unavailable in embedded or privacy-restricted contexts.
+          }
           api.defaults.headers.Authorization = `Bearer ${token}`;
         } else {
-          localStorage.removeItem("token");
+          try {
+            window.localStorage?.removeItem("token");
+          } catch {
+            // Browser storage can be unavailable in embedded or privacy-restricted contexts.
+          }
           delete api.defaults.headers.Authorization;
         }
 

@@ -6,7 +6,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (import.meta.server) {
     authStore.hydrateFromCookie()
   } else {
-    await authStore.startAuthListener()
+    authStore.hydrateFromCookie()
+    void authStore.startAuthListener()
   }
 
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {

@@ -15,18 +15,18 @@ export type BreadcrumbConfig = {
 
 export const breadcrumbConfig: Record<string, BreadcrumbConfig> = {
   envId: {
-    label: "Середовище",
+    label: "Environment",
     path: "environment",
     fetchData: async (params: RouteParamsGeneric): Promise<string> => {
       const envId = Number(params.envId);
 
       const environmentStore = useEnvironmentStore();
       const env = await environmentStore.fetchEnvironment(envId);
-      return env?.name || `Середовище ${params[0]}`;
+      return env?.name || `Environment ${envId}`;
     },
   },
   roomId: {
-    label: "Кімната",
+    label: "Room",
     path: "room",
     fetchData: async (params: RouteParamsGeneric): Promise<string> => {
       const envId = Number(params.envId);
@@ -34,16 +34,16 @@ export const breadcrumbConfig: Record<string, BreadcrumbConfig> = {
 
       const cacheKey = `room-${envId}-${roomId}`;
       if (breadcrumbCache.has(cacheKey))
-        return breadcrumbCache.get(cacheKey) || `Кімната ${roomId}`;
+        return breadcrumbCache.get(cacheKey) || `Room ${roomId}`;
 
       const room = await getRoom(envId, roomId);
-      const name = room?.name || `Кімната ${roomId}`;
+      const name = room?.name || `Room ${roomId}`;
       breadcrumbCache.set(cacheKey, name);
       return name;
     },
   },
  deviceId: {
-   label: "Пристрій",
+   label: "Device",
    path: "device",
    fetchData: async (params: RouteParamsGeneric): Promise<string> => {
      const roomId = Number(params.roomId);
@@ -51,7 +51,7 @@ export const breadcrumbConfig: Record<string, BreadcrumbConfig> = {
 
      const deviceStore = useDeviceStore();
      const device = await deviceStore.fetchDevice(roomId, deviceId);
-     return `Пристрій #${device?.id}`;
+     return `Device #${device?.id ?? deviceId}`;
    },
  },
   sensorId: {
