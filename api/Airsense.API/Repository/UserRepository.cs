@@ -13,10 +13,37 @@ public class UserRepository(IDbConnection connection) : IUserRepository
         return result.SingleOrDefault() != null;
     }
 
+    public async Task<bool> IsExistsByIdAsync(int id)
+    {
+        const string sql = "SELECT 1 FROM users WHERE id = @id";
+        var result = await connection.QueryAsync(sql, new { id });
+        return result.SingleOrDefault() != null;
+    }
+
+    public async Task<User?> GetByUidAsync(string uid)
+    {
+        const string sql = """
+                           SELECT 
+                               id AS Id, 
+                               uid AS Uid, 
+                               name AS Name, 
+                               email AS Email, 
+                               notification_token AS NotificationToken,
+                               created_at AS CreatedAt
+                           FROM users
+                           WHERE uid = @uid;
+                           """;
+        return await connection.QuerySingleOrDefaultAsync<User>(sql, new { uid });
+    }
+
     public async Task<User> CreateAsync(User user)
     {
         const string sql = """
-                           INSERT INTO users (uid, name, email) VALUES (@Uid, @Name, @Email)
+                           INSERT INTO users (uid, name, email)
+                           VALUES (@Uid, @Name, @Email)
+                           ON CONFLICT (uid) DO UPDATE SET
+                               name = EXCLUDED.name,
+                               email = EXCLUDED.email
                            RETURNING 
                                id AS Id, 
                                uid AS Uid, 
@@ -26,6 +53,37 @@ public class UserRepository(IDbConnection connection) : IUserRepository
                                created_at AS CreatedAt;
                            """;
         var result = await connection.QuerySingleAsync<User>(sql, user);
+        return result;
+    }
+
+    public async Task<User> CreateWithIdAsync(User user)
+    {
+        const string sql = """
+                           INSERT INTO users (id, uid, name, email)
+                           VALUES (@Id, @Uid, @Name, @Email)
+                           ON CONFLICT (id) DO UPDATE SET
+                               uid = EXCLUDED.uid,
+                               name = EXCLUDED.name,
+                               email = EXCLUDED.email
+                           RETURNING 
+                               id AS Id, 
+                               uid AS Uid, 
+                               name AS Name, 
+                               email AS Email, 
+                               notification_token AS NotificationToken,
+                               created_at AS CreatedAt;
+                           """;
+        var result = await connection.QuerySingleAsync<User>(sql, user);
+
+        const string resetSequenceSql = """
+                                        SELECT setval(
+                                            pg_get_serial_sequence('users', 'id'),
+                                            (SELECT MAX(id) FROM users),
+                                            true
+                                        );
+                                        """;
+        await connection.ExecuteAsync(resetSequenceSql);
+
         return result;
     }
 
