@@ -15,6 +15,15 @@ public class RoomLayoutItemDto
     [Length(0, 80)]
     public string? Label { get; set; }
 
+    [Range(1, int.MaxValue)]
+    public int? SensorId { get; set; }
+
+    [Range(1, int.MaxValue)]
+    public int? DeviceId { get; set; }
+
+    [Length(0, 120)]
+    public string? SerialNumber { get; set; }
+
     [Range(0, 1000)]
     public double X { get; set; }
 

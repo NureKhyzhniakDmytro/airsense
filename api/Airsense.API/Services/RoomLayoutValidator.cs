@@ -25,6 +25,10 @@ public static class RoomLayoutValidator
 
         foreach (var item in (layout.Items ?? Enumerable.Empty<RoomLayoutItemDto>()).Where(item => IsRoomBoundItem(item.Type)))
         {
+            var bindingError = GetRoomBoundItemBindingError(item);
+            if (bindingError is not null)
+                errors.Add(bindingError);
+
             if (IsItemInsideRoom(item, layout, polygon))
                 continue;
 
@@ -56,6 +60,32 @@ public static class RoomLayoutValidator
     private static string GetRoomBoundItemTypeName(string type)
     {
         return string.Equals(type, "vent", StringComparison.OrdinalIgnoreCase) ? "Ventilation" : "Sensor";
+    }
+
+    private static string? GetRoomBoundItemBindingError(RoomLayoutItemDto item)
+    {
+        if (string.Equals(item.Type, "sensor", StringComparison.OrdinalIgnoreCase))
+        {
+            if (item.SensorId is null)
+                return $"Sensor layout item \"{GetItemName(item)}\" must reference sensor_id.";
+            if (item.DeviceId is not null)
+                return $"Sensor layout item \"{GetItemName(item)}\" cannot reference device_id.";
+        }
+
+        if (string.Equals(item.Type, "vent", StringComparison.OrdinalIgnoreCase))
+        {
+            if (item.DeviceId is null)
+                return $"Ventilation layout item \"{GetItemName(item)}\" must reference device_id.";
+            if (item.SensorId is not null)
+                return $"Ventilation layout item \"{GetItemName(item)}\" cannot reference sensor_id.";
+        }
+
+        return null;
+    }
+
+    private static string GetItemName(RoomLayoutItemDto item)
+    {
+        return string.IsNullOrWhiteSpace(item.Label) ? item.Id : item.Label;
     }
 
     private static bool IsItemInsideRoom(RoomLayoutItemDto item, RoomLayoutDto layout, IReadOnlyList<Point> polygon)

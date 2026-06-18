@@ -54,6 +54,9 @@ export interface RoomLayoutItem {
   id: string;
   type: RoomLayoutItemType | string;
   label?: string | null;
+  sensor_id?: number | null;
+  device_id?: number | null;
+  serial_number?: string | null;
   x: number;
   y: number;
   width: number;

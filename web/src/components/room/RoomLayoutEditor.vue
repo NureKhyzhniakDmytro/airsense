@@ -24,6 +24,7 @@
           />
         </div>
         <Tag v-if="mode === 'edit' || isDirty" :severity="isDirty ? 'warn' : 'success'" :value="isDirty ? 'Unsaved' : 'Saved'" />
+        <Button v-if="mode === 'view'" label="Refresh data" icon="pi pi-refresh" severity="secondary" variant="text" :loading="isTelemetryLoading" @click="() => loadTelemetry()" />
         <Button v-if="mode === 'edit'" label="Reload" icon="pi pi-refresh" severity="secondary" variant="text" :disabled="isSaving" @click="reloadLayout" />
         <Button v-if="mode === 'edit'" label="Save" icon="pi pi-save" :loading="isSaving" :disabled="!isDirty || hasPlacementErrors" @click="saveLayout" />
       </div>
@@ -31,6 +32,7 @@
 
     <Message v-if="errorMessage" severity="error" variant="simple">{{ errorMessage }}</Message>
     <Message v-if="mode === 'edit' && placementWarning" severity="warn" variant="simple">{{ placementWarning }}</Message>
+    <Message v-if="mode === 'view' && telemetryError" severity="warn" variant="simple">{{ telemetryError }}</Message>
 
     <div class="layout-editor__body" :class="{ 'layout-editor__body--view': mode === 'view' }">
       <aside v-if="mode === 'edit'" class="layout-panel layout-panel--left">
@@ -215,6 +217,30 @@
                     @pointerdown.stop="onVertexPointerDown($event, index)"
                   />
                 </svg>
+                <svg
+                  v-if="mode === 'view' && thermalZones.length"
+                  class="layout-board__thermal-zones"
+                  :viewBox="`0 0 ${layout.width} ${layout.height}`"
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                >
+                  <defs>
+                    <clipPath :id="roomClipId">
+                      <polygon :points="geometrySvgPoints" />
+                    </clipPath>
+                  </defs>
+                  <g :clip-path="`url(#${roomClipId})`">
+                    <circle
+                      v-for="zone in thermalZones"
+                      :key="zone.id"
+                      class="layout-board__thermal-zone"
+                      :class="`layout-board__thermal-zone--${zone.tone}`"
+                      :cx="zone.x"
+                      :cy="zone.y"
+                      :r="zone.radius"
+                    />
+                  </g>
+                </svg>
                 <component
                   :is="mode === 'edit' ? 'button' : 'div'"
                   v-for="item in layout.items"
@@ -226,18 +252,35 @@
                     {
                       'layout-item--selected': mode === 'edit' && item.id === selectedId,
                       'layout-item--editable': mode === 'edit',
-                      'layout-item--invalid': hasItemPlacementError(item)
+                      'layout-item--invalid': hasItemPlacementError(item),
+                      'layout-item--has-telemetry': mode === 'view' && hasItemTelemetry(item)
                     }
                   ]"
                   :aria-label="getItemAriaLabel(item)"
                   :role="mode === 'view' ? 'img' : undefined"
                   :title="getItemPlacementTitle(item)"
-                  :style="getItemStyle(item)"
+                  :style="[getItemStyle(item), getItemTelemetryStyle(item)]"
                   @click.stop="selectLayoutItem(item)"
                   @pointerdown.stop="onItemPointerDown($event, item)"
                 >
-                  <span class="material-symbols-outlined">{{ getItemType(item.type).symbol }}</span>
-                  <span class="layout-item__label">{{ item.label || getItemType(item.type).label }}</span>
+                  <span class="layout-item__content">
+                    <span class="material-symbols-outlined">{{ getItemType(item.type).symbol }}</span>
+                    <span class="layout-item__label">{{ getItemMapLabel(item) }}</span>
+                    <span v-if="mode === 'view' && getItemPrimaryMetric(item)" class="layout-item__primary-metric">
+                      {{ getItemPrimaryMetric(item)?.shortValue }}
+                    </span>
+                  </span>
+                  <span v-if="mode === 'view' && getItemSecondaryMetrics(item).length" class="layout-item__metric-popover" aria-hidden="true">
+                    <span
+                      v-for="metric in getItemSecondaryMetrics(item)"
+                      :key="metric.key"
+                      class="layout-item__metric-chip"
+                      :class="`layout-item__metric-chip--${metric.tone}`"
+                    >
+                      <span class="material-symbols-outlined">{{ metric.icon }}</span>
+                      <strong>{{ metric.shortValue }}</strong>
+                    </span>
+                  </span>
                   <span v-if="isDirectionalItem(item.type)" class="layout-item__direction" aria-hidden="true">
                     <span class="layout-item__direction-head" />
                   </span>
@@ -263,6 +306,18 @@
                     />
                   </template>
                 </component>
+                <div v-if="mode === 'view' && boardMetrics.length" class="layout-board__metric-strip" aria-label="Room telemetry summary">
+                  <span
+                    v-for="metric in boardMetrics"
+                    :key="metric.key"
+                    class="layout-board__metric-card"
+                    :class="`layout-board__metric-card--${metric.tone}`"
+                  >
+                    <span class="material-symbols-outlined">{{ metric.icon }}</span>
+                    <strong>{{ metric.shortValue }}</strong>
+                    <small>{{ metric.label }}</small>
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -297,6 +352,12 @@
               />
             </label>
 
+            <div v-if="selectedBoundAsset" class="layout-bound-asset">
+              <span>Linked asset</span>
+              <strong>{{ selectedBoundAsset.label }}</strong>
+              <small>{{ selectedBoundAsset.detail }}</small>
+            </div>
+
             <label>
               <span>Type</span>
               <Select
@@ -305,6 +366,7 @@
                 option-label="label"
                 option-value="value"
                 fluid
+                :disabled="isSelectedRequiredAsset"
                 @update:model-value="setSelectedType($event)"
               >
                 <template #value="{ value }">
@@ -350,8 +412,8 @@
             </label>
 
             <div class="layout-inspector-actions">
-              <Button label="Duplicate" icon="pi pi-copy" severity="secondary" variant="text" :disabled="mode !== 'edit'" @click="duplicateSelected" />
-              <Button label="Remove" icon="pi pi-trash" severity="danger" variant="text" :disabled="mode !== 'edit'" @click="removeSelected" />
+              <Button label="Duplicate" icon="pi pi-copy" severity="secondary" variant="text" :disabled="mode !== 'edit' || isSelectedRequiredAsset" @click="duplicateSelected" />
+              <Button label="Remove" icon="pi pi-trash" severity="danger" variant="text" :disabled="mode !== 'edit' || isSelectedRequiredAsset" @click="removeSelected" />
             </div>
           </div>
         </section>
@@ -389,7 +451,7 @@ import Select from "primevue/select";
 import Skeleton from "primevue/skeleton";
 import Tag from "primevue/tag";
 import { useToast } from "primevue/usetoast";
-import { getRoomLayout, updateRoomLayout } from "@/services/apiService";
+import { getRoomDevices, getRoomLayout, getRoomSensors, updateRoomLayout } from "@/services/apiService";
 import type {
   RoomLayout,
   RoomLayoutGeometry,
@@ -398,9 +460,18 @@ import type {
   RoomLayoutItemType,
   RoomLayoutPoint,
 } from "@/types/room";
+import {
+  PARAMETER_ICONS,
+  PARAMETER_LABELS,
+  type Device,
+  type Parameter,
+  type Sensor,
+} from "@/types/sensor";
 
 type EditorMode = "view" | "edit";
 type ResizeHandle = "nw" | "ne" | "sw" | "se";
+type RoomAssetKind = "sensor" | "vent";
+type TelemetryTone = "cool" | "normal" | "warm" | "hot" | "humid" | "co2" | "vent";
 type LayoutItemOption = {
   value: RoomLayoutItemType;
   label: string;
@@ -416,6 +487,32 @@ type GeometryOption = {
   label: string;
   description: string;
   symbol: string;
+};
+type TelemetryEntity = {
+  id: number;
+  serial_number: string;
+};
+type RoomAssetSummary = {
+  label: string;
+  detail: string;
+};
+type LayoutMetric = {
+  key: string;
+  label: string;
+  value: string;
+  shortValue: string;
+  icon: string;
+  tone: TelemetryTone;
+};
+type ThermalZone = {
+  id: string;
+  x: number;
+  y: number;
+  radius: number;
+  tone: TelemetryTone;
+};
+type PaginatedData<T> = {
+  data?: T[];
 };
 
 const itemTypes: LayoutItemOption[] = [
@@ -442,15 +539,23 @@ const toast = useToast();
 const envId = Number(route.params.envId);
 const roomId = Number(route.params.roomId);
 const layoutLoadTimeoutMs = 5000;
+const telemetryRefreshMs = 30000;
+const roomClipId = `layout-room-clip-${roomId}`;
 const boardRef = ref<HTMLElement | null>(null);
 const layout = ref<RoomLayout>(createDefaultLayout());
 const savedLayout = ref<RoomLayout>(createDefaultLayout());
+const sensors = ref<Sensor[]>([]);
+const devices = ref<Device[]>([]);
 const selectedId = ref<string | null>(null);
 const mode = ref<EditorMode>("view");
 const isLoading = ref(true);
 const isSaving = ref(false);
+const isTelemetryLoading = ref(false);
 const hasLoaded = ref(false);
+const hasTelemetryLoaded = ref(false);
 const errorMessage = ref("");
+const telemetryError = ref("");
+let telemetryInterval: ReturnType<typeof setInterval> | undefined;
 
 const activeDrag = ref<{
   id: string;
@@ -479,6 +584,8 @@ const boardStyle = computed(() => ({
 }));
 
 const selectedItem = computed(() => layout.value.items.find((item) => item.id === selectedId.value) ?? null);
+const selectedBoundAsset = computed(() => (selectedItem.value ? getBoundAssetSummary(selectedItem.value) : null));
+const isSelectedRequiredAsset = computed(() => Boolean(selectedBoundAsset.value));
 const isDirty = computed(() => JSON.stringify(layout.value) !== JSON.stringify(savedLayout.value));
 const geometryPoints = computed(() => layout.value.geometry.points);
 const geometrySvgPoints = computed(() => geometryPoints.value.map((point) => `${point.x},${point.y}`).join(" "));
@@ -487,6 +594,53 @@ const vertexRadius = computed(() => Math.max(0.07, Math.min(layout.value.width, 
 const viewLegendItemTypes = computed(() => {
   const usedTypes = new Set(layout.value.items.map((item) => getItemType(item.type).value));
   return itemTypes.filter((itemType) => usedTypes.has(itemType.value));
+});
+const sensorLayoutItems = computed(() => layout.value.items.filter((item) => getItemType(item.type).value === "sensor"));
+const ventLayoutItems = computed(() => layout.value.items.filter((item) => getItemType(item.type).value === "vent"));
+const thermalZones = computed<ThermalZone[]>(() => sensorLayoutItems.value
+  .map((item) => {
+    const temperature = getSensorParameter(getSensorForItem(item), "temperature");
+    if (!temperature || temperature.value == null) return null;
+
+    return {
+      id: item.id,
+      x: item.x + item.width / 2,
+      y: item.y + item.height / 2,
+      radius: Math.max(Math.min(layout.value.width, layout.value.height) * 0.22, Math.max(item.width, item.height) * 1.8),
+      tone: getTemperatureTone(temperature.value),
+    };
+  })
+  .filter((zone): zone is ThermalZone => zone !== null));
+const boardMetrics = computed<LayoutMetric[]>(() => {
+  const metrics: LayoutMetric[] = [];
+  const temperatures = getParameterValues("temperature");
+  const humidities = getParameterValues("humidity");
+  const co2Values = getParameterValues("co2");
+  const fanSpeeds = devices.value
+    .map((device) => device.fan_speed)
+    .filter((value): value is number => value !== null && value !== undefined && !Number.isNaN(Number(value)));
+
+  if (temperatures.length) {
+    const value = average(temperatures);
+    metrics.push(createMetric("temperature", "Avg temp", value, "°C", PARAMETER_ICONS.temperature, getTemperatureTone(value)));
+  }
+
+  if (co2Values.length) {
+    const value = Math.max(...co2Values);
+    metrics.push(createMetric("co2", "Peak CO₂", value, "ppm", PARAMETER_ICONS.co2, getCo2Tone(value)));
+  }
+
+  if (humidities.length) {
+    const value = average(humidities);
+    metrics.push(createMetric("humidity", "Avg humidity", value, "%", PARAMETER_ICONS.humidity, "humid"));
+  }
+
+  if (fanSpeeds.length) {
+    const value = average(fanSpeeds);
+    metrics.push(createMetric("device_speed", "Avg fan", value, "%", "mode_fan", "vent"));
+  }
+
+  return metrics;
 });
 const roomBoundPlacementErrors = computed(() => getLayoutPlacementErrors(layout.value).map((item) => getItemDisplayName(item)));
 const hasPlacementErrors = computed(() => roomBoundPlacementErrors.value.length > 0);
@@ -507,8 +661,15 @@ watch(
   }
 );
 
-onMounted(loadLayout);
-onUnmounted(removePointerListeners);
+onMounted(() => {
+  void loadLayout();
+  void loadTelemetry();
+  telemetryInterval = setInterval(() => void loadTelemetry({ silent: true }), telemetryRefreshMs);
+});
+onUnmounted(() => {
+  removePointerListeners();
+  if (telemetryInterval) clearInterval(telemetryInterval);
+});
 
 function createDefaultLayout(): RoomLayout {
   return {
@@ -552,6 +713,34 @@ function getGeometryOption(type: string): GeometryOption {
 }
 
 function getItemDisplayName(item: RoomLayoutItem) {
+  const type = getItemType(item.type).value;
+  if (type === "sensor") {
+    const sensor = getSensorForItem(item);
+    const sensorId = sensor?.id ?? getBoundEntityId(item, "sensor");
+    return sensorId ? `Sensor #${sensorId}` : item.label || "Sensor";
+  }
+
+  if (type === "vent") {
+    const device = getDeviceForItem(item);
+    const deviceId = device?.id ?? getBoundEntityId(item, "vent");
+    return deviceId ? `Vent #${deviceId}` : item.label || "Ventilation";
+  }
+
+  return item.label || getItemType(item.type).label;
+}
+
+function getItemMapLabel(item: RoomLayoutItem) {
+  const type = getItemType(item.type).value;
+  if (type === "sensor") {
+    const sensorId = getSensorForItem(item)?.id ?? getBoundEntityId(item, "sensor");
+    return sensorId ? `S#${sensorId}` : "Sensor";
+  }
+
+  if (type === "vent") {
+    const deviceId = getDeviceForItem(item)?.id ?? getBoundEntityId(item, "vent");
+    return deviceId ? `V#${deviceId}` : "Vent";
+  }
+
   return item.label || getItemType(item.type).label;
 }
 
@@ -561,7 +750,9 @@ function getItemAriaLabel(item: RoomLayoutItem) {
   const rotation = normalizeAngle(Number(item.rotation) || 0);
   const direction = isDirectionalItem(item.type) ? `, direction follows rotation at ${rotation} degrees` : "";
   const position = `x ${round(item.x)} ${layout.value.unit}, y ${round(item.y)} ${layout.value.unit}`;
-  const base = `${name}, ${type}, ${position}, rotation ${rotation} degrees${direction}`;
+  const telemetry = getItemTelemetrySummary(item);
+  const telemetryText = telemetry ? `, ${telemetry}` : "";
+  const base = `${name}, ${type}, ${position}, rotation ${rotation} degrees${direction}${telemetryText}`;
   return mode.value === "edit" ? `Edit ${base}` : base;
 }
 
@@ -598,8 +789,234 @@ function isDirectionalItem(type: string) {
 }
 
 function getItemPlacementTitle(item: RoomLayoutItem) {
-  if (!hasItemPlacementError(item)) return getItemDisplayName(item);
-  return `${getItemDisplayName(item)} must be fully inside the room contour.`;
+  const telemetry = getItemTelemetrySummary(item);
+  const suffix = telemetry ? `\n${telemetry}` : "";
+  if (!hasItemPlacementError(item)) return `${getItemDisplayName(item)}${suffix}`;
+  return `${getItemDisplayName(item)} must be fully inside the room contour.${suffix}`;
+}
+
+function getSortedEntities<T extends TelemetryEntity>(entities: T[]) {
+  return [...entities].sort((first, second) => first.id - second.id);
+}
+
+function toPositiveInteger(value: unknown) {
+  const numeric = Number(value);
+  return Number.isInteger(numeric) && numeric > 0 ? numeric : null;
+}
+
+function getBoundEntityId(item: RoomLayoutItem, kind: RoomAssetKind) {
+  return toPositiveInteger(kind === "sensor" ? item.sensor_id : item.device_id);
+}
+
+function itemMatchesEntityText(item: RoomLayoutItem, entity: TelemetryEntity) {
+  const text = `${item.id} ${item.label || ""} ${item.serial_number || ""}`.toLowerCase();
+  const serial = entity.serial_number?.toLowerCase();
+  if (serial && text.includes(serial)) return true;
+
+  const explicitIds = (text.match(/\d+/g) ?? []).map(Number);
+  return explicitIds.includes(entity.id);
+}
+
+function resolveEntityForItem<T extends TelemetryEntity>(
+  item: RoomLayoutItem,
+  sameTypeItems: RoomLayoutItem[],
+  entities: T[],
+  kind: RoomAssetKind,
+) {
+  const sorted = getSortedEntities(entities);
+  if (!sorted.length) return null;
+
+  const boundId = getBoundEntityId(item, kind);
+  if (boundId) {
+    return sorted.find((entity) => entity.id === boundId) ?? null;
+  }
+
+  const textMatch = sorted.find((entity) => itemMatchesEntityText(item, entity));
+  if (textMatch) return textMatch;
+
+  const itemIndex = sameTypeItems.findIndex((candidate) => candidate.id === item.id);
+  return itemIndex >= 0 ? sorted[itemIndex] ?? null : null;
+}
+
+function getSensorForItem(item: RoomLayoutItem) {
+  return resolveEntityForItem(item, sensorLayoutItems.value, sensors.value, "sensor");
+}
+
+function getDeviceForItem(item: RoomLayoutItem) {
+  return resolveEntityForItem(item, ventLayoutItems.value, devices.value, "vent");
+}
+
+function getBoundAssetSummary(item: RoomLayoutItem): RoomAssetSummary | null {
+  const type = getItemType(item.type).value;
+
+  if (type === "sensor") {
+    const sensor = getSensorForItem(item);
+    const sensorId = sensor?.id ?? getBoundEntityId(item, "sensor");
+    if (!sensorId) return null;
+
+    return {
+      label: `Sensor #${sensorId}`,
+      detail: sensor?.serial_number ? `Serial ${sensor.serial_number}` : "Telemetry sensor",
+    };
+  }
+
+  if (type === "vent") {
+    const device = getDeviceForItem(item);
+    const deviceId = device?.id ?? getBoundEntityId(item, "vent");
+    if (!deviceId) return null;
+
+    return {
+      label: `Vent #${deviceId}`,
+      detail: device?.serial_number ? `Serial ${device.serial_number}` : "Ventilation device",
+    };
+  }
+
+  return null;
+}
+
+function getSensorParameter(sensor: Sensor | null, name: string): Parameter | null {
+  return sensor?.parameters?.find((parameter) => (
+    parameter.name === name
+    && parameter.value !== null
+    && parameter.value !== undefined
+    && !Number.isNaN(Number(parameter.value))
+  )) ?? null;
+}
+
+function getParameterValues(name: string) {
+  return sensors.value
+    .flatMap((sensor) => sensor.parameters ?? [])
+    .filter((parameter) => parameter.name === name && parameter.value !== null && parameter.value !== undefined)
+    .map((parameter) => Number(parameter.value))
+    .filter((value) => !Number.isNaN(value));
+}
+
+function average(values: number[]) {
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function getMetricFractionDigits(key: string) {
+  return key === "co2" || key === "pressure" || key === "device_speed" ? 0 : 1;
+}
+
+function formatMetricNumber(value: number, key: string) {
+  return new Intl.NumberFormat(undefined, { maximumFractionDigits: getMetricFractionDigits(key) }).format(value);
+}
+
+function formatMetricValue(value: number, unit: string | undefined, key: string) {
+  const formatted = formatMetricNumber(value, key);
+  if (!unit) return formatted;
+  return unit === "%" || unit.startsWith("°") ? `${formatted}${unit}` : `${formatted} ${unit}`;
+}
+
+function getTemperatureTone(value: number): TelemetryTone {
+  if (value < 19) return "cool";
+  if (value >= 28) return "hot";
+  if (value >= 24) return "warm";
+  return "normal";
+}
+
+function getCo2Tone(value: number): TelemetryTone {
+  if (value >= 1200) return "hot";
+  if (value >= 900) return "warm";
+  return "co2";
+}
+
+function getMetricTone(key: string, value: number): TelemetryTone {
+  if (key === "temperature") return getTemperatureTone(value);
+  if (key === "co2") return getCo2Tone(value);
+  if (key === "humidity") return "humid";
+  if (key === "device_speed") return "vent";
+  return "normal";
+}
+
+function createMetric(
+  key: string,
+  label: string,
+  value: number,
+  unit: string,
+  icon: string,
+  tone: TelemetryTone,
+): LayoutMetric {
+  const metricValue = formatMetricValue(value, unit, key);
+  return {
+    key,
+    label,
+    value: metricValue,
+    shortValue: metricValue,
+    icon,
+    tone,
+  };
+}
+
+function createParameterMetric(parameter: Parameter): LayoutMetric {
+  return createMetric(
+    parameter.name,
+    PARAMETER_LABELS[parameter.name] ?? parameter.name,
+    Number(parameter.value),
+    parameter.unit,
+    PARAMETER_ICONS[parameter.name] ?? "monitoring",
+    getMetricTone(parameter.name, Number(parameter.value)),
+  );
+}
+
+function createDeviceMetric(device: Device | null): LayoutMetric | null {
+  if (!device || device.fan_speed === null || device.fan_speed === undefined || Number.isNaN(Number(device.fan_speed))) {
+    return null;
+  }
+
+  return createMetric("device_speed", "Fan speed", Number(device.fan_speed), "%", "mode_fan", "vent");
+}
+
+function getItemPrimaryMetric(item: RoomLayoutItem): LayoutMetric | null {
+  const type = getItemType(item.type).value;
+  if (type === "sensor") {
+    const sensor = getSensorForItem(item);
+    const parameter = getSensorParameter(sensor, "temperature")
+      ?? getSensorParameter(sensor, "co2")
+      ?? getSensorParameter(sensor, "humidity")
+      ?? sensor?.parameters?.find((candidate) => candidate.value !== null && candidate.value !== undefined);
+    return parameter ? createParameterMetric(parameter) : null;
+  }
+
+  if (type === "vent") {
+    return createDeviceMetric(getDeviceForItem(item));
+  }
+
+  return null;
+}
+
+function getItemSecondaryMetrics(item: RoomLayoutItem): LayoutMetric[] {
+  if (getItemType(item.type).value !== "sensor") return [];
+
+  const sensor = getSensorForItem(item);
+  const primaryKey = getItemPrimaryMetric(item)?.key;
+  const preferred = ["co2", "humidity", "pressure", "temperature"];
+  return preferred
+    .filter((name) => name !== primaryKey)
+    .map((name) => getSensorParameter(sensor, name))
+    .filter((parameter): parameter is Parameter => parameter !== null)
+    .map(createParameterMetric)
+    .slice(0, 2);
+}
+
+function getItemTelemetrySummary(item: RoomLayoutItem) {
+  const metrics = [getItemPrimaryMetric(item), ...getItemSecondaryMetrics(item)]
+    .filter((metric): metric is LayoutMetric => metric !== null);
+  return metrics.map((metric) => `${metric.label} ${metric.value}`).join(", ");
+}
+
+function hasItemTelemetry(item: RoomLayoutItem) {
+  return getItemPrimaryMetric(item) !== null;
+}
+
+function getItemTelemetryStyle(item: RoomLayoutItem) {
+  const metric = getItemPrimaryMetric(item);
+  if (!metric) return {};
+
+  return {
+    "--layout-telemetry-color": `var(--layout-telemetry-${metric.tone})`,
+  };
 }
 
 function hasItemPlacementError(item: RoomLayoutItem) {
@@ -853,17 +1270,28 @@ function normalizeItem(item: RoomLayoutItem, roomWidth = layout.value.width, roo
   const type = getItemType(item.type).value;
   const itemWidth = clamp(Number(item.width) || getItemType(type).width, 0.1, roomWidth);
   const itemHeight = clamp(Number(item.height) || getItemType(type).height, 0.1, roomHeight);
-
-  return {
+  const normalized: RoomLayoutItem = {
     id: item.id || createItemId(type),
     type,
-    label: item.label || null,
+    label: item.label?.trim() || null,
     x: round(clamp(Number(item.x) || 0, 0, Math.max(0, roomWidth - itemWidth))),
     y: round(clamp(Number(item.y) || 0, 0, Math.max(0, roomHeight - itemHeight))),
     width: round(itemWidth),
     height: round(itemHeight),
     rotation: round(clamp(Number(item.rotation) || 0, -360, 360)),
   };
+
+  if (type === "sensor") {
+    normalized.sensor_id = toPositiveInteger(item.sensor_id);
+    normalized.serial_number = item.serial_number?.trim() || null;
+  }
+
+  if (type === "vent") {
+    normalized.device_id = toPositiveInteger(item.device_id);
+    normalized.serial_number = item.serial_number?.trim() || null;
+  }
+
+  return normalized;
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -879,9 +1307,227 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
   ]);
 }
 
+function extractPaginatedData<T>(value: PaginatedData<T> | T[] | null | undefined) {
+  if (Array.isArray(value)) return value;
+  return value?.data ?? [];
+}
+
 function normalizeCurrentLayout() {
   layout.value.geometry = normalizeGeometry(layout.value.geometry, layout.value.width, layout.value.height);
   keepRoomBoundItemsInsideRoom();
+}
+
+function isRequiredAssetItem(item: RoomLayoutItem) {
+  const type = getItemType(item.type).value;
+  return (type === "sensor" && Boolean(getBoundEntityId(item, "sensor")))
+    || (type === "vent" && Boolean(getBoundEntityId(item, "vent")));
+}
+
+function shouldReplaceGenericAssetLabel(label: string | null | undefined, kind: RoomAssetKind) {
+  const text = label?.trim().toLowerCase();
+  if (!text) return true;
+
+  if (kind === "sensor") {
+    return /^s#?\d+$/.test(text) || /^sensor\s*#?\d+$/.test(text);
+  }
+
+  return /^v#?\d+$/.test(text) || /^vent\s*#?\d+$/.test(text) || /^ventilation\s*#?\d+$/.test(text);
+}
+
+function bindItemToSensor(item: RoomLayoutItem, sensor: Sensor) {
+  item.type = "sensor";
+  item.sensor_id = sensor.id;
+  item.serial_number = sensor.serial_number || null;
+  delete item.device_id;
+
+  if (shouldReplaceGenericAssetLabel(item.label, "sensor")) {
+    item.label = `Sensor #${sensor.id}`;
+  }
+
+  return item;
+}
+
+function bindItemToDevice(item: RoomLayoutItem, device: Device) {
+  item.type = "vent";
+  item.device_id = device.id;
+  item.serial_number = device.serial_number || null;
+  delete item.sensor_id;
+
+  if (shouldReplaceGenericAssetLabel(item.label, "vent")) {
+    item.label = `Vent #${device.id}`;
+  }
+
+  return item;
+}
+
+function createStableAssetItemId(kind: RoomAssetKind, entityId: number) {
+  const base = `${kind}-${entityId}`;
+  if (!layout.value.items.some((item) => item.id === base)) return base;
+  return createItemId(kind);
+}
+
+function createBoundSensorItem(sensor: Sensor): RoomLayoutItem {
+  const option = getItemType("sensor");
+  const index = layout.value.items.filter((item) => getItemType(item.type).value === "sensor").length + 1;
+  const width = Math.min(option.width, layout.value.width);
+  const height = Math.min(option.height, layout.value.height);
+
+  return bindItemToSensor(normalizeItem({
+    id: createStableAssetItemId("sensor", sensor.id),
+    type: "sensor",
+    label: `Sensor #${sensor.id}`,
+    x: round(clamp(0.45 + index * 0.25, 0, Math.max(0, layout.value.width - width))),
+    y: round(clamp(0.45 + index * 0.2, 0, Math.max(0, layout.value.height - height))),
+    width,
+    height,
+    rotation: 0,
+  }), sensor);
+}
+
+function createBoundDeviceItem(device: Device): RoomLayoutItem {
+  const option = getItemType("vent");
+  const index = layout.value.items.filter((item) => getItemType(item.type).value === "vent").length + 1;
+  const width = Math.min(option.width, layout.value.width);
+  const height = Math.min(option.height, layout.value.height);
+
+  return bindItemToDevice(normalizeItem({
+    id: createStableAssetItemId("vent", device.id),
+    type: "vent",
+    label: `Vent #${device.id}`,
+    x: round(clamp(layout.value.width - width - 0.45 - index * 0.25, 0, Math.max(0, layout.value.width - width))),
+    y: round(clamp(0.45 + index * 0.2, 0, Math.max(0, layout.value.height - height))),
+    width,
+    height,
+    rotation: 0,
+  }), device);
+}
+
+function findAssetItemForEntity<T extends TelemetryEntity>(
+  kind: RoomAssetKind,
+  entity: T,
+  entities: T[],
+  usedItemIds: Set<string>,
+) {
+  const entityIds = new Set(entities.map((candidate) => candidate.id));
+  const candidates = layout.value.items.filter((item) => (
+    getItemType(item.type).value === kind && !usedItemIds.has(item.id)
+  ));
+
+  const exact = candidates.find((item) => getBoundEntityId(item, kind) === entity.id);
+  if (exact) return exact;
+
+  const textMatch = candidates.find((item) => {
+    const boundId = getBoundEntityId(item, kind);
+    return (!boundId || !entityIds.has(boundId)) && itemMatchesEntityText(item, entity);
+  });
+  if (textMatch) return textMatch;
+
+  const unbound = candidates.filter((item) => !getBoundEntityId(item, kind));
+  const entityIndex = getSortedEntities(entities).findIndex((candidate) => candidate.id === entity.id);
+  return entityIndex >= 0 ? unbound[entityIndex] ?? null : null;
+}
+
+function syncRequiredRoomAssets() {
+  if (!hasLoaded.value || !hasTelemetryLoaded.value) return;
+
+  layout.value.items = layout.value.items.map((item) => normalizeItem(item));
+
+  const usedItemIds = new Set<string>();
+  const sensorIds = new Set(sensors.value.map((sensor) => sensor.id));
+  const deviceIds = new Set(devices.value.map((device) => device.id));
+
+  for (const sensor of getSortedEntities(sensors.value)) {
+    const item = findAssetItemForEntity("sensor", sensor, sensors.value, usedItemIds);
+
+    if (item) {
+      bindItemToSensor(item, sensor);
+      Object.assign(item, keepRoomBoundItemInsideRoom(item));
+      usedItemIds.add(item.id);
+      continue;
+    }
+
+    const placed = findOpenPlacement(createBoundSensorItem(sensor));
+    layout.value.items.push(placed);
+    usedItemIds.add(placed.id);
+  }
+
+  for (const device of getSortedEntities(devices.value)) {
+    const item = findAssetItemForEntity("vent", device, devices.value, usedItemIds);
+
+    if (item) {
+      bindItemToDevice(item, device);
+      Object.assign(item, keepRoomBoundItemInsideRoom(item));
+      usedItemIds.add(item.id);
+      continue;
+    }
+
+    const placed = findOpenPlacement(createBoundDeviceItem(device));
+    layout.value.items.push(placed);
+    usedItemIds.add(placed.id);
+  }
+
+  layout.value.items = layout.value.items.filter((item) => {
+    const type = getItemType(item.type).value;
+    if (type === "sensor") {
+      const sensorId = getBoundEntityId(item, "sensor");
+      return Boolean(sensorId && sensorIds.has(sensorId) && usedItemIds.has(item.id));
+    }
+
+    if (type === "vent") {
+      const deviceId = getBoundEntityId(item, "vent");
+      return Boolean(deviceId && deviceIds.has(deviceId) && usedItemIds.has(item.id));
+    }
+
+    return true;
+  });
+
+  if (selectedId.value && !layout.value.items.some((item) => item.id === selectedId.value)) {
+    selectedId.value = layout.value.items[0]?.id ?? null;
+  }
+}
+
+function getFirstUnplacedSensor(excludeItemId?: string) {
+  const placedSensorIds = new Set(layout.value.items
+    .filter((item) => item.id !== excludeItemId && getItemType(item.type).value === "sensor")
+    .map((item) => getBoundEntityId(item, "sensor"))
+    .filter((sensorId): sensorId is number => sensorId !== null));
+
+  return getSortedEntities(sensors.value).find((sensor) => !placedSensorIds.has(sensor.id)) ?? null;
+}
+
+function getFirstUnplacedDevice(excludeItemId?: string) {
+  const placedDeviceIds = new Set(layout.value.items
+    .filter((item) => item.id !== excludeItemId && getItemType(item.type).value === "vent")
+    .map((item) => getBoundEntityId(item, "vent"))
+    .filter((deviceId): deviceId is number => deviceId !== null));
+
+  return getSortedEntities(devices.value).find((device) => !placedDeviceIds.has(device.id)) ?? null;
+}
+
+async function loadTelemetry(options: { silent?: boolean } = {}) {
+  if (!options.silent) {
+    isTelemetryLoading.value = true;
+    telemetryError.value = "";
+  }
+
+  try {
+    const [sensorResponse, deviceResponse] = await Promise.all([
+      getRoomSensors(roomId, 0, 1000),
+      getRoomDevices(roomId, 0, 1000),
+    ]);
+
+    sensors.value = extractPaginatedData(sensorResponse as PaginatedData<Sensor>);
+    devices.value = extractPaginatedData(deviceResponse as PaginatedData<Device>);
+    hasTelemetryLoaded.value = true;
+    syncRequiredRoomAssets();
+  } catch (error) {
+    console.error("Failed to load layout telemetry:", error);
+    telemetryError.value = "Unable to load live values for the room plan.";
+  } finally {
+    if (!options.silent) {
+      isTelemetryLoading.value = false;
+    }
+  }
 }
 
 async function loadLayout() {
@@ -894,6 +1540,7 @@ async function loadLayout() {
     savedLayout.value = cloneLayout(result);
     selectedId.value = result.items[0]?.id ?? null;
     hasLoaded.value = true;
+    syncRequiredRoomAssets();
   } catch (error) {
     const fallback = createDefaultLayout();
     errorMessage.value = "Unable to load room layout. Showing an empty draft.";
@@ -901,6 +1548,7 @@ async function loadLayout() {
     savedLayout.value = cloneLayout(fallback);
     selectedId.value = null;
     hasLoaded.value = true;
+    syncRequiredRoomAssets();
   } finally {
     isLoading.value = false;
   }
@@ -912,6 +1560,24 @@ async function reloadLayout() {
 }
 
 async function saveLayout() {
+  if (!hasTelemetryLoaded.value) {
+    errorMessage.value = "Room sensors and ventilation devices are still loading. Wait for live assets before saving.";
+    return;
+  }
+
+  syncRequiredRoomAssets();
+
+  const hasUnboundAsset = layout.value.items.some((item) => {
+    const type = getItemType(item.type).value;
+    return (type === "sensor" && !getBoundEntityId(item, "sensor"))
+      || (type === "vent" && !getBoundEntityId(item, "vent"));
+  });
+
+  if (hasUnboundAsset) {
+    errorMessage.value = "Room sensors and ventilation devices are still loading. Wait for live assets before saving.";
+    return;
+  }
+
   if (hasPlacementErrors.value) {
     errorMessage.value = "Sensors and ventilation must be fully inside the room contour.";
     return;
@@ -936,6 +1602,7 @@ async function saveLayout() {
 
 function restoreSavedLayout() {
   layout.value = cloneLayout(savedLayout.value);
+  syncRequiredRoomAssets();
   selectedId.value = layout.value.items[0]?.id ?? null;
 }
 
@@ -986,8 +1653,44 @@ function setSelectedText(value: string | undefined) {
 
 function setSelectedType(value: RoomLayoutItemType) {
   if (!selectedItem.value) return;
+  if (isRequiredAssetItem(selectedItem.value)) return;
+
   const option = getItemType(value);
+
+  if (option.value === "sensor") {
+    const sensor = getFirstUnplacedSensor(selectedItem.value.id);
+    if (!sensor) {
+      toast.add({ severity: "info", summary: "All sensors placed", detail: "Every room sensor is already on the plan.", life: 2500 });
+      return;
+    }
+
+    selectedItem.value.width = Math.min(option.width, layout.value.width);
+    selectedItem.value.height = Math.min(option.height, layout.value.height);
+    bindItemToSensor(selectedItem.value, sensor);
+    selectedItem.value.label = `Sensor #${sensor.id}`;
+    Object.assign(selectedItem.value, keepRoomBoundItemInsideRoom(selectedItem.value));
+    return;
+  }
+
+  if (option.value === "vent") {
+    const device = getFirstUnplacedDevice(selectedItem.value.id);
+    if (!device) {
+      toast.add({ severity: "info", summary: "All ventilation placed", detail: "Every room ventilation device is already on the plan.", life: 2500 });
+      return;
+    }
+
+    selectedItem.value.width = Math.min(option.width, layout.value.width);
+    selectedItem.value.height = Math.min(option.height, layout.value.height);
+    bindItemToDevice(selectedItem.value, device);
+    selectedItem.value.label = `Vent #${device.id}`;
+    Object.assign(selectedItem.value, keepRoomBoundItemInsideRoom(selectedItem.value));
+    return;
+  }
+
   selectedItem.value.type = option.value;
+  delete selectedItem.value.sensor_id;
+  delete selectedItem.value.device_id;
+  delete selectedItem.value.serial_number;
   selectedItem.value.width = Math.min(selectedItem.value.width, layout.value.width) || option.width;
   selectedItem.value.height = Math.min(selectedItem.value.height, layout.value.height) || option.height;
   Object.assign(selectedItem.value, keepRoomBoundItemInsideRoom(selectedItem.value));
@@ -1087,6 +1790,33 @@ function addLayoutItem(type: RoomLayoutItemType) {
   if (mode.value !== "edit") return;
 
   const option = getItemType(type);
+
+  if (option.value === "sensor") {
+    const sensor = getFirstUnplacedSensor();
+    if (!sensor) {
+      toast.add({ severity: "info", summary: "All sensors placed", detail: "Every room sensor is already on the plan.", life: 2500 });
+      return;
+    }
+
+    const item = findOpenPlacement(createBoundSensorItem(sensor));
+    layout.value.items.push(item);
+    selectedId.value = item.id;
+    return;
+  }
+
+  if (option.value === "vent") {
+    const device = getFirstUnplacedDevice();
+    if (!device) {
+      toast.add({ severity: "info", summary: "All ventilation placed", detail: "Every room ventilation device is already on the plan.", life: 2500 });
+      return;
+    }
+
+    const item = findOpenPlacement(createBoundDeviceItem(device));
+    layout.value.items.push(item);
+    selectedId.value = item.id;
+    return;
+  }
+
   const index = layout.value.items.filter((item) => item.type === type).length + 1;
   const width = Math.min(option.width, layout.value.width);
   const height = Math.min(option.height, layout.value.height);
@@ -1107,6 +1837,7 @@ function addLayoutItem(type: RoomLayoutItemType) {
 
 function duplicateSelected() {
   if (!selectedItem.value || mode.value !== "edit") return;
+  if (isRequiredAssetItem(selectedItem.value)) return;
 
   const source = selectedItem.value;
   const item = normalizeItem({
@@ -1123,13 +1854,16 @@ function duplicateSelected() {
 
 function removeSelected() {
   if (!selectedId.value || mode.value !== "edit") return;
+  if (selectedItem.value && isRequiredAssetItem(selectedItem.value)) return;
+
   layout.value.items = layout.value.items.filter((item) => item.id !== selectedId.value);
   selectedId.value = layout.value.items[0]?.id ?? null;
 }
 
 function clearItems() {
-  layout.value.items = [];
-  selectedId.value = null;
+  layout.value.items = layout.value.items.filter((item) => isRequiredAssetItem(item));
+  syncRequiredRoomAssets();
+  selectedId.value = layout.value.items[0]?.id ?? null;
 }
 
 function clearSelection(event: PointerEvent) {
@@ -1145,6 +1879,7 @@ function getItemStyle(item: RoomLayoutItem) {
     width: `${(item.width / layout.value.width) * 100}%`,
     height: `${(item.height / layout.value.height) * 100}%`,
     transform: `rotate(${item.rotation}deg)`,
+    "--layout-item-rotation": `${item.rotation}deg`,
   };
 }
 
@@ -1621,6 +2356,13 @@ function removePointerListeners() {
   min-width: 320px;
   position: relative;
   width: 100%;
+  --layout-telemetry-cool: #0284c7;
+  --layout-telemetry-normal: #059669;
+  --layout-telemetry-warm: #d97706;
+  --layout-telemetry-hot: #dc2626;
+  --layout-telemetry-humid: #2563eb;
+  --layout-telemetry-co2: #4f46e5;
+  --layout-telemetry-vent: #0f766e;
 }
 
 .layout-board--edit {
@@ -1676,6 +2418,82 @@ function removePointerListeners() {
   pointer-events: auto;
 }
 
+.layout-board__thermal-zones {
+  display: block;
+  height: 100%;
+  inset: 0;
+  mix-blend-mode: multiply;
+  pointer-events: none;
+  position: absolute;
+  width: 100%;
+  z-index: 1;
+}
+
+.layout-board__thermal-zone {
+  filter: blur(0.12px);
+  opacity: 0.32;
+}
+
+.layout-board__thermal-zone--cool { fill: #38bdf8; }
+.layout-board__thermal-zone--normal { fill: #34d399; }
+.layout-board__thermal-zone--warm { fill: #f59e0b; }
+.layout-board__thermal-zone--hot { fill: #ef4444; }
+
+.layout-board__metric-strip {
+  align-items: stretch;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  left: 8px;
+  max-width: calc(100% - 16px);
+  pointer-events: none;
+  position: absolute;
+  top: 8px;
+  z-index: 4;
+}
+
+.layout-board__metric-card {
+  align-items: center;
+  background: rgb(255 255 255 / 0.88);
+  border: 1px solid color-mix(in srgb, var(--layout-telemetry-color, var(--app-border-strong)) 30%, var(--app-border));
+  border-radius: 5px;
+  box-shadow: 0 6px 14px rgb(15 23 42 / 0.08);
+  color: var(--app-text-strong);
+  display: grid;
+  gap: 1px 6px;
+  grid-template-columns: auto auto;
+  min-height: 34px;
+  padding: 4px 7px;
+}
+
+.layout-board__metric-card .material-symbols-outlined {
+  color: var(--layout-telemetry-color, var(--app-muted));
+  font-size: 1rem;
+  grid-row: 1 / span 2;
+}
+
+.layout-board__metric-card strong {
+  font-family: var(--app-mono);
+  font-size: 0.74rem;
+  line-height: 0.9rem;
+}
+
+.layout-board__metric-card small {
+  color: var(--app-muted);
+  font-size: 0.58rem;
+  font-weight: 720;
+  line-height: 0.72rem;
+  text-transform: uppercase;
+}
+
+.layout-board__metric-card--cool { --layout-telemetry-color: var(--layout-telemetry-cool); }
+.layout-board__metric-card--normal { --layout-telemetry-color: var(--layout-telemetry-normal); }
+.layout-board__metric-card--warm { --layout-telemetry-color: var(--layout-telemetry-warm); }
+.layout-board__metric-card--hot { --layout-telemetry-color: var(--layout-telemetry-hot); }
+.layout-board__metric-card--humid { --layout-telemetry-color: var(--layout-telemetry-humid); }
+.layout-board__metric-card--co2 { --layout-telemetry-color: var(--layout-telemetry-co2); }
+.layout-board__metric-card--vent { --layout-telemetry-color: var(--layout-telemetry-vent); }
+
 .layout-item {
   align-items: center;
   background: var(--app-item-surface);
@@ -1724,6 +2542,11 @@ function removePointerListeners() {
 .layout-item--invalid {
   border-color: var(--app-danger);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-danger) 18%, transparent);
+}
+
+.layout-item--has-telemetry {
+  border-color: color-mix(in srgb, var(--layout-telemetry-color, currentColor) 62%, var(--app-border-strong));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--layout-telemetry-color, currentColor) 18%, transparent);
 }
 
 .layout-item__resize-handle,
@@ -1812,7 +2635,19 @@ function removePointerListeners() {
   font-size: 0.88rem;
 }
 
-.layout-item > .material-symbols-outlined,
+.layout-item__content {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 100%;
+  min-width: 0;
+  position: relative;
+  transform: rotate(calc(var(--layout-item-rotation, 0deg) * -1));
+  z-index: 2;
+}
+
+.layout-item__content > .material-symbols-outlined,
 .layout-item__label {
   position: relative;
   z-index: 2;
@@ -1829,6 +2664,63 @@ function removePointerListeners() {
   text-transform: uppercase;
   white-space: nowrap;
 }
+
+.layout-item__primary-metric {
+  background: rgb(255 255 255 / 0.88);
+  border: 1px solid color-mix(in srgb, var(--layout-telemetry-color, currentColor) 28%, transparent);
+  border-radius: 3px;
+  color: var(--layout-telemetry-color, currentColor);
+  font-family: var(--app-mono);
+  font-size: 0.58rem;
+  font-weight: 820;
+  line-height: 0.72rem;
+  max-width: none;
+  padding: 0 3px;
+  position: relative;
+  white-space: nowrap;
+  z-index: 2;
+}
+
+.layout-item__metric-popover {
+  display: flex;
+  gap: 3px;
+  left: 50%;
+  pointer-events: none;
+  position: absolute;
+  top: calc(100% + 5px);
+  transform: translateX(-50%) rotate(calc(var(--layout-item-rotation, 0deg) * -1));
+  transform-origin: top center;
+  z-index: 5;
+}
+
+.layout-item__metric-chip {
+  align-items: center;
+  background: rgb(255 255 255 / 0.92);
+  border: 1px solid color-mix(in srgb, var(--layout-metric-chip-color, currentColor) 28%, var(--app-border));
+  border-radius: 999px;
+  box-shadow: 0 4px 10px rgb(15 23 42 / 0.10);
+  color: var(--layout-metric-chip-color, currentColor);
+  display: inline-flex;
+  font-family: var(--app-mono);
+  font-size: 0.56rem;
+  font-weight: 780;
+  gap: 2px;
+  line-height: 0.72rem;
+  padding: 2px 5px;
+  white-space: nowrap;
+}
+
+.layout-item__metric-chip .material-symbols-outlined {
+  font-size: 0.74rem;
+}
+
+.layout-item__metric-chip--cool { --layout-metric-chip-color: var(--layout-telemetry-cool); }
+.layout-item__metric-chip--normal { --layout-metric-chip-color: var(--layout-telemetry-normal); }
+.layout-item__metric-chip--warm { --layout-metric-chip-color: var(--layout-telemetry-warm); }
+.layout-item__metric-chip--hot { --layout-metric-chip-color: var(--layout-telemetry-hot); }
+.layout-item__metric-chip--humid { --layout-metric-chip-color: var(--layout-telemetry-humid); }
+.layout-item__metric-chip--co2 { --layout-metric-chip-color: var(--layout-telemetry-co2); }
+.layout-item__metric-chip--vent { --layout-metric-chip-color: var(--layout-telemetry-vent); }
 
 .layout-item__direction {
   height: 14px;
@@ -1891,6 +2783,39 @@ function removePointerListeners() {
 .layout-item--obstacle {
   background: var(--app-tone-obstacle-bg);
   color: var(--app-tone-obstacle-text);
+}
+
+.layout-bound-asset {
+  background: var(--app-surface-soft);
+  border: 1px solid var(--app-border);
+  border-radius: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+}
+
+.layout-bound-asset span {
+  color: var(--app-muted);
+  font-family: var(--app-mono);
+  font-size: 0.66rem;
+  font-weight: 760;
+  line-height: 0.9rem;
+  text-transform: uppercase;
+}
+
+.layout-bound-asset strong {
+  color: var(--app-text-strong);
+  font-size: 0.86rem;
+  line-height: 1.1rem;
+}
+
+.layout-bound-asset small {
+  color: var(--app-muted);
+  font-family: var(--app-mono);
+  font-size: 0.68rem;
+  line-height: 0.9rem;
+  overflow-wrap: anywhere;
 }
 
 .layout-inspector-grid {
@@ -2031,6 +2956,10 @@ function removePointerListeners() {
 
   .layout-board {
     min-width: 260px;
+  }
+
+  .layout-board__metric-strip {
+    display: none;
   }
 }
 </style>
