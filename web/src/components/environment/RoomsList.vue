@@ -40,8 +40,9 @@
               :class="{ 'border-t border-surface-200': index !== 0 }"
               @click="goToRoom(item.id)"
             >
-              <span class="room-row__index">
-                ROOM-{{ item.id }}
+              <span class="room-row__identity">
+                <PlaceIcon :name="item.icon" size="sm" />
+                <span>ROOM-{{ item.id }}</span>
               </span>
 
               <span class="room-row__copy">
@@ -101,6 +102,7 @@ import { PARAMETER_LABELS } from "@/types/sensor";
 import CreateRoomDialog from "@/components/environment/CreateRoomDialog.vue";
 import AppSectionHeader from "@/components/common/AppSectionHeader.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
+import PlaceIcon from "@/components/common/PlaceIcon.vue";
 import Button from "primevue/button";
 import DataView, { type DataViewPageEvent } from "primevue/dataview";
 import Skeleton from "primevue/skeleton";
@@ -257,7 +259,7 @@ onUnmounted(stopAutoRefresh);
   color: inherit;
   display: grid;
   gap: 14px;
-  grid-template-columns: 82px minmax(0, 1fr) auto;
+  grid-template-columns: 110px minmax(0, 1fr) auto;
   min-height: 60px;
   padding: 10px 12px;
   text-align: left;
@@ -268,10 +270,11 @@ onUnmounted(stopAutoRefresh);
   background: var(--app-surface-soft);
 }
 
-.room-row__index {
+.room-row__identity {
   align-items: center;
   color: var(--app-muted);
-  display: inline-flex;
+  display: flex;
+  gap: 9px;
   font-family: var(--app-mono);
   font-size: 0.72rem;
   font-weight: 600;
@@ -312,7 +315,7 @@ onUnmounted(stopAutoRefresh);
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .room-row__index {
+  .room-row__identity {
     display: none;
   }
 

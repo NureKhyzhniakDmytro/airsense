@@ -17,9 +17,7 @@
       <section class="room-panel">
         <header class="room-panel__header">
           <div class="room-panel__title">
-            <span class="room-panel__icon" aria-hidden="true">
-              <i class="pi pi-building" />
-            </span>
+            <PlaceIcon :name="room?.icon" size="md" />
             <div class="room-panel__copy">
               <span class="room-panel__eyebrow">Room</span>
               <h1>{{ room?.name || 'Room' }}</h1>
@@ -56,6 +54,7 @@ import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
 import EditRoomDialog from "@/components/room/EditRoomDialog.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
+import PlaceIcon from "@/components/common/PlaceIcon.vue";
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
 
@@ -170,19 +169,6 @@ const deleteRoom = async () => {
   display: flex;
   gap: 12px;
   min-width: 0;
-}
-
-.room-panel__icon {
-  align-items: center;
-  background: var(--app-surface-soft);
-  border: 1px solid var(--app-border);
-  border-radius: 5px;
-  color: var(--app-primary-strong);
-  display: inline-flex;
-  flex: 0 0 auto;
-  height: 36px;
-  justify-content: center;
-  width: 36px;
 }
 
 .room-panel__copy {

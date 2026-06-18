@@ -14,7 +14,11 @@ public interface IRoomRepository
     
     public Task<RoomDto?> GetByIdAsync(int roomId);
     
-    public Task UpdateAsync(int roomId, string name);
+    public Task UpdateAsync(int roomId, string name, string icon);
+
+    public Task<RoomLayoutDto> GetLayoutAsync(int roomId);
+
+    public Task UpdateLayoutAsync(int roomId, RoomLayoutDto layout);
     
     public Task<bool> IsExistsAsync(int roomId, int envId);
     

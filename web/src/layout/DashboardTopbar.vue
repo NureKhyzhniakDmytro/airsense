@@ -99,6 +99,7 @@ const contextMenu = computed<SidebarItem[]>(() => {
   if (roomId.value) {
     return [
       { name: "Telemetry", path: `/env/${envId.value}/room/${roomId.value}/parameters`, icon: "pi pi-chart-line", exact: true },
+      { name: "Layout", path: `/env/${envId.value}/room/${roomId.value}/layout`, icon: "pi pi-map", exact: true },
       { name: "Sensors", path: `/env/${envId.value}/room/${roomId.value}/sensors`, icon: "pi pi-bullseye" },
       { name: "Devices", path: `/env/${envId.value}/room/${roomId.value}/devices`, icon: "pi pi-slack" },
       { name: "Automation", path: `/env/${envId.value}/room/${roomId.value}/settings`, icon: "pi pi-cog", exact: true },
@@ -148,8 +149,8 @@ const toggle = (event: Event) => {
 <style scoped>
 .app-sidebar {
   background:
-    linear-gradient(180deg, #20262d 0%, #1b2026 100%);
-  border-right: 1px solid #11161a;
+    linear-gradient(180deg, var(--app-sidebar-bg) 0%, var(--app-sidebar-bg-strong) 100%);
+  border-right: 1px solid var(--app-sidebar-border);
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -167,7 +168,7 @@ const toggle = (event: Event) => {
 
 .app-sidebar__brand {
   align-items: center;
-  color: #f7fafc;
+  color: var(--app-sidebar-text);
   display: inline-flex;
   gap: 10px;
   font-weight: 800;
@@ -176,7 +177,7 @@ const toggle = (event: Event) => {
 }
 
 .app-sidebar__logo {
-  background: #ffffff;
+  background: var(--app-surface-raised);
   border-radius: 5px;
   height: 36px;
   object-fit: contain;
@@ -191,12 +192,12 @@ const toggle = (event: Event) => {
 }
 
 .app-sidebar__nav--context {
-  border-top: 1px solid rgb(255 255 255 / 0.12);
+  border-top: 1px solid var(--app-sidebar-subtle-strong);
   padding-top: 12px;
 }
 
 .app-sidebar__section-label {
-  color: rgb(247 250 252 / 0.48);
+  color: color-mix(in srgb, var(--app-sidebar-text) 48%, transparent);
   font-family: var(--app-mono);
   font-size: 0.72rem;
   font-weight: 800;
@@ -210,7 +211,7 @@ const toggle = (event: Event) => {
   align-items: center;
   border: 1px solid transparent;
   border-radius: 5px;
-  color: rgb(247 250 252 / 0.68);
+  color: var(--app-sidebar-muted);
   display: flex;
   gap: 8px;
   min-height: 42px;
@@ -229,9 +230,9 @@ const toggle = (event: Event) => {
 
 @media (hover: hover) and (pointer: fine) {
   .app-sidebar__link:hover {
-    background: rgb(255 255 255 / 0.07);
-    border-color: rgb(255 255 255 / 0.12);
-    color: #ffffff;
+    background: var(--app-sidebar-subtle);
+    border-color: var(--app-sidebar-subtle-strong);
+    color: var(--app-sidebar-text);
   }
 }
 
@@ -242,7 +243,7 @@ const toggle = (event: Event) => {
 .app-sidebar__link--active {
   background: color-mix(in srgb, var(--app-primary) 26%, transparent);
   border-color: color-mix(in srgb, var(--app-primary) 56%, transparent);
-  color: #eafffb;
+  color: var(--app-sidebar-active);
 }
 
 .app-sidebar__spacer {
@@ -251,7 +252,7 @@ const toggle = (event: Event) => {
 }
 
 .app-sidebar__account {
-  border-top: 1px solid rgb(255 255 255 / 0.12);
+  border-top: 1px solid var(--app-sidebar-subtle-strong);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -260,15 +261,15 @@ const toggle = (event: Event) => {
 
 .app-sidebar__icon-button,
 .app-sidebar__profile {
-  color: rgb(247 250 252 / 0.7);
+  color: var(--app-sidebar-muted);
   justify-content: flex-start;
   width: 100%;
 }
 
 .app-sidebar__icon-button:hover,
 .app-sidebar__profile:hover {
-  background: rgb(255 255 255 / 0.07);
-  color: #ffffff;
+  background: var(--app-sidebar-subtle);
+  color: var(--app-sidebar-text);
 }
 
 .app-sidebar__profile {
@@ -277,7 +278,7 @@ const toggle = (event: Event) => {
 }
 
 .app-sidebar__email {
-  color: rgb(247 250 252 / 0.62);
+  color: color-mix(in srgb, var(--app-sidebar-text) 62%, transparent);
   font-size: 0.875rem;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -286,7 +287,7 @@ const toggle = (event: Event) => {
 
 @media (max-width: 560px) {
   .app-sidebar {
-    border-right: 1px solid #11161a;
+    border-right: 1px solid var(--app-sidebar-border);
     gap: 10px;
     overflow: hidden auto;
     padding: 10px;
@@ -320,7 +321,7 @@ const toggle = (event: Event) => {
   }
 
   .app-sidebar__nav--context {
-    border-top: 1px solid rgb(255 255 255 / 0.12);
+    border-top: 1px solid var(--app-sidebar-subtle-strong);
     padding-top: 10px;
   }
 

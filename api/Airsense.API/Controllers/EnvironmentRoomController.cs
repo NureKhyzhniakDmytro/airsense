@@ -4,6 +4,7 @@ using Airsense.API.Models.Dto;
 using Airsense.API.Models.Dto.Room;
 using Airsense.API.Models.Entity;
 using Airsense.API.Repository;
+using Airsense.API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -69,7 +70,8 @@ public class EnvironmentRoomController(
         var room = new Room
         {
             EnvironmentId = envId,
-            Name = request.Name
+            Name = request.Name,
+            Icon = request.Icon
         };
         room = await roomRepository.CreateAsync(room);
         
@@ -79,7 +81,8 @@ public class EnvironmentRoomController(
             new RoomDto
             {
                 Id = room.Id,
-                Name = room.Name
+                Name = room.Name,
+                Icon = room.Icon
             }
         );
     }
@@ -127,7 +130,58 @@ public class EnvironmentRoomController(
         if (!roomIsExists)
             return NotFound(new { message = "Room not found" });
         
-        await roomRepository.UpdateAsync(roomId, request.Name);
+        await roomRepository.UpdateAsync(roomId, request.Name, request.Icon);
+        return NoContent();
+    }
+
+    [HttpGet("{roomId:int}/layout")]
+    public async Task<IActionResult> GetRoomLayout(int envId, int roomId)
+    {
+        if (!int.TryParse(User.FindFirstValue("id"), out var userId))
+            return BadRequest(new { message = "You are not registered" });
+
+        var envIsExists = await environmentRepository.IsExistsAsync(envId);
+        if (!envIsExists)
+            return NotFound(new { message = "Environment not found" });
+
+        if (!await environmentRepository.IsMemberAsync(userId, envId))
+            return Forbid();
+
+        var roomIsExists = await roomRepository.IsExistsAsync(roomId, envId);
+        if (!roomIsExists)
+            return NotFound(new { message = "Room not found" });
+
+        var layout = await roomRepository.GetLayoutAsync(roomId);
+        return Ok(layout);
+    }
+
+    [HttpPatch("{roomId:int}/layout")]
+    public async Task<IActionResult> UpdateRoomLayout(int envId, int roomId, [FromBody] RoomLayoutDto request)
+    {
+        if (!int.TryParse(User.FindFirstValue("id"), out var userId))
+            return BadRequest(new { message = "You are not registered" });
+
+        var envIsExists = await environmentRepository.IsExistsAsync(envId);
+        if (!envIsExists)
+            return NotFound(new { message = "Environment not found" });
+
+        var role = await environmentRepository.GetRoleAsync(userId, envId);
+        switch (role)
+        {
+            case null:
+            case "user":
+                return Forbid();
+        }
+
+        var roomIsExists = await roomRepository.IsExistsAsync(roomId, envId);
+        if (!roomIsExists)
+            return NotFound(new { message = "Room not found" });
+
+        var layoutErrors = RoomLayoutValidator.Validate(request);
+        if (layoutErrors.Count > 0)
+            return BadRequest(new { message = "Invalid room layout", errors = layoutErrors });
+
+        await roomRepository.UpdateLayoutAsync(roomId, request);
         return NoContent();
     }
     

@@ -7,4 +7,6 @@ public class Room
     public string Name { get; set; }
 
     public int EnvironmentId { get; set; }
+
+    public string Icon { get; set; } = "room";
 }

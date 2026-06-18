@@ -9,13 +9,16 @@ CREATE TABLE "users" (
 
 CREATE TABLE "environments" (
                                 "id" serial PRIMARY KEY,
-                                "name" varchar NOT NULL
+                                "name" varchar NOT NULL,
+                                "icon" varchar(64) NOT NULL DEFAULT 'building'
 );
 
 CREATE TABLE "rooms" (
                          "id" serial PRIMARY KEY,
                          "name" varchar NOT NULL,
-                         "environment_id" int NOT NULL
+                         "environment_id" int NOT NULL,
+                         "icon" varchar(64) NOT NULL DEFAULT 'room',
+                         "layout" jsonb NOT NULL DEFAULT '{"width":6,"height":4,"unit":"m","geometry":{"type":"rectangle","points":[{"x":0,"y":0},{"x":6,"y":0},{"x":6,"y":4},{"x":0,"y":4}]},"items":[]}'::jsonb
 );
 
 CREATE TABLE "settings" (

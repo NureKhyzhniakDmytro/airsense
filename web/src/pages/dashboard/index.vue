@@ -51,8 +51,9 @@
             :class="{ 'border-t border-surface-200': index !== 0 }"
             @click="goToEnvironment(item.id)"
           >
-            <span class="environment-row__index">
-              ENV-{{ item.id }}
+            <span class="environment-row__identity">
+              <PlaceIcon :name="item.icon" size="sm" />
+              <span>ENV-{{ item.id }}</span>
             </span>
 
             <span class="environment-row__copy">
@@ -117,6 +118,7 @@ import AppPageHeader from "@/components/common/AppPageHeader.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import MetricCard from "@/components/common/MetricCard.vue";
 import RoleTag from "@/components/common/RoleTag.vue";
+import PlaceIcon from "@/components/common/PlaceIcon.vue";
 
 const router = useRouter();
 const environmentStore = useEnvironmentStore();
@@ -219,7 +221,7 @@ const goToEnvironment = (envId: number) => {
   color: inherit;
   display: grid;
   gap: 14px;
-  grid-template-columns: 74px minmax(0, 1fr) auto;
+  grid-template-columns: 104px minmax(0, 1fr) auto;
   min-height: 60px;
   padding: 10px 12px;
   text-align: left;
@@ -230,10 +232,11 @@ const goToEnvironment = (envId: number) => {
   background: var(--app-surface-soft);
 }
 
-.environment-row__index {
+.environment-row__identity {
   align-items: center;
   color: var(--app-muted);
-  display: inline-flex;
+  display: flex;
+  gap: 9px;
   font-family: var(--app-mono);
   font-size: 0.72rem;
   font-weight: 600;
@@ -282,7 +285,7 @@ const goToEnvironment = (envId: number) => {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .environment-row__index {
+  .environment-row__identity {
     display: none;
   }
 

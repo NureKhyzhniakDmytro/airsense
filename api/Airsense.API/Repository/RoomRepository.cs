@@ -1,4 +1,5 @@
 using System.Data;
+using System.Text.Json;
 using Airsense.API.Models.Dto.Room;
 using Airsense.API.Models.Dto.Sensor;
 using Airsense.API.Models.Entity;
@@ -8,6 +9,14 @@ namespace Airsense.API.Repository;
 
 public class RoomRepository(IDbConnection connection) : IRoomRepository
 {
+    private static readonly JsonSerializerOptions LayoutJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        DictionaryKeyPolicy = JsonNamingPolicy.SnakeCaseLower
+    };
+
+    private static RoomLayoutDto CreateDefaultLayout() => new();
+
     public async Task<ICollection<RoomDto>> GetAsync(int envId, int skip, int count)
     {
         const string sql = """
@@ -36,6 +45,7 @@ public class RoomRepository(IDbConnection connection) : IRoomRepository
                            SELECT
                                r.id AS Id,
                                r.name AS Name,
+                               r.icon AS Icon,
                                MAX(ldd.DeviceSpeed) AS DeviceSpeed,
                                lsd.parameter AS ParamKey,
                                lsd.unit AS ParamUnit,
@@ -48,18 +58,19 @@ public class RoomRepository(IDbConnection connection) : IRoomRepository
                                     LEFT JOIN sensors s ON r.id = s.room_id
                                     LEFT JOIN latest_sensor_data lsd ON s.id = lsd.sensor_id AND lsd.timestamp > NOW() - INTERVAL '15 minutes'
                            WHERE r.environment_id = @envId
-                           GROUP BY r.id, r.name, lsd.parameter, lsd.unit, lsd.min_value, lsd.max_value
+                           GROUP BY r.id, r.name, r.icon, lsd.parameter, lsd.unit, lsd.min_value, lsd.max_value
                            ORDER BY r.id
                            """;
 
         var roomData = await connection.QueryAsync<RoomRawDto>(sql, new { envId });
 
         var rooms = roomData
-            .GroupBy(r => new { r.Id, r.Name })
+            .GroupBy(r => new { r.Id, r.Name, r.Icon })
             .Select(g => new RoomDto
             {
                 Id = g.Key.Id,
                 Name = g.Key.Name,
+                Icon = g.Key.Icon,
                 DeviceSpeed = g.Max(x => x.DeviceSpeed),
                 Parameters = g
                     .Where(x => x.ParamKey is not null)
@@ -96,12 +107,13 @@ public class RoomRepository(IDbConnection connection) : IRoomRepository
     public async Task<Room> CreateAsync(Room room)
     {
         const string sql = """
-                           INSERT INTO rooms (name, environment_id) 
-                           VALUES (@Name, @EnvironmentId) 
+                           INSERT INTO rooms (name, environment_id, icon) 
+                           VALUES (@Name, @EnvironmentId, @Icon) 
                            RETURNING 
                                  id AS Id,
                                  name AS Name,
-                                 environment_id AS EnvironmentId
+                                 environment_id AS EnvironmentId,
+                                 icon AS Icon
                            """;
         var result = await connection.QuerySingleAsync<Room>(sql, room);
         return result;
@@ -136,6 +148,7 @@ public class RoomRepository(IDbConnection connection) : IRoomRepository
                            SELECT
                                r.id AS Id,
                                r.name AS Name,
+                               r.icon AS Icon,
                                MAX(ldd.DeviceSpeed) AS DeviceSpeed,
                                lsd.parameter AS ParamKey,
                                lsd.unit AS ParamUnit,
@@ -148,17 +161,18 @@ public class RoomRepository(IDbConnection connection) : IRoomRepository
                                     LEFT JOIN sensors s ON r.id = s.room_id
                                     LEFT JOIN latest_sensor_data lsd ON s.id = lsd.sensor_id AND lsd.timestamp > NOW() - INTERVAL '15 minutes'
                            WHERE r.id = @roomId
-                           GROUP BY r.id, r.name, lsd.parameter, lsd.unit, lsd.min_value, lsd.max_value
+                           GROUP BY r.id, r.name, r.icon, lsd.parameter, lsd.unit, lsd.min_value, lsd.max_value
                            ORDER BY r.id
                            """;
         var roomData = await connection.QueryAsync<RoomRawDto>(sql, new { roomId });
 
         var room = roomData
-            .GroupBy(r => new { r.Id, r.Name })
+            .GroupBy(r => new { r.Id, r.Name, r.Icon })
             .Select(g => new RoomDto
             {
                 Id = g.Key.Id,
                 Name = g.Key.Name,
+                Icon = g.Key.Icon,
                 DeviceSpeed = g.Average(x => x.DeviceSpeed),
                 Parameters = g
                     .Where(x => x.ParamKey is not null)
@@ -183,10 +197,34 @@ public class RoomRepository(IDbConnection connection) : IRoomRepository
         return room.FirstOrDefault();
     }
     
-    public async Task UpdateAsync(int roomId, string name)
+    public async Task UpdateAsync(int roomId, string name, string icon)
     {
-        const string sql = "UPDATE rooms SET name = @name WHERE id = @roomId";
-        await connection.ExecuteAsync(sql, new { name, roomId });
+        const string sql = "UPDATE rooms SET name = @name, icon = @icon WHERE id = @roomId";
+        await connection.ExecuteAsync(sql, new { name, icon, roomId });
+    }
+
+    public async Task<RoomLayoutDto> GetLayoutAsync(int roomId)
+    {
+        const string sql = "SELECT layout::text FROM rooms WHERE id = @roomId";
+        var layoutJson = await connection.QuerySingleOrDefaultAsync<string>(sql, new { roomId });
+        if (string.IsNullOrWhiteSpace(layoutJson))
+            return CreateDefaultLayout();
+
+        try
+        {
+            return JsonSerializer.Deserialize<RoomLayoutDto>(layoutJson, LayoutJsonOptions) ?? CreateDefaultLayout();
+        }
+        catch (JsonException)
+        {
+            return CreateDefaultLayout();
+        }
+    }
+
+    public async Task UpdateLayoutAsync(int roomId, RoomLayoutDto layout)
+    {
+        var layoutJson = JsonSerializer.Serialize(layout, LayoutJsonOptions);
+        const string sql = "UPDATE rooms SET layout = CAST(@layoutJson AS jsonb) WHERE id = @roomId";
+        await connection.ExecuteAsync(sql, new { roomId, layoutJson });
     }
     
     public async Task<bool> IsExistsAsync(int roomId, int envId)

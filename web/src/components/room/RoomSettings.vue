@@ -161,7 +161,7 @@ import Dialog from 'primevue/dialog';
 import InputNumber from 'primevue/inputnumber';
 import Skeleton from 'primevue/skeleton';
 import Tag from 'primevue/tag';
-import { useChartConfig } from "@/config/chartConfig";
+import { chartPalette, useChartConfig } from "@/config/chartConfig";
 
 const ApexCharts = defineAsyncComponent(() => import("vue3-apexcharts"));
 
@@ -216,23 +216,23 @@ const chartOptions = computed(() => ({
   stroke: {
     curve: 'straight',
     width: 3,
-    colors: ['#0F766E']
+    colors: [chartPalette.primary]
   },
   markers: {
     size: 6,
-    colors: ['#FBFCFD'],
-    strokeColors: '#0F766E',
+    colors: [chartPalette.surface],
+    strokeColors: chartPalette.primary,
     strokeWidth: 3,
     hover: { size: 8 },
     selected: {
       size: 8,
-      colors: ['#FBFCFD'],
-      strokeColors: '#0F766E',
+      colors: [chartPalette.surface],
+      strokeColors: chartPalette.primary,
       strokeWidth: 3
     }
   },
   grid: {
-    borderColor: '#D0D7DE',
+    borderColor: chartPalette.border,
     strokeDashArray: 2,
   },
   xaxis: {
@@ -261,12 +261,12 @@ const chartOptions = computed(() => ({
         ? [{
           x: selectedParam.value.critical_value,
           strokeDashArray: 0,
-          borderColor: '#C24135',
+          borderColor: chartPalette.danger,
           label: {
             text: 'Critical',
             style: {
-              color: '#fff',
-              background: '#C24135',
+              color: chartPalette.onDanger,
+              background: chartPalette.danger,
               fontSize: '12px',
               padding: {
                 left: 5,

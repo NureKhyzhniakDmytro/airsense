@@ -1,7 +1,7 @@
 import { apiGet, apiPost, apiPatch, apiDelete } from "@/api";
 import type { RegisterPayload, UsersResponse } from '@/types/user';
 import type { Environment, EnvironmentsResponse, CreateEnvironmentPayload, UpdateEnvironmentPayload } from '@/types/environment';
-import type { Room, RoomsResponse, UpdateRoomPayload } from '@/types/room';
+import type { CreateRoomPayload, Room, RoomLayout, RoomsResponse, UpdateRoomPayload } from '@/types/room';
 import type { Sensor, Device, HistoryEntry, Parameter, HistoryParams, CurveData } from '@/types/sensor';
 
 export const register = async (payload: RegisterPayload) => {
@@ -54,13 +54,23 @@ export const getRoom = async (envId: number, roomId: number) => {
   return response.data as Room;
 };
 
-export const createRoom = async (envId: number, name: string): Promise<Room> => {
-  const response = await apiPost(`/env/${envId}/room`, { name });
+export const createRoom = async (envId: number, data: CreateRoomPayload): Promise<Room> => {
+  const response = await apiPost(`/env/${envId}/room`, data);
   return response.data;
 };
 
 export const updateRoom = async (envId: number, roomId: number, data: UpdateRoomPayload) => {
   const response = await apiPatch(`/env/${envId}/room/${roomId}`, data);
+  return response.data;
+};
+
+export const getRoomLayout = async (envId: number, roomId: number): Promise<RoomLayout> => {
+  const response = await apiGet(`/env/${envId}/room/${roomId}/layout`);
+  return response.data;
+};
+
+export const updateRoomLayout = async (envId: number, roomId: number, layout: RoomLayout) => {
+  const response = await apiPatch(`/env/${envId}/room/${roomId}/layout`, layout);
   return response.data;
 };
 

@@ -6,7 +6,10 @@
       eyebrow="Environment"
     >
       <template #badge>
-        <RoleTag v-if="environment?.role" :role="environment.role" />
+        <span class="entity-page__badges">
+          <PlaceIcon :name="environment?.icon" size="sm" />
+          <RoleTag v-if="environment?.role" :role="environment.role" />
+        </span>
       </template>
 
       <template #actions>
@@ -37,6 +40,7 @@ import EditEnvironmentDialog from "@/components/environment/EditEnvironmentDialo
 import { deleteEnvironment as deleteEnvironmentApi } from "@/services/apiService";
 import AppPageHeader from "@/components/common/AppPageHeader.vue";
 import RoleTag from "@/components/common/RoleTag.vue";
+import PlaceIcon from "@/components/common/PlaceIcon.vue";
 import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
 import { useConfirm } from "primevue/useconfirm";
@@ -115,6 +119,12 @@ const deleteEnvironment = async () => {
 
 .entity-page__loading {
   min-height: 36px;
+}
+
+.entity-page__badges {
+  align-items: center;
+  display: inline-flex;
+  gap: 8px;
 }
 
 .entity-page__content {

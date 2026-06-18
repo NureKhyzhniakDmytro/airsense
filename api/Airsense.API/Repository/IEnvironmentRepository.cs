@@ -25,7 +25,7 @@ public interface IEnvironmentRepository
     
     public Task DeleteAsync(int envId);
     
-    public Task UpdateAsync(int envId, string name);
+    public Task UpdateAsync(int envId, string name, string icon);
     
     public Task AddMemberAsync(int envId, int userId);
     

@@ -7,4 +7,6 @@ public class EnvironmentDto
     public string Name { get; set; }
 
     public string Role { get; set; }
+
+    public string Icon { get; set; } = "building";
 }

@@ -47,7 +47,8 @@ public class EnvironmentController(IEnvironmentRepository environmentRepository)
 
         var environment = new Environment
         {
-            Name = request.Name
+            Name = request.Name,
+            Icon = request.Icon
         };
         environment = await environmentRepository.CreateAsync(environment, userId);
         return CreatedAtAction(nameof(GetEnvironment), new { envId = environment.Id }, environment);
@@ -71,6 +72,7 @@ public class EnvironmentController(IEnvironmentRepository environmentRepository)
         {
             Id = environment.Id,
             Name = environment.Name,
+            Icon = environment.Icon,
             Role = role
         });
     }
@@ -107,7 +109,7 @@ public class EnvironmentController(IEnvironmentRepository environmentRepository)
         if (role is null || !role.Equals("owner"))
             return Forbid();
         
-        await environmentRepository.UpdateAsync(envId, request.Name);
+        await environmentRepository.UpdateAsync(envId, request.Name, request.Icon);
         return NoContent();
     }
 }

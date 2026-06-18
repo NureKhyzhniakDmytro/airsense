@@ -8,6 +8,8 @@ public class RoomDto
 
     public string Name { get; set; }
 
+    public string Icon { get; set; } = "room";
+
     public ICollection<ParameterDto>? Parameters { get; set; }
 
     public double? DeviceSpeed { get; set; }

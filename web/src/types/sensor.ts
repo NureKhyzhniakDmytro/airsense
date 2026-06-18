@@ -108,9 +108,9 @@ export const PARAMETER_ICONS: Record<string, string> = {
 };
 
 export const PARAMETER_STYLES: Record<string, string> = {
-  temperature: 'bg-red-100 text-red-700',
-  humidity: 'bg-blue-100 text-blue-700',
-  pressure: 'bg-green-100 text-green-700',
-  co2: 'bg-yellow-100 text-yellow-700',
-  device_speed: 'bg-purple-100 text-purple-700',
+  temperature: 'app-chip app-chip--danger',
+  humidity: 'app-chip app-chip--primary',
+  pressure: 'app-chip app-chip--success',
+  co2: 'app-chip app-chip--warning',
+  device_speed: 'app-chip',
 }; 

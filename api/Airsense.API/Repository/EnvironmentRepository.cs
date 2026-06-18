@@ -13,6 +13,7 @@ public class EnvironmentRepository(IDbConnection connection) : IEnvironmentRepos
                            SELECT 
                                e.id AS Id,
                                e.name AS Name,
+                               e.icon AS Icon,
                                m.role AS Role
                            FROM environment_members m
                            JOIN environments e ON m.environment_id = e.id
@@ -34,17 +35,18 @@ public class EnvironmentRepository(IDbConnection connection) : IEnvironmentRepos
 
     public async Task<Environment> CreateAsync(Environment environment, int userId)
     {
-        const string insertEnvSql = "INSERT INTO environments (name) VALUES (@Name) RETURNING id";
+        const string insertEnvSql = "INSERT INTO environments (name, icon) VALUES (@Name, @Icon) RETURNING id";
         const string insertMemberSql = """
                                        INSERT INTO environment_members (environment_id, member_id, role) VALUES (@envId, @userId, 'owner');
                                        SELECT 
                                            e.id AS Id,
-                                           e.name AS Name
+                                           e.name AS Name,
+                                           e.icon AS Icon
                                        FROM environments e
                                        WHERE id = @envId
                                        """;
         
-        var envId = await connection.QuerySingleAsync<int>(insertEnvSql, new { environment.Name });
+        var envId = await connection.QuerySingleAsync<int>(insertEnvSql, new { environment.Name, environment.Icon });
         var result = await connection.QuerySingleAsync<Environment>(insertMemberSql, new { envId, userId });
         return result;
     }
@@ -55,6 +57,7 @@ public class EnvironmentRepository(IDbConnection connection) : IEnvironmentRepos
                            SELECT 
                                e.id AS Id,
                                e.name AS Name,
+                               e.icon AS Icon,
                                m.role AS Role
                            FROM environment_members m
                            JOIN environments e ON m.environment_id = e.id
@@ -118,10 +121,10 @@ public class EnvironmentRepository(IDbConnection connection) : IEnvironmentRepos
         await connection.ExecuteAsync(sql, new { envId });
     }
     
-    public async Task UpdateAsync(int envId, string name)
+    public async Task UpdateAsync(int envId, string name, string icon)
     {
-        const string sql = "UPDATE environments SET name = @name WHERE id = @envId";
-        await connection.ExecuteAsync(sql, new { envId, name });
+        const string sql = "UPDATE environments SET name = @name, icon = @icon WHERE id = @envId";
+        await connection.ExecuteAsync(sql, new { envId, name, icon });
     }
     
     public async Task AddMemberAsync(int envId, int userId)
@@ -159,7 +162,8 @@ public class EnvironmentRepository(IDbConnection connection) : IEnvironmentRepos
         const string sql = """
                            SELECT 
                                e.id AS Id,
-                               e.name AS Name
+                               e.name AS Name,
+                               e.icon AS Icon
                            FROM rooms r
                            JOIN environments e ON e.id = r.environment_id
                            WHERE r.id = @roomId

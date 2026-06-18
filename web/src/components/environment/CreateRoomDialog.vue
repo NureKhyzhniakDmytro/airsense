@@ -6,6 +6,33 @@
         <InputText id="room-name" name="name" type="text" placeholder="Lab A" maxlength="20" fluid />
         <Message v-if="$form.name?.invalid" severity="error" size="small" variant="simple">{{ $form.name.error?.message }}</Message>
       </div>
+      <div class="entity-dialog-field">
+        <label class="entity-dialog-label" for="room-icon">Room type</label>
+        <Select
+          id="room-icon"
+          v-model="selectedIcon"
+          :options="ROOM_ICON_OPTIONS"
+          option-label="label"
+          option-value="value"
+          fluid
+        >
+          <template #value="{ value }">
+            <div class="place-select-value">
+              <PlaceIcon :name="value || selectedIcon" size="sm" />
+              <span>{{ getPlaceIconOption(value || selectedIcon).label }}</span>
+            </div>
+          </template>
+          <template #option="{ option }">
+            <div class="place-select-option">
+              <PlaceIcon :name="option.value" size="sm" />
+              <span>
+                <strong>{{ option.label }}</strong>
+                <small>{{ option.description }}</small>
+              </span>
+            </div>
+          </template>
+        </Select>
+      </div>
       <Message v-if="isError" severity="error" :life="3000">An error occurred while creating the room</Message>
       <div class="entity-dialog-actions">
         <Button type="button" label="Cancel" severity="secondary" @click="isOpen = false" />
@@ -20,15 +47,19 @@ import Dialog from "primevue/dialog";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
 import Message from 'primevue/message';
+import Select from "primevue/select";
 import { Form } from '@primevue/forms';
 import { computed, ref } from "vue";
 import { createRoom } from "@/services/apiService";
 import type { FormResolverOptions, FormSubmitEvent } from "@primevue/forms/form";
 import { useRouter } from "vue-router";
+import PlaceIcon from "@/components/common/PlaceIcon.vue";
+import { getPlaceIconOption, ROOM_ICON_OPTIONS } from "@/config/placeOptions";
 
 const router = useRouter();
 const isLoading = ref(false);
 const isError = ref(false);
+const selectedIcon = ref("room");
 const props = defineProps({
   modelValue: Boolean,
   envId: {
@@ -79,7 +110,7 @@ const onFormSubmit = ({ valid, values }: FormSubmitEvent) => {
 const create = async (values: Record<string, any>): Promise<boolean> => {
   try {
     isLoading.value = true;
-    const newRoom = await createRoom(props.envId, values.name.trim());
+    const newRoom = await createRoom(props.envId, { name: values.name.trim(), icon: selectedIcon.value });
     await router.push({
       name: 'room',
       params: {

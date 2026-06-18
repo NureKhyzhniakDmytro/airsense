@@ -10,17 +10,17 @@ export default defineNuxtPlugin((nuxtApp) => {
   const preset = definePreset(Aura, {
     semantic: {
       primary: {
-        50: '{indigo.50}',
-        100: '{indigo.100}',
-        200: '{indigo.200}',
-        300: '{indigo.300}',
-        400: '{indigo.400}',
-        500: '{indigo.500}',
-        600: '{indigo.600}',
-        700: '{indigo.700}',
-        800: '{indigo.800}',
-        900: '{indigo.900}',
-        950: '{indigo.950}',
+        50: '#f0fdfa',
+        100: '#ccfbf1',
+        200: '#99f6e4',
+        300: '#5eead4',
+        400: '#2dd4bf',
+        500: '#14b8a6',
+        600: '#0f766e',
+        700: '#0b5f59',
+        800: '#0b4f4a',
+        900: '#134e4a',
+        950: '#042f2e',
       },
     },
   })

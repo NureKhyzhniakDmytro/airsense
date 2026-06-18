@@ -2,6 +2,15 @@ import { ref } from 'vue';
 import type { SeriesData } from '@/types/sensor';
 import type { ChartConfig } from '@/types/chart';
 
+export const chartPalette = {
+  primary: '#0F766E',
+  surface: '#FBFCFD',
+  muted: '#68737E',
+  border: '#D0D7DE',
+  danger: '#C24135',
+  onDanger: '#FFFFFF',
+} as const;
+
 export function useChartConfig() {
   const series = ref<SeriesData[]>([
     {
@@ -28,7 +37,7 @@ export function useChartConfig() {
     stroke: {
       curve: 'smooth',
       width: 2,
-      colors: ['#0F766E']
+      colors: [chartPalette.primary]
     },
     fill: {
       type: 'gradient',
@@ -38,8 +47,8 @@ export function useChartConfig() {
         opacityTo: 0.2,
         stops: [0, 90, 100],
         colorStops: [
-          { offset: 0, color: "#0F766E", opacity: 0.24 },
-          { offset: 100, color: "#FBFCFD", opacity: 0 }
+          { offset: 0, color: chartPalette.primary, opacity: 0.24 },
+          { offset: 100, color: chartPalette.surface, opacity: 0 }
         ]
       }
     },
@@ -48,7 +57,7 @@ export function useChartConfig() {
       labels: {
         style: { 
           fontSize: '12px',
-          colors: '#68737E'
+          colors: chartPalette.muted
         },
         datetimeFormatter: {
           year: 'yyyy',
@@ -62,11 +71,11 @@ export function useChartConfig() {
       },
       axisBorder: {
         show: true,
-        color: '#D0D7DE'
+        color: chartPalette.border
       },
       axisTicks: {
         show: true,
-        color: '#D0D7DE'
+        color: chartPalette.border
       }
     },
     yaxis: {
@@ -76,24 +85,24 @@ export function useChartConfig() {
       labels: {
         style: {
           fontSize: '12px',
-          colors: '#68737E'
+          colors: chartPalette.muted
         },
         formatter: (val: number) => val.toFixed(1)
       },
       axisBorder: {
         show: true,
-        color: '#D0D7DE'
+        color: chartPalette.border
       }
     },
     markers: {
       size: 4,
-      colors: ['#FBFCFD'],
-      strokeColors: '#0F766E',
+      colors: [chartPalette.surface],
+      strokeColors: chartPalette.primary,
       strokeWidth: 2,
       hover: { size: 6 },
     },
     grid: {
-      borderColor: '#D0D7DE',
+      borderColor: chartPalette.border,
       strokeDashArray: 2,
       padding: {
         top: 0,
