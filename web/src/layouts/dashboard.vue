@@ -60,7 +60,7 @@ const hasBreadcrumbContext = computed(() => Object.keys(route.params).length > 0
   display: flex;
   flex: 0 0 auto;
   min-height: 42px;
-  padding: 0.5rem 0.875rem;
+  padding: 0.5rem var(--app-page-padding);
 }
 
 .dashboard-main {
@@ -69,13 +69,13 @@ const hasBreadcrumbContext = computed(() => Object.keys(route.params).length > 0
   min-height: 0;
   min-width: 0;
   overflow: auto;
-  padding: 0.875rem;
+  padding: var(--app-page-padding);
   width: 100%;
 }
 
 .dashboard-main--room {
   height: 100%;
-  padding: 0.625rem;
+  padding: var(--app-page-padding);
 }
 
 @media (max-width: 560px) {
@@ -85,11 +85,11 @@ const hasBreadcrumbContext = computed(() => Object.keys(route.params).length > 0
   }
 
   .dashboard-main {
-    padding: 0.625rem;
+    padding: var(--app-gap-sm);
   }
 
   .dashboard-main--room {
-    padding: 0.5rem;
+    padding: var(--app-gap-sm);
   }
 
   .dashboard-contextbar {

@@ -235,8 +235,13 @@ const deleteRoom = async () => {
 .room-panel__actions {
   align-items: center;
   display: flex;
-  gap: 6px;
+  gap: var(--app-gap-xs);
   flex: 0 0 auto;
+}
+
+.room-panel__actions :deep(.p-button) {
+  min-height: var(--app-compact-control-height);
+  padding-block: 0.34rem;
 }
 
 .room-panel__content {
@@ -245,7 +250,7 @@ const deleteRoom = async () => {
   min-height: 0;
   min-width: 0;
   overflow: auto;
-  padding: 10px;
+  padding: var(--app-panel-padding);
   scrollbar-gutter: stable;
 }
 
@@ -265,7 +270,7 @@ const deleteRoom = async () => {
   }
 
   .room-panel__content {
-    padding: 10px;
+    padding: var(--app-gap-sm);
   }
 }
 </style>

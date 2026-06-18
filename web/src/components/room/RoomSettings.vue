@@ -124,8 +124,8 @@
           <InputNumber 
             inputId="critical-value-input"
             v-model="tempCriticalValue" 
-            :min="selectedParam.min_value || 0" 
-            :max="selectedParam.max_value || 100"
+            :min="inputMin" 
+            :max="inputMax"
             :step="0.1"
             class="w-full"
           />
@@ -180,6 +180,81 @@ const selectedParam = ref<ExtendedParam>({ name: "", label: "", unit: "" });
 
 const { series } = useChartConfig();
 
+type CurvePoint = { x: number; y: number };
+
+const asNumber = (value: number | null | undefined, fallback: number) => (
+  Number.isFinite(value) ? Number(value) : fallback
+);
+
+const inputMin = computed(() => asNumber(selectedParam.value.min_value, 0));
+const inputMax = computed(() => {
+  const min = inputMin.value;
+  const max = asNumber(selectedParam.value.max_value, 100);
+  return max > min ? max : min + 1;
+});
+
+const clamp = (value: number, min: number, max: number) => (
+  Math.max(min, Math.min(max, value))
+);
+
+const formatAxisValue = (value: number) => (
+  Number.isInteger(value) ? String(value) : value.toFixed(1)
+);
+
+const normalizeCurvePoints = (rawPoints: CurvePoint[]): CurvePoint[] => {
+  const min = inputMin.value;
+  const max = inputMax.value;
+  const normalized = rawPoints
+    .map((point) => ({
+      x: clamp(Number(point.x), min, max),
+      y: clamp(Number(point.y), 0, 100),
+    }))
+    .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+    .sort((a, b) => a.x - b.x);
+
+  if (!normalized.length) {
+    return [
+      { x: min, y: 0 },
+      { x: max, y: 100 },
+    ];
+  }
+
+  const byX = new Map<number, CurvePoint>();
+  for (const point of normalized) {
+    byX.set(Number(point.x.toFixed(4)), point);
+  }
+
+  const points = [...byX.values()].sort((a, b) => a.x - b.x);
+  const first = points[0];
+  const last = points[points.length - 1];
+
+  if (first.x > min) {
+    points.unshift({ x: min, y: 0 });
+  } else {
+    first.x = min;
+    first.y = 0;
+  }
+
+  if (last.x < max) {
+    points.push({ x: max, y: 100 });
+  } else {
+    points[points.length - 1].x = max;
+    points[points.length - 1].y = 100;
+  }
+
+  if (points.length === 1) {
+    points[0].y = 0;
+    points.push({ x: max, y: 100 });
+  }
+
+  return points;
+};
+
+const commitCurvePoints = (points: CurvePoint[]) => {
+  series.value[0].data = normalizeCurvePoints(points);
+  series.value = [...series.value];
+};
+
 const formatNumber = (value: number | null | undefined) => {
   if (value === null || value === undefined) return "-";
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
@@ -187,8 +262,8 @@ const formatNumber = (value: number | null | undefined) => {
 
 const pointCount = computed(() => series.value[0]?.data?.length || 0);
 const inputRangeLabel = computed(() => {
-  const min = formatNumber(selectedParam.value.min_value);
-  const max = formatNumber(selectedParam.value.max_value);
+  const min = formatNumber(inputMin.value);
+  const max = formatNumber(inputMax.value);
   const unit = selectedParam.value.unit || "";
   return `${min}-${max}${unit}`;
 });
@@ -237,10 +312,11 @@ const chartOptions = computed(() => ({
   },
   xaxis: {
     type: 'numeric',
-    min: selectedParam.value.min_value || 0,
-    max: selectedParam.value.max_value || 100,
+    min: inputMin.value,
+    max: inputMax.value,
+    tickAmount: 6,
     labels: {
-      formatter: (val: number) => val.toFixed(1)
+      formatter: (val: number) => formatAxisValue(val)
     }
   },
   yaxis: {
@@ -248,7 +324,7 @@ const chartOptions = computed(() => ({
     max: 100,
     tickAmount: 5,
     labels: {
-      formatter: (val: number) => val.toFixed(1)
+      formatter: (val: number) => `${formatAxisValue(val)}%`
     }
   },
   tooltip: {
@@ -259,7 +335,7 @@ const chartOptions = computed(() => ({
     xaxis:
       selectedParam.value.critical_value !== null && selectedParam.value.critical_value !== undefined
         ? [{
-          x: selectedParam.value.critical_value,
+          x: clamp(selectedParam.value.critical_value, inputMin.value, inputMax.value),
           strokeDashArray: 0,
           borderColor: chartPalette.danger,
           label: {
@@ -281,9 +357,32 @@ const chartOptions = computed(() => ({
   }
 }));
 
+function getCurvePointFromEvent(event: { clientX: number; clientY: number }, chartContext: ChartContext): CurvePoint | null {
+  const chartEl = chart.value?.$el as HTMLElement | undefined;
+  if (!chartEl || !chartContext?.w?.globals) return null;
+
+  const bounds = chartEl.getBoundingClientRect();
+  const globals = chartContext.w.globals as Record<string, any>;
+  const plotWidth = Number(globals.gridWidth) || bounds.width;
+  const plotHeight = Number(globals.gridHeight) || bounds.height;
+  const translateX = Number(globals.translateX);
+  const translateY = Number(globals.translateY);
+  const plotLeft = bounds.left + (Number.isFinite(translateX) ? translateX : Math.max(0, (bounds.width - plotWidth) / 2));
+  const plotTop = bounds.top + (Number.isFinite(translateY) ? translateY : Math.max(0, (bounds.height - plotHeight) / 2));
+
+  const ratioX = (event.clientX - plotLeft) / plotWidth;
+  const ratioY = (event.clientY - plotTop) / plotHeight;
+  if (ratioX < 0 || ratioX > 1 || ratioY < 0 || ratioY > 1) return null;
+
+  return {
+    x: inputMin.value + (inputMax.value - inputMin.value) * ratioX,
+    y: 100 - ratioY * 100,
+  };
+}
+
 function handleDataPointSelection(event: ChartEvent, chartContext: ChartContext, config: { dataPointIndex: number }) {
   const pointIndex = config.dataPointIndex;
-  const points = series.value[0].data;
+  const points = series.value[0].data as CurvePoint[];
   
   if (pointIndex === 0 || pointIndex === points.length - 1) {
     return;
@@ -292,20 +391,18 @@ function handleDataPointSelection(event: ChartEvent, chartContext: ChartContext,
   selectedPointIndex.value = pointIndex;
   
   const handleMouseMove = (e: MouseEvent) => {
-    const chartRect = chart.value.$el.getBoundingClientRect();
-    const rawX = chartContext.w.globals.xAxisScale.niceMin + 
-      (chartContext.w.globals.xAxisScale.niceMax - chartContext.w.globals.xAxisScale.niceMin) * 
-      ((e.clientX - chartRect.left) / chartRect.width) * 1;
-    
-    const minX = selectedParam.value.min_value || 0;
-    const maxX = selectedParam.value.max_value || 100;
-    const x = Math.max(minX, Math.min(maxX, rawX));
-    
-    const rawY = 100 - (e.clientY - chartRect.top) / chartRect.height * 100;
-    const y = Math.max(0, Math.min(100, rawY));
-    
-    series.value[0].data[pointIndex] = { x, y };
-    series.value = [...series.value];
+    const nextPoint = getCurvePointFromEvent(e, chartContext);
+    if (!nextPoint) return;
+
+    const minGap = (inputMax.value - inputMin.value) / 1000;
+    const minX = points[pointIndex - 1].x + minGap;
+    const maxX = points[pointIndex + 1].x - minGap;
+
+    points[pointIndex] = {
+      x: clamp(nextPoint.x, minX, maxX),
+      y: clamp(nextPoint.y, 0, 100),
+    };
+    commitCurvePoints(points);
     hasChanges.value = true;
   };
 
@@ -319,28 +416,29 @@ function handleDataPointSelection(event: ChartEvent, chartContext: ChartContext,
 }
 
 function handleChartClick(event: ChartEvent, chartContext: ChartContext, config: { dataPointIndex: number | undefined }) {
-  if (config.dataPointIndex === undefined && chartContext && chartContext.w) {
-    const chartRect = chart.value.$el.getBoundingClientRect();
-    const x = chartContext.w.globals.xAxisScale.niceMin + 
-      (chartContext.w.globals.xAxisScale.niceMax - chartContext.w.globals.xAxisScale.niceMin) * 
-      (event.clientX - chartRect.left) / chartRect.width;
-    
-    const y = 100 - (event.clientY - chartRect.top) / chartRect.height * 100;
+  if (config.dataPointIndex !== undefined && config.dataPointIndex >= 0) return;
 
-    const points = series.value[0].data;
-    let insertIndex = points.length;
+  const point = getCurvePointFromEvent(event, chartContext);
+  if (!point) return;
 
-    for (let i = 0; i < points.length; i++) {
-      if (x < points[i].x) {
-        insertIndex = i;
-        break;
-      }
+  const points = [...series.value[0].data] as CurvePoint[];
+  let insertIndex = points.length;
+
+  for (let i = 0; i < points.length; i++) {
+    if (point.x < points[i].x) {
+      insertIndex = i;
+      break;
     }
-
-    points.splice(insertIndex, 0, { x, y });
-    series.value = [...series.value];
-    hasChanges.value = true;
   }
+
+  if (insertIndex === 0 || insertIndex === points.length) return;
+
+  points.splice(insertIndex, 0, {
+    x: clamp(point.x, inputMin.value, inputMax.value),
+    y: clamp(point.y, 0, 100),
+  });
+  commitCurvePoints(points);
+  hasChanges.value = true;
 }
 
 async function loadParams() {
@@ -377,33 +475,23 @@ async function loadChartData(paramName: string) {
     const data = await getRoomCurve(roomId, paramName);
     
     if (data && data.points && data.points.length > 0) {
-      series.value[0].data = data.points.map(point => ({
+      commitCurvePoints(data.points.map(point => ({
         x: point.value,
         y: point.fan_speed
-      }));
+      })));
     } else {
-      const param = parametersOptions.value.find(p => p.name === paramName);
-      series.value[0].data = [
-        { x: param?.min_value || 0, y: 0 },
-        { x: param?.max_value || 100, y: 100 }
-      ];
+      commitCurvePoints([]);
     }
-    series.value = [...series.value];
   } catch (err) {
     console.error("Error loading chart data:", err);
-    const param = parametersOptions.value.find(p => p.name === paramName);
-    series.value[0].data = [
-      { x: param?.min_value || 0, y: 0 },
-      { x: param?.max_value || 100, y: 100 }
-    ];
-    series.value = [...series.value];
+    commitCurvePoints([]);
   } finally {
     isLoading.value = false;
   }
 }
 
 function addPoint() {
-  const points = series.value[0].data;
+  const points = series.value[0].data as CurvePoint[];
   if (points.length < 2) return;
 
   let maxDistance = 0;
@@ -423,20 +511,20 @@ function addPoint() {
   const y = (prevPoint.y + nextPoint.y) / 2;
 
   points.splice(insertIndex, 0, { x, y });
-  series.value = [...series.value];
+  commitCurvePoints(points);
   hasChanges.value = true;
 }
 
 function deleteSelectedPoint() {
   if (selectedPointIndex.value === null) return;
   
-  const points = series.value[0].data;
+  const points = series.value[0].data as CurvePoint[];
   if (selectedPointIndex.value === 0 || selectedPointIndex.value === points.length - 1) {
     return;
   }
   
   points.splice(selectedPointIndex.value, 1);
-  series.value = [...series.value];
+  commitCurvePoints(points);
   selectedPointIndex.value = null;
   hasChanges.value = true;
 }
@@ -447,16 +535,18 @@ function openCriticalValueDialog() {
 }
 
 function saveCriticalValue() {
-  selectedParam.value.critical_value = tempCriticalValue.value ?? undefined;
+  selectedParam.value.critical_value = tempCriticalValue.value === null
+    ? undefined
+    : clamp(tempCriticalValue.value, inputMin.value, inputMax.value);
   showCriticalValueDialog.value = false;
   hasChanges.value = true;
 }
 
 async function saveChanges() {
   try {
-    const points = series.value[0].data.map(point => ({
-      value: point.x,
-      fan_speed: Math.round(point.y)
+    const points = normalizeCurvePoints(series.value[0].data as CurvePoint[]).map(point => ({
+      value: Number(point.x.toFixed(3)),
+      fan_speed: Math.round(clamp(point.y, 0, 100))
     }));
 
     await updateRoomCurve(roomId, selectedParam.value.name, {
@@ -476,6 +566,7 @@ function getLabel(name: string) { return PARAMETER_LABELS[name] || name; }
 
 watch(selectedParam, (newVal) => {
   if (newVal) {
+    selectedPointIndex.value = null;
     series.value[0].name = newVal.label;
     loadChartData(newVal.name);
     hasChanges.value = false;
@@ -515,10 +606,10 @@ onMounted(async () => {
   background: var(--app-surface);
   border-bottom: 1px solid var(--app-border);
   display: flex;
-  gap: 12px;
+  gap: var(--app-list-gap);
   justify-content: space-between;
   min-width: 0;
-  padding: 12px;
+  padding: var(--app-panel-padding);
 }
 
 .automation-panel__title {
@@ -588,8 +679,8 @@ onMounted(async () => {
   align-items: end;
   border-bottom: 1px solid var(--app-border);
   display: grid;
-  gap: var(--app-gap-md);
-  grid-template-columns: minmax(220px, 360px) minmax(0, 1fr);
+  gap: var(--app-gap-sm) var(--app-list-gap);
+  grid-template-columns: minmax(180px, 230px) minmax(0, 1fr);
   padding: var(--app-panel-padding);
 }
 
@@ -610,7 +701,12 @@ onMounted(async () => {
 }
 
 .automation-controls__select {
+  min-height: var(--app-control-height);
   width: 100%;
+}
+
+.automation-controls__select :deep(.p-select-label) {
+  min-height: calc(var(--app-control-height) - 2px);
 }
 
 .automation-controls__actions {
@@ -630,7 +726,7 @@ onMounted(async () => {
 .automation-workspace {
   display: grid;
   flex: 1;
-  gap: var(--app-gap-md);
+  gap: var(--app-gap-sm);
   grid-template-columns: minmax(0, 1fr) minmax(190px, 230px);
   min-height: 0;
   min-width: 0;
@@ -652,10 +748,11 @@ onMounted(async () => {
   background: var(--app-surface);
   border-bottom: 1px solid var(--app-border);
   display: flex;
-  gap: 12px;
+  gap: var(--app-list-gap);
   justify-content: space-between;
   min-width: 0;
-  padding: 10px var(--app-panel-padding);
+  min-height: 48px;
+  padding: 9px var(--app-panel-padding);
 }
 
 .chart-surface__header span,
@@ -683,7 +780,7 @@ onMounted(async () => {
   flex: 1;
   min-height: 0;
   min-width: 0;
-  padding: 8px var(--app-panel-padding) 10px;
+  padding: 6px var(--app-panel-padding) 8px;
 }
 
 .curve-summary {

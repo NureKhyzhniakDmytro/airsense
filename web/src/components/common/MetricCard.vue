@@ -25,6 +25,7 @@ defineProps<{
   align-items: center;
   background: var(--app-surface);
   border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
   display: flex;
   gap: 12px;
   min-height: 78px;

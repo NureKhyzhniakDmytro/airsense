@@ -23,8 +23,14 @@
       />
 
       <div class="telemetry-controls__summary" aria-label="Telemetry summary">
-        <Tag :value="`${seriesCount} series`" severity="secondary" rounded />
-        <Tag :value="`${pointCount} points`" severity="info" rounded />
+        <span class="telemetry-controls__metric">
+          <strong>{{ seriesCount }}</strong>
+          <span>series</span>
+        </span>
+        <span class="telemetry-controls__metric">
+          <strong>{{ pointCount }}</strong>
+          <span>{{ pointCount === 1 ? 'point' : 'points' }}</span>
+        </span>
       </div>
     </section>
 
@@ -73,7 +79,6 @@ import { computed, shallowRef, ref, onMounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import Select from 'primevue/select';
 import Skeleton from 'primevue/skeleton';
-import Tag from 'primevue/tag';
 import EmptyState from '@/components/common/EmptyState.vue';
 import DateRangeSelector from '@/components/common/DateRangeSelector.vue';
 import ChartDisplay from '@/components/common/ChartDisplay.vue';
@@ -236,7 +241,7 @@ watch(
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: var(--app-gap-md);
+  gap: var(--app-gap-sm);
   height: 100%;
   min-height: 0;
   min-width: 0;
@@ -258,15 +263,15 @@ watch(
 
 .telemetry-controls {
   align-items: end;
-  background: var(--app-surface);
+  background: color-mix(in srgb, var(--app-surface) 88%, var(--app-surface-soft));
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius);
   display: grid;
   flex: 0 0 auto;
-  gap: var(--app-gap-md);
+  gap: var(--app-gap-sm) 10px;
   grid-template-areas: "parameter range summary";
-  grid-template-columns: minmax(190px, 260px) minmax(0, 1fr) auto;
-  padding: var(--app-panel-padding);
+  grid-template-columns: minmax(180px, 230px) minmax(0, 1fr) auto;
+  padding: 10px var(--app-panel-padding);
 }
 
 .telemetry-controls__parameter {
@@ -280,15 +285,20 @@ watch(
 .telemetry-controls__parameter label {
   color: var(--app-muted);
   font-family: var(--app-mono);
-  font-size: 0.68rem;
+  font-size: 0.66rem;
   font-weight: 650;
   line-height: 1rem;
   text-transform: uppercase;
 }
 
 .telemetry-controls__select {
+  min-height: var(--app-compact-control-height);
   min-width: 0;
   width: 100%;
+}
+
+.telemetry-controls__select :deep(.p-select-label) {
+  min-height: calc(var(--app-compact-control-height) - 2px);
 }
 
 .telemetry-controls__range {
@@ -298,17 +308,52 @@ watch(
 
 .telemetry-controls__summary {
   align-items: center;
-  display: flex;
-  gap: var(--app-gap-sm);
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  display: grid;
+  gap: 1px;
   grid-area: summary;
-  justify-content: flex-end;
+  grid-template-columns: repeat(2, minmax(72px, 1fr));
+  justify-content: stretch;
+  height: var(--app-control-height);
+  min-width: 154px;
+  overflow: hidden;
+}
+
+.telemetry-controls__metric {
+  align-items: center;
+  background: var(--app-surface-soft);
+  color: var(--app-muted);
+  display: inline-flex;
+  gap: 5px;
+  justify-content: center;
+  height: 100%;
+  min-width: 0;
+  padding: 0 0.5rem;
+}
+
+.telemetry-controls__metric strong {
+  color: var(--app-text-strong);
+  font-family: var(--app-mono);
+  font-size: 0.82rem;
+  font-weight: 760;
+  line-height: 1rem;
+}
+
+.telemetry-controls__metric span {
+  font-family: var(--app-mono);
+  font-size: 0.66rem;
+  font-weight: 650;
+  line-height: 1rem;
+  text-transform: uppercase;
 }
 
 .telemetry-charts {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: var(--app-gap-md);
+  gap: var(--app-gap-sm);
   min-height: 0;
   min-width: 0;
   overflow: auto;
@@ -321,7 +366,7 @@ watch(
 
 .telemetry-charts__skeleton {
   flex: 1;
-  min-height: 24rem;
+  min-height: 25rem;
 }
 
 .chart-panel {
@@ -331,7 +376,7 @@ watch(
   display: flex;
   flex: 1 0 auto;
   flex-direction: column;
-  min-height: 24rem;
+  min-height: 25rem;
   overflow: hidden;
 }
 
@@ -340,9 +385,10 @@ watch(
   background: var(--app-surface-soft);
   border-bottom: 1px solid var(--app-border);
   display: flex;
-  gap: 12px;
+  gap: var(--app-list-gap);
   justify-content: space-between;
-  padding: 10px var(--app-panel-padding);
+  min-height: 48px;
+  padding: 9px var(--app-panel-padding);
 }
 
 .chart-panel__eyebrow,
@@ -367,7 +413,7 @@ watch(
   display: flex;
   flex: 1;
   min-height: 0;
-  padding: 8px var(--app-panel-padding) 10px;
+  padding: 6px var(--app-panel-padding) 8px;
 }
 
 @media (min-width: 901px) {
@@ -382,7 +428,7 @@ watch(
     grid-template-areas:
       "parameter summary"
       "range range";
-    grid-template-columns: minmax(190px, 1fr) auto;
+    grid-template-columns: minmax(180px, 1fr) auto;
   }
 }
 
@@ -418,7 +464,7 @@ watch(
   }
 
   .telemetry-controls__range :deep(.p-datepicker-input) {
-    width: 10.75rem;
+    width: 9.75rem;
   }
 }
 

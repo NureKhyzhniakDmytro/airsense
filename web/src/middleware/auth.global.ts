@@ -5,6 +5,12 @@ export default defineNuxtRouteMiddleware(async (to) => {
 
   if (import.meta.server) {
     authStore.hydrateFromCookie()
+
+    if (to.meta.guestOnly && authStore.isAuthenticated) {
+      return navigateTo('/dashboard')
+    }
+
+    return
   } else {
     authStore.hydrateFromCookie()
     void authStore.startAuthListener()

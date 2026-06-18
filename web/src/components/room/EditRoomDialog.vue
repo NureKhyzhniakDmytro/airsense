@@ -1,9 +1,17 @@
 <template>
     <Dialog v-model:visible="isOpen" modal header="Edit room" :draggable="false" :style="{ width: 'min(26rem, calc(100vw - 2rem))' }">
-      <Form v-slot="$form" :resolver @submit="onFormSubmit" class="entity-dialog-form">
+      <Form :key="formKey" v-slot="$form" :resolver @submit="onFormSubmit" class="entity-dialog-form">
         <div class="entity-dialog-field">
           <label class="entity-dialog-label" for="edit-room-name">Room name</label>
-          <InputText id="edit-room-name" name="name" type="text" placeholder="Name" fluid :default-value="room?.name" />
+          <InputText
+            id="edit-room-name"
+            v-model="roomName"
+            name="name"
+            type="text"
+            placeholder="Name"
+            maxlength="20"
+            fluid
+          />
           <Message v-if="$form.name?.invalid" severity="error" size="small" variant="simple">{{ $form.name.error?.message }}</Message>
         </div>
         <div class="entity-dialog-field">
@@ -36,7 +44,13 @@
         <Message v-if="isError" severity="error" :life="3000">An error occurred while updating the room</Message>
         <div class="entity-dialog-actions">
           <Button type="button" label="Cancel" severity="secondary" @click="isOpen = false" />
-          <Button type="submit" label="Save" severity="primary" :loading="isLoading" />
+          <Button
+            type="submit"
+            label="Save"
+            severity="primary"
+            :disabled="!roomName.trim()"
+            :loading="isLoading"
+          />
         </div>
       </Form>
     </Dialog>
@@ -59,7 +73,9 @@
   const isLoading = ref(false);
   const isError = ref(false);
   const room = ref<Room | null>(null);
+  const roomName = ref("");
   const selectedIcon = ref("room");
+  const formKey = ref(0);
   const props = defineProps<{
     modelValue: boolean;
     envId: number;
@@ -78,43 +94,45 @@
   });
   
   const resolver = ({ values }: FormResolverOptions) => {
-    const errors: Record<string, Record<string, string>[]> = {
-      name: []
-    };
+    const name = String(values.name ?? roomName.value ?? "").trim();
+    const errors: Record<string, Record<string, string>[]> = {};
   
-    if (!values.name) {
-      errors.name.push({ message: 'Name is required.' });
-    }
-  
-    if (values.name?.length < 3) {
-      errors.name.push({ type: 'minimum', message: 'Name must be at least 3 characters long.' });
+    if (!name) {
+      errors.name = [{ message: 'Name is required.' }];
+    } else if (name.length < 3) {
+      errors.name = [{ type: 'minimum', message: 'Name must be at least 3 characters long.' }];
+    } else if (name.length > 20) {
+      errors.name = [{ type: 'maximum', message: 'Name must be 20 characters or fewer.' }];
     }
   
     return {
-      values,
+      values: { ...values, name },
       errors
     };
   }
   
   const onFormSubmit = ({ valid, values }: FormSubmitEvent) => {
     if (valid) {
-      create(values).then(
+      save(values).then(
           isSuccess => {
             if (isSuccess) {
               isOpen.value = false;
             }
-          });
+      });
     }
   };
   
-  const create = async (values: Record<string, any>): Promise<boolean> => {
+  const save = async (values: Record<string, any>): Promise<boolean> => {
     isLoading.value = true;
+    isError.value = false;
+    const name = String(values.name ?? roomName.value ?? "").trim();
   
     try {
-      await updateRoom(props.envId, props.roomId, { name: values.name.trim(), icon: selectedIcon.value });
+      await updateRoom(props.envId, props.roomId, { name, icon: selectedIcon.value });
       emit('refresh');
       return true;
     } catch (error) {
+      console.error("Failed to update room:", error);
       isError.value = true;
       setTimeout(() => {
         isError.value = false;
@@ -125,15 +143,19 @@
     }
   };
   
-  onMounted(async () => {
+  const loadRoom = async () => {
+    isError.value = false;
     room.value = await getRoom(props.envId, props.roomId);
+    roomName.value = room.value.name || "";
     selectedIcon.value = room.value.icon || "room";
-  });
+    formKey.value += 1;
+  };
+  
+  onMounted(loadRoom);
 
   watch(isOpen, async (value) => {
     if (!value) return;
-    room.value = await getRoom(props.envId, props.roomId);
-    selectedIcon.value = room.value.icon || "room";
+    await loadRoom();
   });
   </script>
   

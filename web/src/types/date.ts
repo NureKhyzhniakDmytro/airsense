@@ -9,11 +9,19 @@ export interface IntervalOption {
   label?: string;
 }
 
+export interface DateRangePresetOption {
+  label: string;
+  value: string;
+  amount: number;
+  unit: 'minute' | 'hour' | 'day';
+}
+
 export interface DateRangeProps {
   from: Date;
   to: Date;
   interval?: IntervalOption;
   intervalOptions?: IntervalOption[];
+  presetOptions?: DateRangePresetOption[];
   fromLabel?: string;
   toLabel?: string;
 }

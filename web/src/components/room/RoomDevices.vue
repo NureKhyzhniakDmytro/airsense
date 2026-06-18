@@ -192,7 +192,7 @@ onMounted(loadDevices);
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--app-gap-md);
   min-height: 0;
   min-width: 0;
   width: 100%;
@@ -247,10 +247,10 @@ onMounted(loadDevices);
   color: inherit;
   cursor: pointer;
   display: grid;
-  gap: 12px;
-  grid-template-columns: 76px minmax(140px, 1fr) minmax(0, 1.3fr) auto;
-  min-height: 60px;
-  padding: 10px 12px;
+  gap: var(--app-list-gap);
+  grid-template-columns: var(--app-row-code-width) minmax(150px, 1fr) minmax(0, 1.3fr) auto;
+  min-height: var(--app-row-height);
+  padding: 10px var(--app-list-padding-x);
 }
 
 .asset-row:last-child {

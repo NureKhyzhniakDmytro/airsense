@@ -169,7 +169,7 @@ const goToEnvironment = (envId: number) => {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--app-gap-md);
   min-height: 0;
   min-width: 0;
   width: 100%;
@@ -220,10 +220,10 @@ const goToEnvironment = (envId: number) => {
   border: 0;
   color: inherit;
   display: grid;
-  gap: 14px;
-  grid-template-columns: 104px minmax(0, 1fr) auto;
-  min-height: 60px;
-  padding: 10px 12px;
+  gap: var(--app-list-gap);
+  grid-template-columns: var(--app-row-code-width) minmax(0, 1fr) auto;
+  min-height: var(--app-row-height);
+  padding: 10px var(--app-list-padding-x);
   text-align: left;
   width: 100%;
 }
@@ -271,7 +271,7 @@ const goToEnvironment = (envId: number) => {
 .environment-row__meta {
   align-items: center;
   display: inline-flex;
-  gap: 12px;
+  gap: var(--app-list-gap);
 }
 
 @media (max-width: 840px) {
