@@ -34,6 +34,8 @@
       </div>
     </section>
 
+    <RoomAiPanel :room-id="roomId" />
+
     <div
       class="telemetry-charts"
       :class="{ 'telemetry-charts--single': seriesCount === 1 }"
@@ -83,6 +85,7 @@ import Skeleton from 'primevue/skeleton';
 import EmptyState from '@/components/common/EmptyState.vue';
 import DateRangeSelector from '@/components/common/DateRangeSelector.vue';
 import ChartDisplay from '@/components/common/ChartDisplay.vue';
+import RoomAiPanel from '@/components/room/RoomAiPanel.vue';
 import { useSensorStore } from '@/store/sensorStore';
 import {
   getRoomHistory,

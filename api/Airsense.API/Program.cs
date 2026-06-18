@@ -62,10 +62,12 @@ builder.Services.AddScoped<IRoomRepository, RoomRepository>();
 builder.Services.AddScoped<ISensorRepository, SensorRepository>();
 builder.Services.AddScoped<IDeviceRepository, DeviceRepository>();
 builder.Services.AddScoped<ISettingsRepository, SettingsRepository>();
+builder.Services.AddHttpClient();
 
 builder.Services.AddScoped<IAuthService>(_ => isFirebaseConfigured ? new FirebaseAuthService() : new NoOpAuthService());
 builder.Services.AddScoped<IAuthMqttService, AuthMqttService>();
 builder.Services.AddScoped<ISensorService, SensorService>();
+builder.Services.AddScoped<IAiPredictionService, AiPredictionService>();
 builder.Services.AddScoped<INotificationService>(_ => isFirebaseConfigured ? new FirebaseNotificationService() : new NoOpNotificationService());
 
 if (ServiceRoles.IsApi(serviceRole))

@@ -9,6 +9,7 @@ public class SensorService(
     IDeviceRepository deviceRepository,
     IEnvironmentRepository environmentRepository,
     ISettingsRepository settingsRepository,
+    IAiPredictionService aiPredictionService,
     IMqttService mqttService) : ISensorService
 {
     public async Task ProcessDataAsync(int roomId, string parameter, SensorDataDto data)
@@ -18,7 +19,7 @@ public class SensorService(
         if (curve?.Points == null || curve.Points.Count == 0)
             return;
 
-        var fanSpeed = GetFanSpeedByValue(curve.Points, data.Value);
+        var fanSpeed = await GetFanSpeedAsync(roomId, curve.Points, data.Value);
 
         if (!fanSpeed.HasValue)
             return;
@@ -71,5 +72,14 @@ public class SensorService(
         }
 
         return null;
+    }
+
+    private async Task<int?> GetFanSpeedAsync(int roomId, ICollection<CurvePointDto> points, double value)
+    {
+        var aiRecommendation = await aiPredictionService.ConsumeAcceptedRecommendationAsync(roomId);
+        if (aiRecommendation is not null)
+            return (int)Math.Round(Math.Clamp(aiRecommendation.RequestedPower, 0, 100));
+
+        return GetFanSpeedByValue(points, value);
     }
 }

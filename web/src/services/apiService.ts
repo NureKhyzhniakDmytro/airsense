@@ -3,9 +3,28 @@ import type { RegisterPayload, UsersResponse } from '@/types/user';
 import type { Environment, EnvironmentsResponse, CreateEnvironmentPayload, UpdateEnvironmentPayload } from '@/types/environment';
 import type { CreateRoomPayload, Room, RoomLayout, RoomsResponse, UpdateRoomPayload } from '@/types/room';
 import type { Sensor, Device, HistoryEntry, Parameter, HistoryParams, CurveData } from '@/types/sensor';
+import type { AiRecommendationAudit, RoomAiInsights } from "@/types/ai";
 
 export const register = async (payload: RegisterPayload) => {
   const response = await apiPost("/auth", payload);
+  return response.data;
+};
+
+export const getRoomAiInsights = async (roomId: number): Promise<RoomAiInsights> => {
+  const response = await apiGet<RoomAiInsights>(`/ai/room/${roomId}`);
+  return response.data;
+};
+
+export const createRoomAiRecommendation = async (roomId: number): Promise<AiRecommendationAudit> => {
+  const response = await apiPost<AiRecommendationAudit>(`/ai/room/${roomId}/recommendation`, {});
+  return response.data;
+};
+
+export const acceptRoomAiRecommendation = async (
+  roomId: number,
+  recommendationId: number,
+): Promise<AiRecommendationAudit> => {
+  const response = await apiPost<AiRecommendationAudit>(`/ai/room/${roomId}/recommendations/${recommendationId}/accept`, {});
   return response.data;
 };
 

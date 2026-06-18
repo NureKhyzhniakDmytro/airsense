@@ -1,0 +1,375 @@
+using System.Data;
+using System.Text;
+using System.Text.Json;
+using Airsense.API.Models.Dto.Ai;
+using Dapper;
+
+namespace Airsense.API.Services;
+
+public sealed class AiPredictionService(
+    IDbConnection connection,
+    IHttpClientFactory httpClientFactory,
+    IConfiguration configuration) : IAiPredictionService
+{
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        DictionaryKeyPolicy = JsonNamingPolicy.SnakeCaseLower
+    };
+
+    private static readonly List<int> DefaultHorizons = [10, 20, 30];
+    private const double TargetCo2 = 900;
+    private const double MaxVentilationPower = 100;
+    private const int RecommendationHorizonMinutes = 20;
+
+    private string PredictionServiceUrl =>
+        configuration["Ai:PredictionServiceUrl"]?.TrimEnd('/') ?? "http://ai-prediction-service:8000";
+
+    public async Task<RoomAiInsightsDto> GetRoomInsightsAsync(int roomId, CancellationToken cancellationToken = default)
+    {
+        var sample = await LoadLatestSampleAsync(roomId);
+        var recentRecommendations = await LoadRecentRecommendationsAsync(roomId);
+
+        if (sample is null)
+        {
+            return new RoomAiInsightsDto
+            {
+                HasSample = false,
+                Message = "CO2, temperature, and humidity telemetry are required before AI predictions can run.",
+                RecentRecommendations = recentRecommendations
+            };
+        }
+
+        var prediction = await PostAsync<AiPredictRequestDto, AiPredictResponseDto>(
+            "/predict",
+            new AiPredictRequestDto
+            {
+                Sample = sample,
+                HorizonsMinutes = DefaultHorizons
+            },
+            cancellationToken);
+
+        var simulation = await PostAsync<AiSimulateRequestDto, AiSimulateResponseDto>(
+            "/simulate",
+            new AiSimulateRequestDto
+            {
+                Sample = sample,
+                HorizonsMinutes = DefaultHorizons,
+                Scenarios = BuildScenarios(sample.VentilationPower)
+            },
+            cancellationToken);
+
+        return new RoomAiInsightsDto
+        {
+            HasSample = true,
+            TelemetryAgeSeconds = sample.Timestamp is null
+                ? null
+                : Math.Max(0, (DateTime.UtcNow - sample.Timestamp.Value.ToUniversalTime()).TotalSeconds),
+            Sample = sample,
+            Prediction = prediction,
+            Simulation = simulation,
+            RecentRecommendations = recentRecommendations
+        };
+    }
+
+    public async Task<AiRecommendationAuditDto> CreateRoomRecommendationAsync(
+        int roomId,
+        CancellationToken cancellationToken = default)
+    {
+        var sample = await LoadLatestSampleAsync(roomId);
+        if (sample is null)
+            throw new InvalidOperationException("CO2, temperature, and humidity telemetry are required before AI recommendations can run.");
+
+        var recommendation = await PostAsync<AiRecommendationRequestDto, AiRecommendationResponseDto>(
+            "/recommendation",
+            new AiRecommendationRequestDto
+            {
+                Sample = sample,
+                TargetCo2 = TargetCo2,
+                MaxVentilationPower = MaxVentilationPower,
+                HorizonMinutes = RecommendationHorizonMinutes
+            },
+            cancellationToken);
+
+        var payload = new AiRecommendationPayloadDto
+        {
+            ModelVersion = recommendation.ModelVersion,
+            Mode = recommendation.Mode,
+            Reason = recommendation.Reason,
+            Sample = sample,
+            Predicted = recommendation.Predicted,
+            TargetCo2 = TargetCo2,
+            MaxVentilationPower = MaxVentilationPower,
+            HorizonMinutes = RecommendationHorizonMinutes
+        };
+
+        var inserted = await InsertRecommendationAsync(
+            roomId,
+            sample,
+            recommendation.SuggestedVentilationPower,
+            payload);
+
+        return inserted;
+    }
+
+    public async Task<AiRecommendationAuditDto?> AcceptRecommendationAsync(
+        int roomId,
+        long recommendationId,
+        CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+                           UPDATE ventilation_commands
+                           SET status = 'accepted'
+                           WHERE id = @recommendationId
+                             AND room_id = @roomId
+                             AND source = 'ai-recommendation'
+                             AND command_type = 'recommendation'
+                             AND status IN ('recommended', 'accepted')
+                           RETURNING
+                               id AS Id,
+                               timestamp AS Timestamp,
+                               requested_power AS RequestedPower,
+                               status AS Status,
+                               payload::text AS PayloadJson
+                           """;
+
+        var row = await connection.QueryFirstOrDefaultAsync<RecommendationRow>(
+            new CommandDefinition(sql, new { roomId, recommendationId }, cancellationToken: cancellationToken));
+
+        return row is null ? null : MapRecommendation(row);
+    }
+
+    public async Task<AiAutomationRecommendationDto?> ConsumeAcceptedRecommendationAsync(int roomId)
+    {
+        const string sql = """
+                           UPDATE ventilation_commands
+                           SET status = 'used'
+                           WHERE id = (
+                               SELECT id
+                               FROM ventilation_commands
+                               WHERE room_id = @roomId
+                                 AND source = 'ai-recommendation'
+                                 AND command_type = 'recommendation'
+                                 AND status = 'accepted'
+                                 AND requested_power IS NOT NULL
+                                 AND timestamp > NOW() - INTERVAL '30 minutes'
+                               ORDER BY timestamp DESC
+                               LIMIT 1
+                           )
+                           RETURNING
+                               id AS Id,
+                               requested_power AS RequestedPower
+                           """;
+
+        return await connection.QueryFirstOrDefaultAsync<AiAutomationRecommendationDto>(sql, new { roomId });
+    }
+
+    private async Task<TResponse> PostAsync<TRequest, TResponse>(
+        string path,
+        TRequest payload,
+        CancellationToken cancellationToken)
+    {
+        var client = httpClientFactory.CreateClient();
+        var requestJson = JsonSerializer.Serialize(payload, JsonOptions);
+        using var content = new StringContent(requestJson, Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync($"{PredictionServiceUrl}{path}", content, cancellationToken);
+        var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new HttpRequestException(
+                $"AI prediction service returned {(int)response.StatusCode}: {responseJson}",
+                null,
+                response.StatusCode);
+        }
+
+        return JsonSerializer.Deserialize<TResponse>(responseJson, JsonOptions)
+               ?? throw new InvalidOperationException("AI prediction service returned an empty response.");
+    }
+
+    private async Task<AiTelemetrySampleDto?> LoadLatestSampleAsync(int roomId)
+    {
+        const string sql = """
+                           WITH latest_sensor AS (
+                               SELECT DISTINCT ON (p.name, s.id)
+                                   p.name AS parameter,
+                                   sd.value,
+                                   sd.timestamp
+                               FROM sensors s
+                               JOIN sensor_data sd ON sd.sensor_id = s.id
+                               JOIN parameters p ON p.id = sd.parameter_id
+                               WHERE s.room_id = @roomId
+                                 AND p.name IN ('co2', 'temperature', 'humidity', 'occupancy')
+                               ORDER BY p.name, s.id, sd.timestamp DESC
+                           ),
+                           sensor_summary AS (
+                               SELECT
+                                   AVG(value) FILTER (WHERE parameter = 'co2') AS Co2,
+                                   AVG(value) FILTER (WHERE parameter = 'temperature') AS Temperature,
+                                   AVG(value) FILTER (WHERE parameter = 'humidity') AS Humidity,
+                                   COALESCE(AVG(value) FILTER (WHERE parameter = 'occupancy'), 0) AS Occupancy,
+                                   MAX(timestamp) AS LatestSensorAt
+                               FROM latest_sensor
+                           ),
+                           latest_device AS (
+                               SELECT
+                                   d.id AS DeviceId,
+                                   dd.value AS VentilationPower,
+                                   COALESCE(dd.applied_at, dd.timestamp) AS DeviceTimestamp
+                               FROM devices d
+                               JOIN device_data dd ON dd.device_id = d.id
+                               WHERE d.room_id = @roomId
+                               ORDER BY COALESCE(dd.applied_at, dd.timestamp) DESC, dd.id DESC
+                               LIMIT 1
+                           )
+                           SELECT
+                               @roomId AS RoomId,
+                               ss.Co2 AS Co2,
+                               ss.Temperature AS Temperature,
+                               ss.Humidity AS Humidity,
+                               ss.Occupancy AS Occupancy,
+                               COALESCE(ld.VentilationPower, 0) AS VentilationPower,
+                               GREATEST(
+                                   COALESCE(ss.LatestSensorAt, TIMESTAMP 'epoch'),
+                                   COALESCE(ld.DeviceTimestamp, TIMESTAMP 'epoch')
+                               ) AS Timestamp,
+                               ld.DeviceId AS DeviceId
+                           FROM sensor_summary ss
+                           LEFT JOIN latest_device ld ON TRUE
+                           """;
+
+        var row = await connection.QueryFirstOrDefaultAsync<LatestTelemetryRow>(sql, new { roomId });
+        if (row is null || row.Co2 is null || row.Temperature is null || row.Humidity is null)
+            return null;
+
+        return new AiTelemetrySampleDto
+        {
+            RoomId = roomId,
+            Timestamp = row.Timestamp == DateTime.UnixEpoch ? null : DateTime.SpecifyKind(row.Timestamp, DateTimeKind.Utc),
+            Co2 = Math.Round(row.Co2.Value, 2),
+            Temperature = Math.Round(row.Temperature.Value, 2),
+            Humidity = Math.Round(row.Humidity.Value, 2),
+            VentilationPower = Math.Round(Math.Clamp(row.VentilationPower, 0, 100), 2),
+            Occupancy = Math.Max(0, (int)Math.Round(row.Occupancy))
+        };
+    }
+
+    private async Task<AiRecommendationAuditDto> InsertRecommendationAsync(
+        int roomId,
+        AiTelemetrySampleDto sample,
+        double suggestedVentilationPower,
+        AiRecommendationPayloadDto payload)
+    {
+        const string sql = """
+                           INSERT INTO ventilation_commands(room_id, device_id, source, command_type, requested_power, payload, status)
+                           VALUES (
+                               @roomId,
+                               (
+                                   SELECT id
+                                   FROM devices
+                                   WHERE room_id = @roomId
+                                   ORDER BY id
+                                   LIMIT 1
+                               ),
+                               'ai-recommendation',
+                               'recommendation',
+                               @requestedPower,
+                               CAST(@payloadJson AS jsonb),
+                               'recommended'
+                           )
+                           RETURNING
+                               id AS Id,
+                               timestamp AS Timestamp,
+                               requested_power AS RequestedPower,
+                               status AS Status,
+                               payload::text AS PayloadJson
+                           """;
+
+        var row = await connection.QuerySingleAsync<RecommendationRow>(
+            sql,
+            new
+            {
+                roomId,
+                requestedPower = Math.Round(Math.Clamp(suggestedVentilationPower, 0, 100), 2),
+                payloadJson = JsonSerializer.Serialize(payload, JsonOptions)
+            });
+
+        return MapRecommendation(row);
+    }
+
+    private async Task<List<AiRecommendationAuditDto>> LoadRecentRecommendationsAsync(int roomId, int count = 5)
+    {
+        const string sql = """
+                           SELECT
+                               id AS Id,
+                               timestamp AS Timestamp,
+                               requested_power AS RequestedPower,
+                               status AS Status,
+                               payload::text AS PayloadJson
+                           FROM ventilation_commands
+                           WHERE room_id = @roomId
+                             AND source = 'ai-recommendation'
+                             AND command_type = 'recommendation'
+                           ORDER BY timestamp DESC
+                           LIMIT @count
+                           """;
+
+        var rows = await connection.QueryAsync<RecommendationRow>(sql, new { roomId, count });
+        return rows.Select(MapRecommendation).ToList();
+    }
+
+    private static AiRecommendationAuditDto MapRecommendation(RecommendationRow row)
+    {
+        var payload = string.IsNullOrWhiteSpace(row.PayloadJson)
+            ? null
+            : JsonSerializer.Deserialize<AiRecommendationPayloadDto>(row.PayloadJson, JsonOptions);
+
+        return new AiRecommendationAuditDto
+        {
+            Id = row.Id,
+            Timestamp = DateTime.SpecifyKind(row.Timestamp, DateTimeKind.Utc),
+            RequestedPower = row.RequestedPower,
+            Status = row.Status,
+            ModelVersion = payload?.ModelVersion ?? "",
+            Mode = payload?.Mode ?? "",
+            Reason = payload?.Reason ?? "",
+            Predicted = payload?.Predicted,
+            Sample = payload?.Sample
+        };
+    }
+
+    private static List<AiVentilationScenarioDto> BuildScenarios(double currentPower)
+    {
+        var roundedCurrent = Math.Round(Math.Clamp(currentPower, 0, 100), 2);
+        return new[]
+            {
+                new AiVentilationScenarioDto { Label = "Current", VentilationPower = roundedCurrent },
+                new AiVentilationScenarioDto { Label = "Quiet", VentilationPower = 20 },
+                new AiVentilationScenarioDto { Label = "Balanced", VentilationPower = 50 },
+                new AiVentilationScenarioDto { Label = "Boost", VentilationPower = 80 }
+            }
+            .GroupBy(x => x.VentilationPower)
+            .Select(x => x.First())
+            .OrderBy(x => x.VentilationPower)
+            .ToList();
+    }
+
+    private sealed class LatestTelemetryRow
+    {
+        public double? Co2 { get; init; }
+        public double? Temperature { get; init; }
+        public double? Humidity { get; init; }
+        public double Occupancy { get; init; }
+        public double VentilationPower { get; init; }
+        public DateTime Timestamp { get; init; }
+    }
+
+    private sealed class RecommendationRow
+    {
+        public long Id { get; init; }
+        public DateTime Timestamp { get; init; }
+        public double? RequestedPower { get; init; }
+        public string Status { get; init; } = "";
+        public string PayloadJson { get; init; } = "";
+    }
+}
