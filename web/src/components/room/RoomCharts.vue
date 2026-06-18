@@ -42,6 +42,7 @@
 
       <EmptyState
         v-else-if="Object.keys(series).length === 0"
+        class="telemetry-empty empty-state--fill empty-state--centered"
         title="No chart data"
         description="There is no telemetry for the selected parameter and period yet."
         icon="pi pi-chart-line"

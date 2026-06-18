@@ -61,6 +61,18 @@ defineEmits<{
   width: 100%;
 }
 
+.empty-state--fill {
+  align-self: stretch;
+  flex: 1;
+  max-width: none;
+  min-height: 0;
+}
+
+.empty-state--centered {
+  align-items: center;
+  text-align: center;
+}
+
 .empty-state__icon {
   align-items: center;
   background: color-mix(in srgb, var(--app-primary) 10%, var(--app-surface-soft));
@@ -94,11 +106,19 @@ defineEmits<{
   max-width: 380px;
 }
 
+.empty-state--centered p {
+  text-align: center;
+}
+
 .empty-state__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-start;
   margin-top: 18px;
+}
+
+.empty-state--centered .empty-state__actions {
+  justify-content: center;
 }
 </style>

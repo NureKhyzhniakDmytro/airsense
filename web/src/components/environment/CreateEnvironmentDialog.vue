@@ -3,7 +3,7 @@
     <Form v-slot="$form" :resolver @submit="onFormSubmit" class="entity-dialog-form">
       <div class="entity-dialog-field">
         <label class="entity-dialog-label" for="environment-name">Environment name</label>
-        <InputText id="environment-name" name="name" type="text" placeholder="AirSense Lab" fluid autofocus />
+        <InputText id="environment-name" name="name" type="text" placeholder="AirSense Lab" maxlength="20" fluid autofocus />
         <Message v-if="$form.name?.invalid" severity="error" size="small" variant="simple">{{ $form.name.error?.message }}</Message>
       </div>
       <div class="entity-dialog-field">
@@ -76,20 +76,19 @@ defineExpose({
 });
 
 const resolver = ({ values }: FormResolverOptions) => {
-  const errors: Record<string, Record<string, string>[]> = {
-    name: []
-  };
+  const name = String(values.name ?? "").trim();
+  const errors: Record<string, Record<string, string>[]> = {};
 
-  if (!values.name) {
-    errors.name.push({ message: 'Name is required.' });
-  }
-
-  if (values.name?.length < 3) {
-    errors.name.push({ type: 'minimum', message: 'Name must be at least 3 characters long.' });
+  if (!name) {
+    errors.name = [{ message: 'Name is required.' }];
+  } else if (name.length < 3) {
+    errors.name = [{ type: 'minimum', message: 'Name must be at least 3 characters long.' }];
+  } else if (name.length > 20) {
+    errors.name = [{ type: 'maximum', message: 'Name must be 20 characters or fewer.' }];
   }
 
   return {
-    values,
+    values: { ...values, name },
     errors
   };
 }

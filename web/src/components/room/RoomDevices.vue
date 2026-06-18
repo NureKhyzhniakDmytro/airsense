@@ -73,7 +73,7 @@
     
     <EmptyState
       v-else
-      class="section-empty"
+      class="section-empty empty-state--fill empty-state--centered"
       title="No devices"
       description="Add a controllable device to automate ventilation and view fan history."
       icon="pi pi-slack"

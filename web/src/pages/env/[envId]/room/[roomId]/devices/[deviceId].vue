@@ -4,6 +4,7 @@
 
     <EmptyState
       v-else-if="!device"
+      class="detail-empty empty-state--fill empty-state--centered"
       title="Device not found"
       description="The requested device does not exist or has been removed."
       icon="pi pi-exclamation-circle"

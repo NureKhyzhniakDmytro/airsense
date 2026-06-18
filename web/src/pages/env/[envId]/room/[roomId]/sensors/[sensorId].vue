@@ -4,6 +4,7 @@
 
     <EmptyState
       v-else-if="!sensor"
+      class="detail-empty empty-state--fill empty-state--centered"
       title="Sensor not found"
       description="The requested sensor does not exist or has been removed."
       icon="pi pi-exclamation-circle"

@@ -89,7 +89,7 @@
 
     <EmptyState
       v-else
-      class="dashboard-empty"
+      class="dashboard-empty empty-state--fill empty-state--centered"
       title="No environments"
       description="Create an environment to group rooms, users, sensors, and automation settings."
       icon="pi pi-plus"
@@ -184,17 +184,13 @@ const goToEnvironment = (envId: number) => {
 .dashboard-list {
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius);
-  display: flex;
-  flex: 1;
-  flex-direction: column;
+  display: block;
+  flex: 0 0 auto;
   min-height: 0;
   overflow: hidden;
 }
 
 .dashboard-list :deep(.p-dataview-content) {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
   min-height: 0;
 }
 
@@ -207,11 +203,6 @@ const goToEnvironment = (envId: number) => {
 
 .dashboard-list :deep(.p-paginator) {
   border-top: 1px solid var(--app-border);
-  flex: 0 0 auto;
-}
-
-.dashboard-empty {
-  flex: 1;
 }
 
 .environment-row {

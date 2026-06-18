@@ -7,6 +7,7 @@
       class="flex flex-col flex-grow justify-center items-center max-w-lg self-center"
     >
       <EmptyState
+        class="empty-state--centered"
         title="Room access is restricted"
         description="Please contact your administrator if you believe this is an error."
         icon="pi pi-lock"

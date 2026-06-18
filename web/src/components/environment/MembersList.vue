@@ -242,6 +242,10 @@ onMounted(refreshMembers);
   padding-top: 8px;
 }
 
+.members-table :deep(.p-datatable-emptymessage > td) {
+  height: 360px;
+}
+
 .members-empty {
   align-items: center;
   color: var(--app-muted);

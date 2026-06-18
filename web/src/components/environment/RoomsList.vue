@@ -77,7 +77,7 @@
 
     <EmptyState
       v-else
-      class="section-empty"
+      class="section-empty empty-state--fill empty-state--centered"
       title="No rooms"
       description="Create a room to connect sensors, devices, and automation curves."
       icon="pi pi-home"
@@ -207,18 +207,18 @@ onUnmounted(stopAutoRefresh);
 }
 
 .collection-frame {
-  display: flex;
-  flex: 1;
+  display: block;
+  flex: 0 0 auto;
   min-height: 0;
   min-width: 0;
+  width: 100%;
 }
 
 .section-list {
   border: 1px solid var(--app-border);
   border-radius: var(--app-radius);
-  display: flex;
-  flex: 1;
-  flex-direction: column;
+  display: block;
+  flex: 0 0 auto;
   min-height: 0;
   overflow: hidden;
   width: 100%;
@@ -230,9 +230,6 @@ onUnmounted(stopAutoRefresh);
 }
 
 .section-list :deep(.p-dataview-content) {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
   min-height: 0;
 }
 
@@ -245,7 +242,6 @@ onUnmounted(stopAutoRefresh);
 
 .section-list :deep(.p-paginator) {
   border-top: 1px solid var(--app-border);
-  flex: 0 0 auto;
 }
 
 .section-empty {

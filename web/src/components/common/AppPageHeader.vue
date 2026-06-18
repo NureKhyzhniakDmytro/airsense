@@ -42,6 +42,7 @@ defineProps<{
 }
 
 .app-page-header__copy {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -64,10 +65,11 @@ defineProps<{
 
 .app-page-header h1 {
   color: var(--app-text-strong);
-  font-size: clamp(1.2rem, 1.5vw, 1.5rem);
+  font-size: 1.35rem;
   font-weight: 780;
   line-height: 1.18;
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .app-page-header p {
@@ -96,6 +98,10 @@ defineProps<{
   .app-page-header__actions {
     justify-content: flex-start;
     width: 100%;
+  }
+
+  .app-page-header h1 {
+    font-size: 1.2rem;
   }
 }
 </style>

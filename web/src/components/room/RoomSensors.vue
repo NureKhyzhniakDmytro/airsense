@@ -76,7 +76,7 @@
     
     <EmptyState
       v-else
-      class="section-empty"
+      class="section-empty empty-state--fill empty-state--centered"
       title="No sensors"
       description="Add a sensor to collect room telemetry and feed automation decisions."
       icon="pi pi-bullseye"
