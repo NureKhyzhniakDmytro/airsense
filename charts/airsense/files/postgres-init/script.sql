@@ -9,13 +9,16 @@ CREATE TABLE "users" (
 
 CREATE TABLE "environments" (
                                 "id" serial PRIMARY KEY,
-                                "name" varchar NOT NULL
+                                "name" varchar NOT NULL,
+                                "icon" varchar(64) NOT NULL DEFAULT 'building'
 );
 
 CREATE TABLE "rooms" (
                          "id" serial PRIMARY KEY,
                          "name" varchar NOT NULL,
-                         "environment_id" int NOT NULL
+                         "environment_id" int NOT NULL,
+                         "icon" varchar(64) NOT NULL DEFAULT 'room',
+                         "layout" jsonb NOT NULL DEFAULT '{"width":6,"height":4,"unit":"m","geometry":{"type":"rectangle","points":[{"x":0,"y":0},{"x":6,"y":0},{"x":6,"y":4},{"x":0,"y":4}]},"items":[]}'::jsonb
 );
 
 CREATE TABLE "settings" (
@@ -70,6 +73,43 @@ CREATE TABLE "sensor_data" (
                                "sent_at" timestamp NOT NULL
 );
 
+CREATE TABLE "ventilation_commands" (
+                                        "id" bigserial PRIMARY KEY,
+                                        "room_id" int NOT NULL,
+                                        "device_id" int,
+                                        "timestamp" timestamptz NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+                                        "source" varchar(64) NOT NULL,
+                                        "command_type" varchar(64) NOT NULL,
+                                        "requested_power" real,
+                                        "payload" jsonb NOT NULL DEFAULT '{}'::jsonb,
+                                        "status" varchar(32) NOT NULL DEFAULT 'created'
+);
+
+CREATE INDEX "idx_ventilation_commands_room_timestamp"
+    ON "ventilation_commands" ("room_id", "timestamp" DESC);
+
+CREATE TABLE "ai_model_versions" (
+                                     "id" bigserial PRIMARY KEY,
+                                     "version" varchar(128) UNIQUE NOT NULL,
+                                     "model_path" varchar(512) NOT NULL,
+                                     "metrics" jsonb NOT NULL DEFAULT '{}'::jsonb,
+                                     "trained_from" timestamptz,
+                                     "trained_to" timestamptz,
+                                     "created_at" timestamptz NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+                                     "active" bool NOT NULL DEFAULT FALSE
+);
+
+CREATE INDEX "idx_ai_model_versions_active_created"
+    ON "ai_model_versions" ("active", "created_at" DESC);
+
+CREATE TABLE "demo_room_profiles" (
+                                      "room_id" int PRIMARY KEY,
+                                      "scenario" varchar(64) NOT NULL DEFAULT 'auto',
+                                      "ventilation_power_override" real,
+                                      "occupancy_override" int,
+                                      "updated_at" timestamptz NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+
 CREATE TABLE "parameters" (
                               "id" serial PRIMARY KEY,
                               "name" varchar NOT NULL,
@@ -108,3 +148,9 @@ ALTER TABLE "sensor_data" ADD FOREIGN KEY ("parameter_id") REFERENCES "parameter
 ALTER TABLE "sensor_type_parameters" ADD FOREIGN KEY ("type_id") REFERENCES "sensor_types" ("id") ON DELETE CASCADE;
 
 ALTER TABLE "sensor_type_parameters" ADD FOREIGN KEY ("parameter_id") REFERENCES "parameters" ("id");
+
+ALTER TABLE "ventilation_commands" ADD FOREIGN KEY ("room_id") REFERENCES "rooms" ("id") ON DELETE CASCADE;
+
+ALTER TABLE "ventilation_commands" ADD FOREIGN KEY ("device_id") REFERENCES "devices" ("id") ON DELETE SET NULL;
+
+ALTER TABLE "demo_room_profiles" ADD FOREIGN KEY ("room_id") REFERENCES "rooms" ("id") ON DELETE CASCADE;

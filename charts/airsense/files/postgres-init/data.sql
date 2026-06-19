@@ -18,7 +18,9 @@ BEGIN
     VALUES
         ('temperature', '°C', -50, 50),
         ('humidity', '%', 0, 100),
-        ('pressure', 'hPa', 300, 1100);
+        ('pressure', 'hPa', 300, 1100),
+        ('co2', 'ppm', 300, 5000),
+        ('occupancy', 'people', 0, 100);
 END;
 $$ LANGUAGE plpgsql;
 
@@ -30,7 +32,10 @@ BEGIN
         ('Temperature Sensor'),
         ('Humidity Sensor'),
         ('Pressure Sensor'),
-        ('Temperature and Humidity Sensor');
+        ('Temperature and Humidity Sensor'),
+        ('Air Quality Sensor'),
+        ('Occupancy Sensor'),
+        ('Microclimate Sensor');
 END;
 $$ LANGUAGE plpgsql;
 
@@ -43,7 +48,13 @@ BEGIN
         (2,2),
         (3,3),
         (4, 1),
-        (4, 2);
+        (4, 2),
+        (5, 4),
+        (6, 5),
+        (7, 1),
+        (7, 2),
+        (7, 4),
+        (7, 5);
 END;
 $$ LANGUAGE plpgsql;
 
