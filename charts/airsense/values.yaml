@@ -19,6 +19,7 @@ backend:
   port: 8080
   aspnetcoreUrls: http://+:8080
   mqttConnectionUri: mqtt://emqx:1883
+  aiPredictionServiceUrl: http://ai-prediction-service:8000
   resources:
     requests:
       cpu: 100m
@@ -172,3 +173,68 @@ frontend:
     host: ""
     annotations: {}
     tls: []
+
+aiPrediction:
+  enabled: true
+  name: ai-prediction-service
+  image:
+    repository: airsense-ai-prediction
+    tag: local
+    pullPolicy: Never
+  port: 8000
+  service:
+    port: 8000
+  modelPath: /models/model.joblib
+  modelStorage:
+    enabled: true
+    size: 1Gi
+    storageClassName: ""
+    mountPath: /models
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1024Mi
+  startupProbe:
+    failureThreshold: 30
+    periodSeconds: 2
+  readinessProbe:
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  livenessProbe:
+    initialDelaySeconds: 20
+    periodSeconds: 20
+  hpa:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 3
+    targetCPUUtilizationPercentage: 70
+
+aiTraining:
+  enabled: true
+  schedule: "*/30 * * * *"
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+
+deviceTelemetrySimulator:
+  enabled: true
+  name: device-telemetry-simulator
+  image:
+    repository: airsense-device-telemetry-simulator
+    tag: local
+    pullPolicy: Never
+  roomCount: "4"
+  demoEnvironmentName: "AirSense Demo Environment"
+  demoRoomPrefix: "Demo Room"
+  publishIntervalSeconds: "10"
+  scenarioRotationSeconds: "300"
+  mqttUsername: api
+  resources:
+    requests:
+      cpu: 50m
+      memory: 96Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi

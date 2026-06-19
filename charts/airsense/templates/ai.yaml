@@ -1,0 +1,269 @@
+{{- if or .Values.aiPrediction.enabled .Values.deviceTelemetrySimulator.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: airsense-ai-config
+  labels:
+    {{- include "airsense.labels" . | nindent 4 }}
+data:
+  MODEL_PATH: {{ .Values.aiPrediction.modelPath | quote }}
+  ROOM_COUNT: {{ .Values.deviceTelemetrySimulator.roomCount | quote }}
+  DEMO_ENVIRONMENT_NAME: {{ .Values.deviceTelemetrySimulator.demoEnvironmentName | quote }}
+  DEMO_ROOM_PREFIX: {{ .Values.deviceTelemetrySimulator.demoRoomPrefix | quote }}
+  PUBLISH_INTERVAL_SECONDS: {{ .Values.deviceTelemetrySimulator.publishIntervalSeconds | quote }}
+  SCENARIO_ROTATION_SECONDS: {{ .Values.deviceTelemetrySimulator.scenarioRotationSeconds | quote }}
+---
+{{- end }}
+{{- if and .Values.aiPrediction.enabled .Values.aiPrediction.modelStorage.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ai-model-storage
+  labels:
+    {{- include "airsense.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+{{- if .Values.aiPrediction.modelStorage.storageClassName }}
+  storageClassName: {{ .Values.aiPrediction.modelStorage.storageClassName | quote }}
+{{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.aiPrediction.modelStorage.size | quote }}
+---
+{{- end }}
+{{- if .Values.aiPrediction.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.aiPrediction.name }}
+  labels:
+    {{- include "airsense.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ .Values.aiPrediction.name }}
+spec:
+  selector:
+    app: {{ .Values.aiPrediction.name }}
+  ports:
+    - name: http
+      port: {{ .Values.aiPrediction.service.port }}
+      targetPort: {{ .Values.aiPrediction.port }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.aiPrediction.name }}
+  labels:
+    {{- include "airsense.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ .Values.aiPrediction.name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.aiPrediction.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.aiPrediction.name }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: {{ .Values.aiPrediction.name }}
+    spec:
+      containers:
+        - name: {{ .Values.aiPrediction.name }}
+          image: {{ include "airsense.aiPredictionImage" . | quote }}
+          imagePullPolicy: {{ .Values.aiPrediction.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.aiPrediction.port }}
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name }}
+                  key: postgres-url
+            - name: MODEL_PATH
+              valueFrom:
+                configMapKeyRef:
+                  name: airsense-ai-config
+                  key: MODEL_PATH
+          volumeMounts:
+            - name: ai-model-storage
+              mountPath: {{ .Values.aiPrediction.modelStorage.mountPath | quote }}
+          startupProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.aiPrediction.port }}
+            failureThreshold: {{ .Values.aiPrediction.startupProbe.failureThreshold }}
+            periodSeconds: {{ .Values.aiPrediction.startupProbe.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.aiPrediction.port }}
+            initialDelaySeconds: {{ .Values.aiPrediction.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.aiPrediction.readinessProbe.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.aiPrediction.port }}
+            initialDelaySeconds: {{ .Values.aiPrediction.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.aiPrediction.livenessProbe.periodSeconds }}
+          resources:
+            {{- toYaml .Values.aiPrediction.resources | nindent 12 }}
+      volumes:
+        - name: ai-model-storage
+{{- if .Values.aiPrediction.modelStorage.enabled }}
+          persistentVolumeClaim:
+            claimName: ai-model-storage
+{{- else }}
+          emptyDir: {}
+{{- end }}
+---
+{{- if .Values.aiPrediction.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ .Values.aiPrediction.name }}
+  labels:
+    {{- include "airsense.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ .Values.aiPrediction.name }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Values.aiPrediction.name }}
+  minReplicas: {{ .Values.aiPrediction.hpa.minReplicas }}
+  maxReplicas: {{ .Values.aiPrediction.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.aiPrediction.hpa.targetCPUUtilizationPercentage }}
+---
+{{- end }}
+{{- if .Values.aiTraining.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ai-training-job
+  labels:
+    {{- include "airsense.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ai-training-job
+spec:
+  schedule: {{ .Values.aiTraining.schedule | quote }}
+  successfulJobsHistoryLimit: {{ .Values.aiTraining.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.aiTraining.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: ai-training-job
+            app.kubernetes.io/instance: {{ .Release.Name }}
+            app.kubernetes.io/component: ai-training-job
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: ai-training-job
+              image: {{ include "airsense.aiPredictionImage" . | quote }}
+              imagePullPolicy: {{ .Values.aiPrediction.image.pullPolicy }}
+              command: ["python", "-m", "app.training"]
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .Values.secret.name }}
+                      key: postgres-url
+                - name: MODEL_PATH
+                  valueFrom:
+                    configMapKeyRef:
+                      name: airsense-ai-config
+                      key: MODEL_PATH
+              volumeMounts:
+                - name: ai-model-storage
+                  mountPath: {{ .Values.aiPrediction.modelStorage.mountPath | quote }}
+          volumes:
+            - name: ai-model-storage
+{{- if .Values.aiPrediction.modelStorage.enabled }}
+              persistentVolumeClaim:
+                claimName: ai-model-storage
+{{- else }}
+              emptyDir: {}
+{{- end }}
+---
+{{- end }}
+{{- end }}
+{{- if .Values.deviceTelemetrySimulator.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.deviceTelemetrySimulator.name }}
+  labels:
+    {{- include "airsense.labels" . | nindent 4 }}
+    app.kubernetes.io/component: {{ .Values.deviceTelemetrySimulator.name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Values.deviceTelemetrySimulator.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.deviceTelemetrySimulator.name }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/component: {{ .Values.deviceTelemetrySimulator.name }}
+    spec:
+      containers:
+        - name: {{ .Values.deviceTelemetrySimulator.name }}
+          image: {{ include "airsense.deviceTelemetrySimulatorImage" . | quote }}
+          imagePullPolicy: {{ .Values.deviceTelemetrySimulator.image.pullPolicy }}
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: MQTT_HOST
+              value: emqx
+            - name: MQTT_PORT
+              value: {{ .Values.emqx.service.mqttPort | quote }}
+            - name: MQTT_USERNAME
+              value: {{ .Values.deviceTelemetrySimulator.mqttUsername | quote }}
+            - name: MQTT_CLIENT_ID
+              value: api-device-telemetry-$(POD_NAME)
+            - name: MQTT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name }}
+                  key: mqtt-api-password
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name }}
+                  key: postgres-url
+            - name: ROOM_COUNT
+              valueFrom:
+                configMapKeyRef:
+                  name: airsense-ai-config
+                  key: ROOM_COUNT
+            - name: DEMO_ENVIRONMENT_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: airsense-ai-config
+                  key: DEMO_ENVIRONMENT_NAME
+            - name: DEMO_ROOM_PREFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: airsense-ai-config
+                  key: DEMO_ROOM_PREFIX
+            - name: PUBLISH_INTERVAL_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: airsense-ai-config
+                  key: PUBLISH_INTERVAL_SECONDS
+            - name: SCENARIO_ROTATION_SECONDS
+              valueFrom:
+                configMapKeyRef:
+                  name: airsense-ai-config
+                  key: SCENARIO_ROTATION_SECONDS
+          resources:
+            {{- toYaml .Values.deviceTelemetrySimulator.resources | nindent 12 }}
+{{- end }}
