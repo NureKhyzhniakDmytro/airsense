@@ -16,6 +16,7 @@
             @click="setMode('view')"
           />
           <Button
+            v-if="!isReadOnly"
             label="Edit"
             icon="pi pi-pencil"
             :severity="mode === 'edit' ? 'primary' : 'secondary'"
@@ -23,6 +24,7 @@
             @click="setMode('edit')"
           />
         </div>
+        <Tag v-if="isReadOnly" severity="secondary" value="Read only" />
         <Tag v-if="mode === 'edit' || isDirty" :severity="isDirty ? 'warn' : 'success'" :value="isDirty ? 'Unsaved' : 'Saved'" />
         <Button v-if="mode === 'view'" label="Refresh data" icon="pi pi-refresh" severity="secondary" variant="text" :loading="isTelemetryLoading" @click="() => loadTelemetry()" />
         <Button v-if="mode === 'edit'" label="Reload" icon="pi pi-refresh" severity="secondary" variant="text" :disabled="isSaving" @click="reloadLayout" />
@@ -193,11 +195,37 @@
               <div
                 ref="boardRef"
                 class="layout-board"
-                :class="{ 'layout-board--edit': mode === 'edit' }"
+                :class="{
+                  'layout-board--edit': mode === 'edit',
+                  'layout-board--map-visible': mode === 'view' && hasMapOverlay
+                }"
                 :style="boardStyle"
                 @pointerdown="clearSelection"
               >
-                <div class="layout-board__grid" aria-hidden="true" />
+                <svg
+                  class="layout-board__grid"
+                  :viewBox="`0 0 ${layout.width} ${layout.height}`"
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                >
+                  <defs>
+                    <clipPath :id="gridClipId">
+                      <polygon :points="geometrySvgPoints" />
+                    </clipPath>
+                  </defs>
+                  <g :clip-path="`url(#${gridClipId})`">
+                    <line
+                      v-for="line in boardGridLines"
+                      :key="line.id"
+                      class="layout-board__grid-line"
+                      :class="{ 'layout-board__grid-line--major': line.major }"
+                      :x1="line.x1"
+                      :y1="line.y1"
+                      :x2="line.x2"
+                      :y2="line.y2"
+                    />
+                  </g>
+                </svg>
                 <svg
                   class="layout-board__shape"
                   :viewBox="`0 0 ${layout.width} ${layout.height}`"
@@ -218,8 +246,8 @@
                   />
                 </svg>
                 <svg
-                  v-if="mode === 'view' && thermalZones.length"
-                  class="layout-board__thermal-zones"
+                  v-if="mode === 'view' && hasMapOverlay"
+                  class="layout-board__map-field"
                   :viewBox="`0 0 ${layout.width} ${layout.height}`"
                   preserveAspectRatio="none"
                   aria-hidden="true"
@@ -228,16 +256,92 @@
                     <clipPath :id="roomClipId">
                       <polygon :points="geometrySvgPoints" />
                     </clipPath>
-                  </defs>
-                  <g :clip-path="`url(#${roomClipId})`">
-                    <circle
-                      v-for="zone in thermalZones"
-                      :key="zone.id"
-                      class="layout-board__thermal-zone"
-                      :class="`layout-board__thermal-zone--${zone.tone}`"
+                    <radialGradient
+                      v-for="zone in mapGradientZones"
+                      :id="zone.gradientId"
+                      :key="zone.gradientId"
+                      gradientUnits="userSpaceOnUse"
                       :cx="zone.x"
                       :cy="zone.y"
                       :r="zone.radius"
+                    >
+                      <stop offset="0%" :stop-color="zone.color" :stop-opacity="zone.centerOpacity" />
+                      <stop offset="56%" :stop-color="zone.color" :stop-opacity="zone.midOpacity" />
+                      <stop offset="100%" :stop-color="zone.color" stop-opacity="0" />
+                    </radialGradient>
+                  </defs>
+                  <g :clip-path="`url(#${roomClipId})`">
+                    <rect
+                      v-if="mapGradientBase"
+                      class="layout-board__map-gradient-base"
+                      x="0"
+                      y="0"
+                      :width="layout.width"
+                      :height="layout.height"
+                      :style="{ fill: mapGradientBase.color, opacity: mapGradientBase.opacity }"
+                    />
+                    <circle
+                      v-for="zone in mapGradientZones"
+                      :key="zone.id"
+                      class="layout-board__map-gradient-zone"
+                      :cx="zone.x"
+                      :cy="zone.y"
+                      :r="zone.radius"
+                      :fill="`url(#${zone.gradientId})`"
+                    />
+                    <g class="layout-board__map-cells">
+                      <rect
+                        v-for="cell in mapCells"
+                        :key="cell.id"
+                        class="layout-board__map-cell"
+                        :x="cell.x"
+                        :y="cell.y"
+                        :width="cell.width"
+                        :height="cell.height"
+                        :style="{ fill: cell.color, opacity: cell.opacity }"
+                      />
+                    </g>
+                    <path
+                      v-for="overlay in ventInfluenceOverlays"
+                      :key="overlay.id"
+                      class="layout-board__vent-influence"
+                      :d="overlay.path"
+                      :style="{
+                        fill: overlay.color,
+                        fillOpacity: overlay.fillOpacity,
+                        stroke: overlay.color,
+                        opacity: overlay.opacity,
+                        '--layout-influence-stroke-opacity': overlay.strokeOpacity
+                      }"
+                    />
+                    <circle
+                      v-for="overlay in sensorInfluenceOverlays"
+                      :key="overlay.id"
+                      class="layout-board__sensor-influence"
+                      :cx="overlay.x"
+                      :cy="overlay.y"
+                      :r="overlay.radius"
+                      :style="{
+                        fill: overlay.color,
+                        fillOpacity: overlay.fillOpacity,
+                        stroke: overlay.color,
+                        opacity: overlay.opacity,
+                        '--layout-influence-stroke-opacity': overlay.strokeOpacity
+                      }"
+                    />
+                    <path
+                      v-for="stream in airflowStreamlines"
+                      :key="stream.id"
+                      class="layout-board__airflow-stream"
+                      :d="stream.path"
+                      pathLength="1"
+                      :style="{
+                        '--layout-airflow-opacity': stream.opacity,
+                        strokeWidth: stream.strokeWidth,
+                        '--layout-airflow-delay': stream.delay,
+                        '--layout-airflow-duration': stream.duration,
+                        '--layout-airflow-dasharray': stream.dashArray
+                      }"
                     />
                   </g>
                 </svg>
@@ -258,6 +362,7 @@
                   ]"
                   :aria-label="getItemAriaLabel(item)"
                   :role="mode === 'view' ? 'img' : undefined"
+                  :tabindex="mode === 'view' && hasItemTelemetry(item) ? 0 : undefined"
                   :title="getItemPlacementTitle(item)"
                   :style="[getItemStyle(item), getItemTelemetryStyle(item)]"
                   @click.stop="selectLayoutItem(item)"
@@ -266,23 +371,28 @@
                   <span class="layout-item__content">
                     <span class="material-symbols-outlined">{{ getItemType(item.type).symbol }}</span>
                     <span class="layout-item__label">{{ getItemMapLabel(item) }}</span>
-                    <span v-if="mode === 'view' && getItemPrimaryMetric(item)" class="layout-item__primary-metric">
-                      {{ getItemPrimaryMetric(item)?.shortValue }}
-                    </span>
                   </span>
-                  <span v-if="mode === 'view' && getItemSecondaryMetrics(item).length" class="layout-item__metric-popover" aria-hidden="true">
-                    <span
-                      v-for="metric in getItemSecondaryMetrics(item)"
-                      :key="metric.key"
-                      class="layout-item__metric-chip"
-                      :class="`layout-item__metric-chip--${metric.tone}`"
-                    >
-                      <span class="material-symbols-outlined">{{ metric.icon }}</span>
-                      <strong>{{ metric.shortValue }}</strong>
-                    </span>
-                  </span>
-                  <span v-if="isDirectionalItem(item.type)" class="layout-item__direction" aria-hidden="true">
+                  <span v-if="mode === 'edit' && isDirectionalItem(item.type)" class="layout-item__direction" aria-hidden="true">
                     <span class="layout-item__direction-head" />
+                  </span>
+                  <span
+                    v-if="mode === 'view' && getItemHoverMetrics(item).length"
+                    class="layout-item__metric-popover"
+                    aria-hidden="true"
+                  >
+                    <span class="layout-item__metric-title">{{ getItemDisplayName(item) }}</span>
+                    <span class="layout-item__metric-list">
+                      <span
+                        v-for="metric in getItemHoverMetrics(item)"
+                        :key="metric.key"
+                        class="layout-item__metric-chip"
+                        :class="`layout-item__metric-chip--${metric.tone}`"
+                      >
+                        <span class="material-symbols-outlined">{{ metric.icon }}</span>
+                        <strong>{{ metric.shortValue }}</strong>
+                        <small>{{ metric.label }}</small>
+                      </span>
+                    </span>
                   </span>
                   <span v-if="canTransformItem(item)" class="layout-item__rotate-arm" aria-hidden="true" />
                   <span
@@ -306,18 +416,48 @@
                     />
                   </template>
                 </component>
-                <div v-if="mode === 'view' && boardMetrics.length" class="layout-board__metric-strip" aria-label="Room telemetry summary">
-                  <span
-                    v-for="metric in boardMetrics"
-                    :key="metric.key"
-                    class="layout-board__metric-card"
-                    :class="`layout-board__metric-card--${metric.tone}`"
-                  >
-                    <span class="material-symbols-outlined">{{ metric.icon }}</span>
-                    <strong>{{ metric.shortValue }}</strong>
-                    <small>{{ metric.label }}</small>
-                  </span>
-                </div>
+                <svg
+                  v-if="mode === 'view' && ventDirectionCues.length"
+                  class="layout-board__airflow-cues"
+                  :viewBox="`0 0 ${layout.width} ${layout.height}`"
+                  preserveAspectRatio="none"
+                  aria-hidden="true"
+                >
+                  <defs>
+                    <clipPath :id="airflowCueClipId">
+                      <polygon :points="geometrySvgPoints" />
+                    </clipPath>
+                    <marker
+                      :id="airflowCueMarkerId"
+                      markerWidth="7"
+                      markerHeight="7"
+                      refX="6"
+                      refY="3.5"
+                      orient="auto"
+                      markerUnits="strokeWidth"
+                    >
+                      <path d="M0,0 L7,3.5 L0,7 Z" class="layout-board__airflow-cue-marker" />
+                    </marker>
+                  </defs>
+                  <g :clip-path="`url(#${airflowCueClipId})`">
+                    <g
+                      v-for="cue in ventDirectionCues"
+                      :key="cue.id"
+                      class="layout-board__airflow-cue"
+                      :style="{ opacity: cue.opacity }"
+                    >
+                      <line
+                        class="layout-board__airflow-cue-stem"
+                        :x1="cue.x1"
+                        :y1="cue.y1"
+                        :x2="cue.x2"
+                        :y2="cue.y2"
+                        pathLength="1"
+                        :marker-end="`url(#${airflowCueMarkerId})`"
+                      />
+                    </g>
+                  </g>
+                </svg>
               </div>
             </div>
           </div>
@@ -329,6 +469,58 @@
               {{ itemType.label }}
             </span>
           </div>
+          <section v-if="mode === 'view'" class="layout-telemetry-panel" aria-label="Room telemetry values">
+            <div class="layout-telemetry-panel__header">
+              <div class="layout-telemetry-panel__title">
+                <span>Live values</span>
+                <small v-if="hasTelemetryLoaded">{{ sensors.length }} sensors / {{ devices.length }} vents</small>
+              </div>
+              <label class="layout-map-control">
+                <span>Map</span>
+                <Select
+                  :model-value="activeMapLayer"
+                  :options="mapLayerOptions"
+                  option-label="label"
+                  option-value="value"
+                  class="layout-map-control__select"
+                  @update:model-value="setActiveMapLayer($event)"
+                >
+                  <template #value="{ value }">
+                    <span class="layout-map-select-value">
+                      <span class="material-symbols-outlined">{{ getMapLayerOption(value).icon }}</span>
+                      <span>{{ getMapLayerOption(value).label }}</span>
+                    </span>
+                  </template>
+                  <template #option="{ option }">
+                    <span class="layout-map-select-option">
+                      <span class="material-symbols-outlined">{{ option.icon }}</span>
+                      <span>
+                        <strong>{{ option.label }}</strong>
+                        <small>{{ option.description }}</small>
+                      </span>
+                    </span>
+                  </template>
+                </Select>
+              </label>
+            </div>
+
+            <div v-if="boardMetrics.length" class="layout-telemetry-summary">
+              <span
+                v-for="metric in boardMetrics"
+                :key="metric.key"
+                class="layout-telemetry-card"
+                :class="`layout-telemetry-card--${metric.tone}`"
+              >
+                <span class="material-symbols-outlined">{{ metric.icon }}</span>
+                <strong>{{ metric.shortValue }}</strong>
+                <small>{{ metric.label }}</small>
+              </span>
+            </div>
+
+            <span v-if="hasTelemetryLoaded && !boardMetrics.length" class="layout-telemetry-panel__empty">
+              No live values for placed sensors or ventilation devices.
+            </span>
+          </section>
         </div>
       </main>
 
@@ -441,7 +633,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, inject, onMounted, onUnmounted, ref, watch, type ComputedRef } from "vue";
 import { useRoute } from "vue-router";
 import Button from "primevue/button";
 import InputNumber from "primevue/inputnumber";
@@ -472,6 +664,7 @@ type EditorMode = "view" | "edit";
 type ResizeHandle = "nw" | "ne" | "sw" | "se";
 type RoomAssetKind = "sensor" | "vent";
 type TelemetryTone = "cool" | "normal" | "warm" | "hot" | "humid" | "co2" | "vent";
+type RoomMapLayer = "off" | "temperature" | "humidity" | "co2" | "device_speed";
 type LayoutItemOption = {
   value: RoomLayoutItemType;
   label: string;
@@ -487,6 +680,13 @@ type GeometryOption = {
   label: string;
   description: string;
   symbol: string;
+};
+type MapLayerOption = {
+  value: RoomMapLayer;
+  label: string;
+  description: string;
+  icon: string;
+  source: "none" | RoomAssetKind;
 };
 type TelemetryEntity = {
   id: number;
@@ -504,12 +704,115 @@ type LayoutMetric = {
   icon: string;
   tone: TelemetryTone;
 };
-type ThermalZone = {
+type MapCell = {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: string;
+  opacity: string;
+};
+type MapCellDraft = Omit<MapCell, "color" | "opacity"> & {
+  field: FieldValue;
+};
+type MapColorContext = {
+  min: number;
+  max: number;
+  mean: number;
+  spread: number;
+};
+type SensorInfluenceOverlay = {
   id: string;
   x: number;
   y: number;
   radius: number;
-  tone: TelemetryTone;
+  color: string;
+  fillOpacity: string;
+  opacity: string;
+  strokeOpacity: string;
+};
+type VentInfluenceOverlay = {
+  id: string;
+  path: string;
+  color: string;
+  fillOpacity: string;
+  opacity: string;
+  strokeOpacity: string;
+};
+type BoardGridLine = {
+  id: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  major: boolean;
+};
+type AirflowVector = {
+  id: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  opacity: string;
+};
+type VentDirectionCue = AirflowVector;
+type AirflowStreamline = {
+  id: string;
+  path: string;
+  opacity: string;
+  delay: string;
+  duration: string;
+  dashArray: string;
+  strokeWidth: string;
+};
+type MapGradientBase = {
+  color: string;
+  opacity: string;
+};
+type MapGradientZone = {
+  id: string;
+  gradientId: string;
+  x: number;
+  y: number;
+  radius: number;
+  color: string;
+  centerOpacity: string;
+  midOpacity: string;
+};
+type MapGradientDraft = {
+  id: string;
+  point: FieldPoint;
+  field: FieldValue;
+  radius: number;
+};
+type FieldPoint = {
+  x: number;
+  y: number;
+};
+type BoundaryProjection = {
+  point: FieldPoint;
+  distance: number;
+};
+type MapSample = {
+  id: string;
+  item: RoomLayoutItem;
+  point: FieldPoint;
+  value: number;
+};
+type FieldValue = {
+  value: number;
+  confidence: number;
+  airflow: number;
+};
+type SensorFieldBase = {
+  value: number;
+  confidence: number;
+};
+type VentConditioning = {
+  value: number;
+  intensity: number;
+  confidence: number;
 };
 type PaginatedData<T> = {
   data?: T[];
@@ -532,6 +835,13 @@ const geometryOptions: GeometryOption[] = [
   { value: "t_shape", label: "T-shape", description: "Cross-zone or combined working area", symbol: "join_inner" },
   { value: "custom", label: "Custom polygon", description: "Manual contour by editable vertices", symbol: "conversion_path" },
 ];
+const mapLayerOptions: MapLayerOption[] = [
+  { value: "temperature", label: "Heat", description: "Temperature field from room sensors", icon: PARAMETER_ICONS.temperature, source: "sensor" },
+  { value: "humidity", label: "Humidity", description: "Humidity field from room sensors", icon: PARAMETER_ICONS.humidity, source: "sensor" },
+  { value: "co2", label: "CO₂", description: "CO₂ concentration field from room sensors", icon: PARAMETER_ICONS.co2, source: "sensor" },
+  { value: "device_speed", label: "Ventilation", description: "Fan speed field from ventilation devices", icon: "mode_fan", source: "vent" },
+  { value: "off", label: "Off", description: "No map overlay", icon: "layers_clear", source: "none" },
+];
 const resizeHandles: ResizeHandle[] = ["nw", "ne", "sw", "se"];
 
 const route = useRoute();
@@ -540,7 +850,12 @@ const envId = Number(route.params.envId);
 const roomId = Number(route.params.roomId);
 const layoutLoadTimeoutMs = 5000;
 const telemetryRefreshMs = 30000;
+const mapGridColumns = 96;
+const mapGradientColumns = 24;
 const roomClipId = `layout-room-clip-${roomId}`;
+const gridClipId = `layout-room-grid-clip-${roomId}`;
+const airflowCueMarkerId = `layout-airflow-cue-marker-${roomId}`;
+const airflowCueClipId = `layout-airflow-cue-clip-${roomId}`;
 const boardRef = ref<HTMLElement | null>(null);
 const layout = ref<RoomLayout>(createDefaultLayout());
 const savedLayout = ref<RoomLayout>(createDefaultLayout());
@@ -555,6 +870,9 @@ const hasLoaded = ref(false);
 const hasTelemetryLoaded = ref(false);
 const errorMessage = ref("");
 const telemetryError = ref("");
+const activeMapLayer = ref<RoomMapLayer>("temperature");
+const injectedReadOnly = inject<ComputedRef<boolean>>("roomReadOnly", computed(() => false));
+const isReadOnly = computed(() => injectedReadOnly.value);
 let telemetryInterval: ReturnType<typeof setInterval> | undefined;
 
 const activeDrag = ref<{
@@ -588,6 +906,7 @@ const selectedBoundAsset = computed(() => (selectedItem.value ? getBoundAssetSum
 const isSelectedRequiredAsset = computed(() => Boolean(selectedBoundAsset.value));
 const isDirty = computed(() => JSON.stringify(layout.value) !== JSON.stringify(savedLayout.value));
 const geometryPoints = computed(() => layout.value.geometry.points);
+const roomCentroid = computed<FieldPoint>(() => calculateRoomCentroid(geometryPoints.value));
 const geometrySvgPoints = computed(() => geometryPoints.value.map((point) => `${point.x},${point.y}`).join(" "));
 const canEditCustomGeometry = computed(() => mode.value === "edit" && layout.value.geometry.type === "custom");
 const vertexRadius = computed(() => Math.max(0.07, Math.min(layout.value.width, layout.value.height) * 0.018));
@@ -597,20 +916,296 @@ const viewLegendItemTypes = computed(() => {
 });
 const sensorLayoutItems = computed(() => layout.value.items.filter((item) => getItemType(item.type).value === "sensor"));
 const ventLayoutItems = computed(() => layout.value.items.filter((item) => getItemType(item.type).value === "vent"));
-const thermalZones = computed<ThermalZone[]>(() => sensorLayoutItems.value
-  .map((item) => {
-    const temperature = getSensorParameter(getSensorForItem(item), "temperature");
-    if (!temperature || temperature.value == null) return null;
+const boardGridLines = computed<BoardGridLine[]>(() => {
+  const step = getBoardGridStep();
+  const majorStep = step * 2;
+  const lines: BoardGridLine[] = [];
 
+  for (let x = step; x < layout.value.width; x += step) {
+    const value = roundMapCoordinate(x);
+    lines.push({
+      id: `grid-x-${value}`,
+      x1: value,
+      y1: 0,
+      x2: value,
+      y2: layout.value.height,
+      major: isGridMajorLine(value, majorStep),
+    });
+  }
+
+  for (let y = step; y < layout.value.height; y += step) {
+    const value = roundMapCoordinate(y);
+    lines.push({
+      id: `grid-y-${value}`,
+      x1: 0,
+      y1: value,
+      x2: layout.value.width,
+      y2: value,
+      major: isGridMajorLine(value, majorStep),
+    });
+  }
+
+  return lines;
+});
+const mapCells = computed<MapCell[]>(() => {
+  const layer = activeMapLayer.value;
+  if (layer === "off" || layer !== "device_speed") return [];
+
+  const columns = mapGridColumns;
+  const rows = clamp(Math.round((columns * layout.value.height) / layout.value.width), 32, 72);
+  const cellWidth = layout.value.width / columns;
+  const cellHeight = layout.value.height / rows;
+  const cellOverlap = Math.max(cellWidth, cellHeight) * 0.1;
+  const samples = getMapSamples(layer);
+  if (layer !== "device_speed" && !samples.length) return [];
+
+  const drafts: MapCellDraft[] = [];
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const point = {
+        x: (column + 0.5) * cellWidth,
+        y: (row + 0.5) * cellHeight,
+      };
+
+      if (!isPointInsidePolygon(point, geometryPoints.value)) continue;
+
+      const field = layer === "device_speed"
+        ? getVentilationFieldValue(point)
+        : getSensorFieldValue(point, layer, samples);
+
+      if (!field) continue;
+
+      drafts.push({
+        id: `${layer}-${row}-${column}`,
+        x: roundMapCoordinate(column * cellWidth - cellOverlap / 2),
+        y: roundMapCoordinate(row * cellHeight - cellOverlap / 2),
+        width: roundMapCoordinate(cellWidth + cellOverlap),
+        height: roundMapCoordinate(cellHeight + cellOverlap),
+        field,
+      });
+    }
+  }
+
+  const colorContext = createMapColorContext(layer, drafts.map((draft) => draft.field.value));
+  return drafts.map((draft) => ({
+    id: draft.id,
+    x: draft.x,
+    y: draft.y,
+    width: draft.width,
+    height: draft.height,
+    color: getMapCellColor(layer, draft.field.value, colorContext),
+    opacity: String(round(getMapCellOpacity(layer, draft.field))),
+  }));
+});
+const mapGradientSamples = computed<MapSample[]>(() => {
+  const layer = activeMapLayer.value;
+  if (layer === "off" || layer === "device_speed") return [];
+  return getMapSamples(layer);
+});
+const mapGradientFieldDrafts = computed<MapGradientDraft[]>(() => {
+  const layer = activeMapLayer.value;
+  const samples = mapGradientSamples.value;
+  if (!samples.length) return [];
+
+  const columns = mapGradientColumns;
+  const rows = clamp(Math.round((columns * layout.value.height) / layout.value.width), 12, 24);
+  const cellWidth = layout.value.width / columns;
+  const cellHeight = layout.value.height / rows;
+  const radius = clamp(Math.max(cellWidth, cellHeight) * 2.25, 0.55, getRoomDiagonal() * 0.24);
+  const drafts: MapGradientDraft[] = [];
+
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const point = {
+        x: (column + 0.5) * cellWidth,
+        y: (row + 0.5) * cellHeight,
+      };
+
+      if (!isPointInsidePolygon(point, geometryPoints.value)) continue;
+
+      const field = getSensorFieldValue(point, layer, samples);
+      if (!field) continue;
+
+      drafts.push({
+        id: `${layer}-${row}-${column}`,
+        point,
+        field,
+        radius,
+      });
+    }
+  }
+
+  return drafts;
+});
+const mapGradientBase = computed<MapGradientBase | null>(() => {
+  const layer = activeMapLayer.value;
+  const drafts = mapGradientFieldDrafts.value;
+  if (!drafts.length) return null;
+
+  const values = drafts.map((draft) => draft.field.value);
+  const context = createMapColorContext(layer, values);
+  const background = getLayerBackgroundValue(layer, values);
+
+  return {
+    color: getMapCellColor(layer, background, context),
+    opacity: String(round(layer === "temperature" ? 0.2 : 0.16)),
+  };
+});
+const mapGradientZones = computed<MapGradientZone[]>(() => {
+  const layer = activeMapLayer.value;
+  const drafts = mapGradientFieldDrafts.value;
+  if (!drafts.length) return [];
+
+  const values = drafts.map((draft) => draft.field.value);
+  const context = createMapColorContext(layer, values);
+  const background = getLayerBackgroundValue(layer, values);
+  const valueRange = Math.max(Math.abs((context?.max ?? Math.max(...values)) - (context?.min ?? Math.min(...values))), getLayerMinimumContrastRange(layer));
+
+  return drafts.map((draft) => {
+    const deviation = clamp(Math.abs(draft.field.value - background) / valueRange, 0.22, 1);
+    const airflowBoost = clamp(draft.field.airflow * 0.26, 0, 0.26);
     return {
-      id: item.id,
-      x: item.x + item.width / 2,
-      y: item.y + item.height / 2,
-      radius: Math.max(Math.min(layout.value.width, layout.value.height) * 0.22, Math.max(item.width, item.height) * 1.8),
-      tone: getTemperatureTone(temperature.value),
+      id: `map-gradient-${draft.id}`,
+      gradientId: `layout-map-gradient-${roomId}-${draft.id}`,
+      x: roundMapCoordinate(draft.point.x),
+      y: roundMapCoordinate(draft.point.y),
+      radius: round(draft.radius),
+      color: getMapCellColor(layer, draft.field.value, context),
+      centerOpacity: String(round(0.16 + deviation * 0.26 + airflowBoost)),
+      midOpacity: String(round(0.07 + deviation * 0.11 + airflowBoost * 0.55)),
     };
-  })
-  .filter((zone): zone is ThermalZone => zone !== null));
+  });
+});
+const sensorInfluenceOverlays = computed<SensorInfluenceOverlay[]>(() => {
+  const layer = activeMapLayer.value;
+  if (layer === "off" || layer === "device_speed") return [];
+
+  const samples = getMapSamples(layer);
+  if (!samples.length) return [];
+
+  return [];
+});
+const ventInfluenceOverlays = computed<VentInfluenceOverlay[]>(() => {
+  const layer = activeMapLayer.value;
+  if (layer === "off") return [];
+
+  return ventLayoutItems.value
+    .map((item) => {
+      const device = getDeviceForItem(item);
+      if (!device || device.fan_speed === null || device.fan_speed === undefined || Number.isNaN(Number(device.fan_speed))) {
+        return null;
+      }
+
+      const speed = clamp(Number(device.fan_speed), 0, 100);
+      if (speed <= 0) return null;
+
+      const speedRatio = getVentSimulationSpeedRatio(speed);
+      const outlet = getVentOutletPoint(item);
+      const direction = getVentAirflowDirection(item);
+      const reach = getVentVisualReach(speed);
+      const baseHalfWidth = clamp(Math.min(item.width, item.height) * 0.3, 0.08, 0.24);
+      const endHalfWidth = clamp(0.34 + speedRatio * 0.5, 0.34, Math.min(layout.value.width, layout.value.height) * 0.32);
+
+      return {
+        id: `vent-impact-${layer}-${item.id}`,
+        path: createVentPlumePath(outlet, direction, reach, baseHalfWidth, endHalfWidth),
+        color: getVentInfluenceColor(layer),
+        fillOpacity: String(round(0.16 + speedRatio * 0.18)),
+        opacity: String(round(0.44 + speedRatio * 0.28)),
+        strokeOpacity: String(round(0.08 + speedRatio * 0.08)),
+      };
+    })
+    .filter((overlay): overlay is VentInfluenceOverlay => overlay !== null);
+});
+const airflowStreamlines = computed<AirflowStreamline[]>(() => {
+  if (activeMapLayer.value === "off") return [];
+
+  return ventLayoutItems.value.flatMap((item) => {
+    const device = getDeviceForItem(item);
+    if (!device || device.fan_speed === null || device.fan_speed === undefined || Number.isNaN(Number(device.fan_speed))) {
+      return [];
+    }
+
+    const speed = clamp(Number(device.fan_speed), 0, 100);
+    if (speed <= 0) return [];
+
+    const speedRatio = getVentSimulationSpeedRatio(speed);
+    const outlet = getVentOutletPoint(item);
+    const direction = getVentAirflowDirection(item);
+    const reach = getVentVisualReach(speed) * (0.58 + speedRatio * 0.12);
+    const count = speedRatio > 0.72 ? 6 : 5;
+    const spread = clamp(Math.min(item.width, item.height) * (0.16 + speedRatio * 0.16), 0.08, 0.34);
+    const streamRatios = [0, -0.46, 0.38, -0.18, 0.62, -0.68];
+    const streams: AirflowStreamline[] = [];
+
+    for (let index = 0; index < count; index += 1) {
+      const ratio = streamRatios[index] ?? 0;
+      const progress = (index + 0.45) / (count + 0.55);
+      const startDistance = reach * (0.14 + progress * 0.54);
+      const segmentLength = reach * (0.18 + speedRatio * 0.045) * (index % 2 === 0 ? 1.08 : 0.92);
+      const lateralStart = ratio * spread * (0.42 + progress * 0.52);
+      const lateralEnd = ratio * spread * (0.62 + progress * 0.78);
+      const curve = ((index % 2 === 0 ? 1 : -1) * 0.018 + ratio * 0.024) * (0.48 + speedRatio);
+      const path = createVentStreamlinePath(
+        outlet,
+        direction,
+        startDistance,
+        segmentLength,
+        lateralStart,
+        lateralEnd,
+        curve,
+      );
+
+      streams.push({
+        id: `airflow-stream-${item.id}-${index}`,
+        path,
+        opacity: String(round(0.42 + speedRatio * 0.2 - Math.abs(ratio) * 0.07)),
+        delay: `${round(index * -0.24)}s`,
+        duration: `${round(1.15 - speedRatio * 0.18 + index * 0.06)}s`,
+        dashArray: `${round(0.72 + speedRatio * 0.08)} ${round(0.26 + Math.abs(ratio) * 0.12)}`,
+        strokeWidth: `${round(0.04 + speedRatio * 0.014)}rem`,
+      });
+    }
+
+    return streams;
+  });
+});
+const hasMapOverlay = computed(() => activeMapLayer.value !== "off" && (
+  mapCells.value.length > 0 ||
+  mapGradientZones.value.length > 0 ||
+  ventInfluenceOverlays.value.length > 0 ||
+  airflowStreamlines.value.length > 0
+));
+const ventDirectionCues = computed<VentDirectionCue[]>(() => {
+  if (activeMapLayer.value === "off") return [];
+
+  return ventLayoutItems.value
+    .map((item) => {
+      const device = getDeviceForItem(item);
+      if (!device || device.fan_speed === null || device.fan_speed === undefined || Number.isNaN(Number(device.fan_speed))) {
+        return null;
+      }
+
+      const speed = clamp(Number(device.fan_speed), 0, 100);
+      if (speed <= 0) return null;
+
+      const direction = getVentAirflowDirection(item);
+      const outlet = getVentOutletPoint(item);
+      const cueSize = Math.min(item.width, item.height);
+      const start = offsetPoint(outlet, direction, cueSize * 0.08);
+      const end = offsetPoint(outlet, direction, cueSize * 0.7);
+
+      return {
+        id: `vent-direction-${item.id}`,
+        x1: roundMapCoordinate(start.x),
+        y1: roundMapCoordinate(start.y),
+        x2: roundMapCoordinate(end.x),
+        y2: roundMapCoordinate(end.y),
+        opacity: String(round(0.68 + getVentSimulationSpeedRatio(speed) * 0.22)),
+      };
+    })
+    .filter((cue): cue is VentDirectionCue => cue !== null);
+});
 const boardMetrics = computed<LayoutMetric[]>(() => {
   const metrics: LayoutMetric[] = [];
   const temperatures = getParameterValues("temperature");
@@ -661,6 +1256,10 @@ watch(
   }
 );
 
+watch(isReadOnly, (readOnly) => {
+  if (readOnly) setMode("view");
+});
+
 onMounted(() => {
   void loadLayout();
   void loadTelemetry();
@@ -693,6 +1292,10 @@ function round(value: number) {
   return Math.round(value * 100) / 100;
 }
 
+function roundMapCoordinate(value: number) {
+  return Math.round(value * 10000) / 10000;
+}
+
 function normalizeAngle(value: number) {
   let result = value;
   while (result > 360) result -= 360;
@@ -710,6 +1313,808 @@ function getItemType(type: string): LayoutItemOption {
 
 function getGeometryOption(type: string): GeometryOption {
   return geometryOptions.find((option) => option.value === type) ?? geometryOptions[0];
+}
+
+function getMapLayerOption(value: string | null | undefined): MapLayerOption {
+  return mapLayerOptions.find((option) => option.value === value) ?? mapLayerOptions[0];
+}
+
+function setActiveMapLayer(value: string) {
+  activeMapLayer.value = getMapLayerOption(value).value;
+}
+
+function getItemCenter(item: RoomLayoutItem): FieldPoint {
+  return {
+    x: item.x + item.width / 2,
+    y: item.y + item.height / 2,
+  };
+}
+
+function getItemDirection(item: RoomLayoutItem) {
+  const radians = ((Number(item.rotation) || 0) * Math.PI) / 180;
+  return {
+    x: Math.cos(radians),
+    y: Math.sin(radians),
+  };
+}
+
+function getVentAirflowDirection(item: RoomLayoutItem): FieldPoint {
+  const targetDirection = getVentRoomFacingDirection(item);
+  return getAlignedItemSideDirection(item, targetDirection) ?? getItemDirection(item);
+}
+
+function getVentOutletPoint(item: RoomLayoutItem): FieldPoint {
+  const center = getItemCenter(item);
+  const direction = getVentAirflowDirection(item);
+  const halfExtent = getItemHalfExtentAlongDirection(item, direction);
+  return {
+    x: center.x + direction.x * halfExtent,
+    y: center.y + direction.y * halfExtent,
+  };
+}
+
+function getVentRoomFacingDirection(item: RoomLayoutItem): FieldPoint {
+  const center = getItemCenter(item);
+  const boundary = getClosestRoomBoundaryPoint(center);
+  const centroidDirection = normalizeVector({
+    x: roomCentroid.value.x - center.x,
+    y: roomCentroid.value.y - center.y,
+  });
+
+  if (boundary) {
+    const roomScale = Math.min(layout.value.width, layout.value.height);
+    const wallInfluenceDistance = Math.max(roomScale * 0.34, Math.max(item.width, item.height) * 1.8);
+    const awayFromWall = normalizeVector({
+      x: center.x - boundary.point.x,
+      y: center.y - boundary.point.y,
+    });
+
+    if (boundary.distance <= wallInfluenceDistance && !isZeroVector(awayFromWall)) {
+      return awayFromWall;
+    }
+  }
+
+  return isZeroVector(centroidDirection) ? getItemDirection(item) : centroidDirection;
+}
+
+function getAlignedItemSideDirection(item: RoomLayoutItem, targetDirection: FieldPoint): FieldPoint | null {
+  const sides = getItemSideDirections(item);
+  if (!sides.length || isZeroVector(targetDirection)) return null;
+
+  return sides.reduce((best, side) => {
+    const score = side.x * targetDirection.x + side.y * targetDirection.y;
+    return score > best.score ? { direction: side, score } : best;
+  }, { direction: sides[0], score: Number.NEGATIVE_INFINITY }).direction;
+}
+
+function getItemSideDirections(item: RoomLayoutItem): FieldPoint[] {
+  const xAxis = normalizeVector(getItemDirection(item));
+  const yAxis = normalizeVector(getNormal(xAxis));
+
+  return [
+    xAxis,
+    { x: -xAxis.x, y: -xAxis.y },
+    yAxis,
+    { x: -yAxis.x, y: -yAxis.y },
+  ];
+}
+
+function getItemHalfExtentAlongDirection(item: RoomLayoutItem, direction: FieldPoint) {
+  const xAxis = getItemDirection(item);
+  const yAxis = getNormal(xAxis);
+  const projectedWidth = Math.abs(direction.x * xAxis.x + direction.y * xAxis.y) * (item.width / 2);
+  const projectedHeight = Math.abs(direction.x * yAxis.x + direction.y * yAxis.y) * (item.height / 2);
+  return projectedWidth + projectedHeight;
+}
+
+function getClosestRoomBoundaryPoint(point: FieldPoint): BoundaryProjection | null {
+  const points = geometryPoints.value;
+  if (points.length < 2) return null;
+
+  let closest: BoundaryProjection | null = null;
+  for (let index = 0; index < points.length; index += 1) {
+    const start = points[index];
+    const end = points[(index + 1) % points.length];
+    const projected = getClosestPointOnSegment(point, start, end);
+    const distance = Math.hypot(point.x - projected.x, point.y - projected.y);
+    if (!closest || distance < closest.distance) {
+      closest = { point: projected, distance };
+    }
+  }
+
+  return closest;
+}
+
+function getClosestPointOnSegment(point: FieldPoint, start: FieldPoint, end: FieldPoint): FieldPoint {
+  const deltaX = end.x - start.x;
+  const deltaY = end.y - start.y;
+  const lengthSquared = deltaX ** 2 + deltaY ** 2;
+  if (lengthSquared <= 0.0001) return { x: start.x, y: start.y };
+
+  const ratio = clamp(((point.x - start.x) * deltaX + (point.y - start.y) * deltaY) / lengthSquared, 0, 1);
+  return {
+    x: start.x + deltaX * ratio,
+    y: start.y + deltaY * ratio,
+  };
+}
+
+function normalizeVector(vector: FieldPoint): FieldPoint {
+  const length = Math.hypot(vector.x, vector.y);
+  if (length <= 0.0001) {
+    return { x: 0, y: 0 };
+  }
+
+  return {
+    x: vector.x / length,
+    y: vector.y / length,
+  };
+}
+
+function isZeroVector(vector: FieldPoint) {
+  return Math.abs(vector.x) <= 0.0001 && Math.abs(vector.y) <= 0.0001;
+}
+
+function calculateRoomCentroid(points: RoomLayoutPoint[]): FieldPoint {
+  if (points.length < 3) {
+    return {
+      x: layout.value.width / 2,
+      y: layout.value.height / 2,
+    };
+  }
+
+  let doubleArea = 0;
+  let centroidX = 0;
+  let centroidY = 0;
+
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    const cross = current.x * next.y - next.x * current.y;
+    doubleArea += cross;
+    centroidX += (current.x + next.x) * cross;
+    centroidY += (current.y + next.y) * cross;
+  }
+
+  if (Math.abs(doubleArea) <= 0.0001) {
+    return {
+      x: layout.value.width / 2,
+      y: layout.value.height / 2,
+    };
+  }
+
+  return {
+    x: centroidX / (3 * doubleArea),
+    y: centroidY / (3 * doubleArea),
+  };
+}
+
+function getRoomDiagonal() {
+  return Math.hypot(layout.value.width, layout.value.height);
+}
+
+function getVentSimulationSpeedRatio(speed: number) {
+  const speedRatio = clamp(speed / 100, 0, 1);
+  if (speedRatio <= 0) return 0;
+  return clamp(0.32 + Math.sqrt(speedRatio) * 0.68, 0, 1);
+}
+
+function getVentReach(speed: number) {
+  const speedRatio = getVentSimulationSpeedRatio(speed);
+  const roomSize = Math.min(layout.value.width, layout.value.height);
+  return clamp(roomSize * 0.45 + getRoomDiagonal() * speedRatio * 0.55, roomSize * 0.35, getRoomDiagonal());
+}
+
+function getVentVisualReach(speed: number) {
+  const speedRatio = getVentSimulationSpeedRatio(speed);
+  const roomSize = Math.min(layout.value.width, layout.value.height);
+  return clamp(getVentReach(speed) * (0.42 + speedRatio * 0.16), roomSize * 0.38, getRoomDiagonal() * 0.48);
+}
+
+function getBoardGridStep() {
+  const target = Math.max(layout.value.width, layout.value.height) / 12;
+  return [0.25, 0.5, 1, 2, 5, 10, 20, 50].find((step) => step >= target) ?? 100;
+}
+
+function isGridMajorLine(value: number, majorStep: number) {
+  const ratio = value / majorStep;
+  return Math.abs(ratio - Math.round(ratio)) < 0.0001;
+}
+
+function getNormal(direction: FieldPoint): FieldPoint {
+  return {
+    x: -direction.y,
+    y: direction.x,
+  };
+}
+
+function offsetPoint(point: FieldPoint, vector: FieldPoint, distance: number): FieldPoint {
+  return {
+    x: point.x + vector.x * distance,
+    y: point.y + vector.y * distance,
+  };
+}
+
+function formatSvgPoint(point: FieldPoint) {
+  return `${roundMapCoordinate(point.x)} ${roundMapCoordinate(point.y)}`;
+}
+
+function createVentPlumePath(
+  outlet: FieldPoint,
+  direction: FieldPoint,
+  reach: number,
+  startHalfWidth: number,
+  endHalfWidth: number,
+) {
+  const normal = getNormal(direction);
+  const end = offsetPoint(outlet, direction, reach);
+  const control = offsetPoint(outlet, direction, reach * 0.52);
+  const startLeft = offsetPoint(outlet, normal, startHalfWidth);
+  const startRight = offsetPoint(outlet, normal, -startHalfWidth);
+  const controlLeft = offsetPoint(control, normal, endHalfWidth * 0.7);
+  const controlRight = offsetPoint(control, normal, -endHalfWidth * 0.7);
+  const endLeft = offsetPoint(end, normal, endHalfWidth);
+  const endRight = offsetPoint(end, normal, -endHalfWidth);
+
+  return [
+    `M ${formatSvgPoint(startLeft)}`,
+    `Q ${formatSvgPoint(controlLeft)} ${formatSvgPoint(endLeft)}`,
+    `L ${formatSvgPoint(endRight)}`,
+    `Q ${formatSvgPoint(controlRight)} ${formatSvgPoint(startRight)}`,
+    "Z",
+  ].join(" ");
+}
+
+function createVentStreamlinePath(
+  outlet: FieldPoint,
+  direction: FieldPoint,
+  startDistance: number,
+  segmentLength: number,
+  startOffset: number,
+  endOffset: number,
+  curveOffset: number,
+) {
+  const normal = getNormal(direction);
+  const endDistance = startDistance + segmentLength;
+  const start = offsetPoint(offsetPoint(outlet, direction, startDistance), normal, startOffset);
+  const end = offsetPoint(offsetPoint(outlet, direction, endDistance), normal, endOffset);
+  const control = offsetPoint(
+    offsetPoint(outlet, direction, startDistance + segmentLength * 0.52),
+    normal,
+    (startOffset + endOffset) * 0.58 + curveOffset,
+  );
+
+  return `M ${formatSvgPoint(start)} Q ${formatSvgPoint(control)} ${formatSvgPoint(end)}`;
+}
+
+function getMapSamples(layer: RoomMapLayer): MapSample[] {
+  if (layer === "off" || layer === "device_speed") return [];
+
+  return sensorLayoutItems.value
+    .map((item) => {
+      const parameter = getSensorParameter(getSensorForItem(item), layer);
+      if (!parameter || parameter.value === null || parameter.value === undefined || Number.isNaN(Number(parameter.value))) {
+        return null;
+      }
+
+      return {
+        id: `${layer}-${item.id}`,
+        item,
+        point: getItemCenter(item),
+        value: Number(parameter.value),
+      };
+    })
+    .filter((sample): sample is MapSample => sample !== null);
+}
+
+function getSensorFieldValue(point: FieldPoint, layer: RoomMapLayer, samples: MapSample[]): FieldValue | null {
+  const airflow = getAirflowAtPoint(point);
+  const baseField = interpolateSensorFieldBase(point, layer, samples, airflow);
+  if (!baseField) return null;
+
+  const values = samples.map((sample) => sample.value);
+  const spatialValue = applySpatialUncertainty(layer, baseField.value, values, baseField.confidence);
+  const advectedValue = applyAirflowAdvection(point, layer, spatialValue, samples, airflow);
+  const conditionedField = applyVentConditioning(point, layer, advectedValue, values);
+  const eddy = getAirflowEddy(layer, point, airflow, values);
+
+  return {
+    value: conditionedField.value + eddy,
+    confidence: clamp(Math.max(baseField.confidence, conditionedField.confidence), 0.03, 1),
+    airflow: Math.max(airflow.intensity, conditionedField.intensity),
+  };
+}
+
+function interpolateSensorFieldBase(
+  point: FieldPoint,
+  layer: RoomMapLayer,
+  samples: MapSample[],
+  airflow: { x: number; y: number; intensity: number },
+): SensorFieldBase | null {
+  let weightedValue = 0;
+  let weightSum = 0;
+
+  for (const sample of samples) {
+    const distance = Math.hypot(point.x - sample.point.x, point.y - sample.point.y);
+    const baseWeight = 1 / (distance ** 2.25 + 0.08);
+    const alignment = getFlowAlignment(sample.point, point, airflow);
+    const obstruction = getObstructionFactor(sample.point, point);
+    const downwindBoost = Math.max(0, alignment) * airflow.intensity * 1.15;
+    const upwindPenalty = Math.max(0, -alignment) * airflow.intensity * 0.55;
+    const weight = baseWeight * obstruction * (1 + downwindBoost) * (1 - upwindPenalty);
+
+    weightedValue += sample.value * weight;
+    weightSum += weight;
+  }
+
+  if (weightSum <= 0) return null;
+
+  return {
+    value: weightedValue / weightSum,
+    confidence: clamp(weightSum / (weightSum + 0.72), 0.03, 1),
+  };
+}
+
+function applyAirflowAdvection(
+  point: FieldPoint,
+  layer: RoomMapLayer,
+  value: number,
+  samples: MapSample[],
+  airflow: { x: number; y: number; intensity: number },
+) {
+  if (airflow.intensity < 0.025 || samples.length === 0) return value;
+
+  const traceDistance = clamp(getRoomDiagonal() * airflow.intensity * 0.2, 0.08, Math.min(layout.value.width, layout.value.height) * 0.4);
+  const upstreamPoint = getBacktracedAirflowPoint(point, airflow, traceDistance);
+  const upstreamAirflow = getAirflowAtPoint(upstreamPoint);
+  const upstreamField = interpolateSensorFieldBase(upstreamPoint, layer, samples, upstreamAirflow);
+  if (!upstreamField) return value;
+
+  const mix = clamp(airflow.intensity * getLayerAdvectionRatio(layer), 0, 0.72);
+  return value + (upstreamField.value - value) * mix;
+}
+
+function getBacktracedAirflowPoint(
+  point: FieldPoint,
+  airflow: { x: number; y: number; intensity: number },
+  distance: number,
+) {
+  for (const ratio of [1, 0.75, 0.5, 0.25]) {
+    const candidate = {
+      x: point.x - airflow.x * distance * ratio,
+      y: point.y - airflow.y * distance * ratio,
+    };
+
+    if (isPointInsidePolygon(candidate, geometryPoints.value)) {
+      return candidate;
+    }
+  }
+
+  return point;
+}
+
+function applyVentConditioning(point: FieldPoint, layer: RoomMapLayer, value: number, values: number[]) {
+  const conditioning = getVentConditioningAtPoint(point, layer, values);
+  if (!conditioning) {
+    return {
+      value,
+      confidence: 0,
+      intensity: 0,
+    };
+  }
+
+  const mix = clamp(conditioning.intensity * getLayerVentMixingRatio(layer), 0, 0.94);
+  return {
+    value: value + (conditioning.value - value) * mix,
+    confidence: conditioning.confidence,
+    intensity: conditioning.intensity,
+  };
+}
+
+function getVentConditioningAtPoint(point: FieldPoint, layer: RoomMapLayer, values: number[]): VentConditioning | null {
+  if (!values.length) return null;
+
+  let weightedValue = 0;
+  let weightSum = 0;
+
+  for (const item of ventLayoutItems.value) {
+    const device = getDeviceForItem(item);
+    if (!device || device.fan_speed === null || device.fan_speed === undefined || Number.isNaN(Number(device.fan_speed))) {
+      continue;
+    }
+
+    const speed = clamp(Number(device.fan_speed), 0, 100);
+    if (speed <= 0) continue;
+
+    const contribution = getVentAirflowContribution(point, item, speed);
+    if (contribution < 0.012) continue;
+
+    const supplyValue = getVentSupplyValue(layer, values, speed);
+    const speedRatio = getVentSimulationSpeedRatio(speed);
+    const weight = contribution * (0.72 + speedRatio * 0.48);
+    weightedValue += supplyValue * weight;
+    weightSum += weight;
+  }
+
+  if (weightSum <= 0) return null;
+
+  return {
+    value: weightedValue / weightSum,
+    intensity: clamp(weightSum, 0, 1),
+    confidence: clamp(weightSum / (weightSum + 0.42), 0.04, 1),
+  };
+}
+
+function getVentSupplyValue(layer: RoomMapLayer, values: number[], speed: number) {
+  const mean = average(values);
+  const minimum = Math.min(...values);
+  const speedRatio = getVentSimulationSpeedRatio(speed);
+
+  if (layer === "temperature") {
+    const coolingDelta = 2.2 + speedRatio * 3.4;
+    return clamp(Math.min(mean - coolingDelta, 21.2 - speedRatio * 1.8), 16, 24);
+  }
+
+  if (layer === "co2") {
+    const outdoorCo2 = 420;
+    const dilutionRatio = 0.04 + (1 - speedRatio) * 0.08;
+    return clamp(outdoorCo2 + Math.max(0, Math.min(mean, minimum) - outdoorCo2) * dilutionRatio, 400, Math.max(430, mean));
+  }
+
+  if (layer === "humidity") {
+    const comfortHumidity = 42;
+    return clamp(mean + (comfortHumidity - mean) * (0.42 + speedRatio * 0.22) - speedRatio * 5.2, 28, 62);
+  }
+
+  return mean;
+}
+
+function getLayerAdvectionRatio(layer: RoomMapLayer) {
+  if (layer === "temperature") return 0.68;
+  if (layer === "co2") return 0.74;
+  if (layer === "humidity") return 0.56;
+  return 0.36;
+}
+
+function getLayerVentMixingRatio(layer: RoomMapLayer) {
+  if (layer === "temperature") return 1.08;
+  if (layer === "co2") return 1.14;
+  if (layer === "humidity") return 0.82;
+  return 0.5;
+}
+
+function getAirflowEddy(layer: RoomMapLayer, point: FieldPoint, airflow: { intensity: number }, values: number[]) {
+  if (!values.length || airflow.intensity < 0.04) return 0;
+
+  const wave = Math.sin(point.x * 3.7 + point.y * 1.9 + roomId) * Math.cos(point.x * 1.4 - point.y * 4.1);
+  return wave * getLayerEddyAmplitude(layer, values) * clamp(airflow.intensity, 0, 1);
+}
+
+function getLayerEddyAmplitude(layer: RoomMapLayer, values: number[]) {
+  const spread = Math.max(Math.max(...values) - Math.min(...values), getLayerMinimumContrastRange(layer));
+  if (layer === "temperature") return Math.min(0.18, spread * 0.06);
+  if (layer === "co2") return Math.min(28, spread * 0.05);
+  if (layer === "humidity") return Math.min(1.6, spread * 0.05);
+  return spread * 0.04;
+}
+
+function getVentilationFieldValue(point: FieldPoint): FieldValue | null {
+  const airflow = getAirflowAtPoint(point);
+  if (airflow.intensity < 0.025) return null;
+
+  return {
+    value: airflow.intensity * 100,
+    confidence: airflow.intensity,
+    airflow: airflow.intensity,
+  };
+}
+
+function getAirflowAtPoint(point: FieldPoint) {
+  let intensity = 0;
+  let vectorX = 0;
+  let vectorY = 0;
+
+  for (const item of ventLayoutItems.value) {
+    const device = getDeviceForItem(item);
+    if (!device || device.fan_speed === null || device.fan_speed === undefined || Number.isNaN(Number(device.fan_speed))) {
+      continue;
+    }
+
+    const speed = clamp(Number(device.fan_speed), 0, 100);
+    if (speed <= 0) continue;
+
+    const contribution = getVentAirflowContribution(point, item, speed);
+    const direction = getVentAirflowDirection(item);
+    intensity += contribution;
+    vectorX += direction.x * contribution;
+    vectorY += direction.y * contribution;
+  }
+
+  const magnitude = Math.hypot(vectorX, vectorY);
+  return {
+    intensity: clamp(intensity, 0, 1),
+    x: magnitude > 0 ? vectorX / magnitude : 0,
+    y: magnitude > 0 ? vectorY / magnitude : 0,
+  };
+}
+
+function getVentAirflowContribution(point: FieldPoint, item: RoomLayoutItem, speed: number) {
+  const speedRatio = getVentSimulationSpeedRatio(speed);
+  const source = getVentOutletPoint(item);
+  const direction = getVentAirflowDirection(item);
+  const deltaX = point.x - source.x;
+  const deltaY = point.y - source.y;
+  const forward = deltaX * direction.x + deltaY * direction.y;
+  const lateral = Math.abs(deltaX * -direction.y + deltaY * direction.x);
+  const distance = Math.hypot(deltaX, deltaY);
+  const reach = getVentReach(speed);
+  const localRecirculation = Math.exp(-((distance / (0.38 + speedRatio * 0.34)) ** 2)) * 0.34;
+  let plume = 0;
+
+  if (forward > -0.08) {
+    const downstream = Math.max(0, forward);
+    const spread = 0.34 + downstream * 0.38 + speedRatio * 0.3;
+    const longitudinalDecay = Math.exp(-((downstream / reach) ** 2) * 0.82);
+    const lateralDecay = Math.exp(-((lateral / spread) ** 2) * 1.08);
+    plume = longitudinalDecay * lateralDecay;
+  }
+
+  return clamp((speedRatio ** 0.66) * (plume + localRecirculation) * getObstructionFactor(source, point), 0, 1);
+}
+
+function getFlowAlignment(from: FieldPoint, to: FieldPoint, airflow: { x: number; y: number; intensity: number }) {
+  if (airflow.intensity <= 0) return 0;
+
+  const vectorX = to.x - from.x;
+  const vectorY = to.y - from.y;
+  const length = Math.hypot(vectorX, vectorY);
+  if (length <= 0) return 0;
+
+  return (vectorX / length) * airflow.x + (vectorY / length) * airflow.y;
+}
+
+function applySpatialUncertainty(layer: RoomMapLayer, value: number, values: number[], confidence: number) {
+  if (!values.length) return value;
+
+  const background = getLayerBackgroundValue(layer, values);
+  const uncertainty = 1 - clamp(confidence, 0, 1);
+  return value + (background - value) * uncertainty * 0.9;
+}
+
+function getLayerBackgroundValue(layer: RoomMapLayer, values: number[]) {
+  const mean = average(values);
+  const minimum = Math.min(...values);
+
+  if (layer === "temperature") {
+    const excessHeat = Math.max(0, mean - 22);
+    return clamp(mean - 0.35 - excessHeat * 0.34, 17, mean);
+  }
+
+  if (layer === "co2") {
+    return clamp(mean - Math.max(0, mean - 500) * 0.22, 420, mean);
+  }
+
+  if (layer === "humidity") {
+    return clamp(mean + (45 - mean) * 0.24, 25, 85);
+  }
+
+  return minimum;
+}
+
+function getObstructionFactor(start: FieldPoint, end: FieldPoint) {
+  return layout.value.items.reduce((factor, item) => {
+    const type = getItemType(item.type).value;
+    if (type !== "obstacle" && type !== "equipment") return factor;
+    if (!segmentPassesThroughItem(item, start, end)) return factor;
+    return factor * (type === "obstacle" ? 0.45 : 0.72);
+  }, 1);
+}
+
+function segmentPassesThroughItem(item: RoomLayoutItem, start: FieldPoint, end: FieldPoint) {
+  const probes = 7;
+  for (let index = 1; index < probes; index += 1) {
+    const ratio = index / probes;
+    const point = {
+      x: start.x + (end.x - start.x) * ratio,
+      y: start.y + (end.y - start.y) * ratio,
+    };
+
+    if (isPointInItemBounds(point, item)) return true;
+  }
+
+  return false;
+}
+
+function isPointInItemBounds(point: FieldPoint, item: RoomLayoutItem) {
+  const margin = 0.04;
+  return point.x >= item.x - margin
+    && point.x <= item.x + item.width + margin
+    && point.y >= item.y - margin
+    && point.y <= item.y + item.height + margin;
+}
+
+function createMapColorContext(layer: RoomMapLayer, values: number[]): MapColorContext | null {
+  if (!values.length) return null;
+
+  let min = Math.min(...values);
+  let max = Math.max(...values);
+  const mean = average(values);
+  let spread = max - min;
+  const minimumContrastRange = getLayerMinimumContrastRange(layer);
+
+  if (spread < minimumContrastRange) {
+    const padding = (minimumContrastRange - spread) / 2;
+    min -= padding;
+    max += padding;
+    spread = max - min;
+  }
+
+  if (layer === "temperature") {
+    const padding = Math.max(0.2, spread * 0.07);
+    if (min >= 24) {
+      return {
+        min: min - padding,
+        max: max + padding,
+        mean,
+        spread: spread + padding * 2,
+      };
+    }
+
+    return {
+      min: min - padding,
+      max: max + padding,
+      mean,
+      spread: spread + padding * 2,
+    };
+  }
+
+  if (layer === "humidity") {
+    const padding = Math.max(1, spread * 0.08);
+    return {
+      min: min - padding,
+      max: max + padding,
+      mean,
+      spread: spread + padding * 2,
+    };
+  }
+
+  if (layer === "co2") {
+    const padding = Math.max(45, spread * 0.08);
+    return {
+      min: Math.max(380, min - padding),
+      max: max + padding,
+      mean,
+      spread: spread + padding * 2,
+    };
+  }
+
+  const padding = Math.max(5, spread * 0.08);
+  return {
+    min: Math.max(0, min - padding),
+    max: Math.min(100, max + padding),
+    mean,
+    spread: spread + padding * 2,
+  };
+}
+
+function getLayerMinimumContrastRange(layer: RoomMapLayer) {
+  if (layer === "temperature") return 1.1;
+  if (layer === "humidity") return 7;
+  if (layer === "co2") return 240;
+  if (layer === "device_speed") return 24;
+  return 1;
+}
+
+function getMapCellColor(layer: RoomMapLayer, value: number, context: MapColorContext | null = null) {
+  if (layer === "temperature") {
+    const min = context?.min ?? 16;
+    const max = context?.max ?? 30;
+    if (context && min >= 23.5) {
+      const middle = min + (max - min) * 0.52;
+      return interpolateColor(value, [
+        [min, [254, 243, 199]],
+        [middle, [251, 191, 36]],
+        [max, [248, 113, 113]],
+      ]);
+    }
+
+    if (context && max <= 24.5) {
+      const middle = min + (max - min) * 0.52;
+      return interpolateColor(value, [
+        [min, [224, 242, 254]],
+        [middle, [209, 250, 229]],
+        [max, [253, 230, 138]],
+      ]);
+    }
+
+    const comfort = clamp(context?.mean ?? 21.5, min + 0.15, max - 0.3);
+    const warm = clamp(comfort + (max - comfort) * 0.46, comfort + 0.2, max - 0.12);
+    return interpolateColor(value, [
+      [min, [224, 242, 254]],
+      [comfort, [209, 250, 229]],
+      [warm, [253, 230, 138]],
+      [max, [248, 113, 113]],
+    ]);
+  }
+
+  if (layer === "humidity") {
+    const min = context?.min ?? 20;
+    const max = context?.max ?? 90;
+    const middle = clamp(context?.mean ?? 45, min + 0.2, max - 0.2);
+    return interpolateColor(value, [
+      [min, [254, 243, 199]],
+      [middle, [209, 250, 229]],
+      [middle + (max - middle) * 0.55, [191, 219, 254]],
+      [max, [165, 180, 252]],
+    ]);
+  }
+
+  if (layer === "co2") {
+    const min = context?.min ?? 420;
+    const max = context?.max ?? 2200;
+    const middle = clamp(context?.mean ?? 900, min + 10, max - 10);
+    return interpolateColor(value, [
+      [min, [220, 252, 231]],
+      [middle, [253, 230, 138]],
+      [middle + (max - middle) * 0.48, [254, 202, 202]],
+      [max, [221, 214, 254]],
+    ]);
+  }
+
+  return interpolateColor(value, [
+    [0, [240, 253, 250]],
+    [40, [204, 251, 241]],
+    [75, [153, 246, 228]],
+    [100, [94, 234, 212]],
+  ]);
+}
+
+function interpolateColor(value: number, stops: Array<[number, [number, number, number]]>) {
+  const first = stops[0];
+  const last = stops[stops.length - 1];
+  if (value <= first[0]) return formatRgb(first[1]);
+  if (value >= last[0]) return formatRgb(last[1]);
+
+  for (let index = 1; index < stops.length; index += 1) {
+    const previous = stops[index - 1];
+    const current = stops[index];
+    if (value > current[0]) continue;
+
+    const ratio = clamp((value - previous[0]) / (current[0] - previous[0]), 0, 1);
+    return formatRgb([
+      Math.round(previous[1][0] + (current[1][0] - previous[1][0]) * ratio),
+      Math.round(previous[1][1] + (current[1][1] - previous[1][1]) * ratio),
+      Math.round(previous[1][2] + (current[1][2] - previous[1][2]) * ratio),
+    ]);
+  }
+
+  return formatRgb(last[1]);
+}
+
+function formatRgb(color: [number, number, number]) {
+  return `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
+}
+
+function getMapCellOpacity(layer: RoomMapLayer, field: FieldValue) {
+  if (layer === "device_speed") {
+    return clamp(0.12 + field.confidence * 0.3, 0.1, 0.42);
+  }
+
+  return clamp(0.14 + field.confidence * 0.16 + getMapSeverity(layer, field.value) * 0.12 + field.airflow * 0.06, 0.14, 0.48);
+}
+
+function getVentInfluenceColor(layer: RoomMapLayer) {
+  if (layer === "temperature") return "rgb(14, 165, 233)";
+  if (layer === "co2") return "rgb(20, 184, 166)";
+  if (layer === "humidity") return "rgb(37, 99, 235)";
+  return "rgb(13, 148, 136)";
+}
+
+function getMapSeverity(layer: RoomMapLayer, value: number) {
+  if (layer === "temperature") return clamp(Math.abs(value - 21.5) / 8, 0, 1);
+  if (layer === "humidity") return clamp(Math.abs(value - 45) / 45, 0, 1);
+  if (layer === "co2") return clamp((value - 500) / 1100, 0, 1);
+  if (layer === "device_speed") return clamp(value / 100, 0, 1);
+  return 0.35;
 }
 
 function getItemDisplayName(item: RoomLayoutItem) {
@@ -748,7 +2153,7 @@ function getItemAriaLabel(item: RoomLayoutItem) {
   const name = getItemDisplayName(item);
   const type = getItemType(item.type).label;
   const rotation = normalizeAngle(Number(item.rotation) || 0);
-  const direction = isDirectionalItem(item.type) ? `, direction follows rotation at ${rotation} degrees` : "";
+  const direction = isDirectionalItem(item.type) ? ", airflow follows the room-facing side" : "";
   const position = `x ${round(item.x)} ${layout.value.unit}, y ${round(item.y)} ${layout.value.unit}`;
   const telemetry = getItemTelemetrySummary(item);
   const telemetryText = telemetry ? `, ${telemetry}` : "";
@@ -757,6 +2162,8 @@ function getItemAriaLabel(item: RoomLayoutItem) {
 }
 
 function setMode(nextMode: EditorMode) {
+  if (nextMode === "edit" && isReadOnly.value) return;
+
   mode.value = nextMode;
 
   if (nextMode === "view") {
@@ -785,7 +2192,7 @@ function isRoomBoundItem(type: string) {
 }
 
 function isDirectionalItem(type: string) {
-  return isRoomBoundItem(getItemType(type).value);
+  return getItemType(type).value === "vent";
 }
 
 function getItemPlacementTitle(item: RoomLayoutItem) {
@@ -922,10 +2329,17 @@ function getCo2Tone(value: number): TelemetryTone {
   return "co2";
 }
 
+function getHumidityTone(value: number): TelemetryTone {
+  if (value < 35) return "cool";
+  if (value >= 75) return "hot";
+  if (value >= 60) return "humid";
+  return "normal";
+}
+
 function getMetricTone(key: string, value: number): TelemetryTone {
   if (key === "temperature") return getTemperatureTone(value);
   if (key === "co2") return getCo2Tone(value);
-  if (key === "humidity") return "humid";
+  if (key === "humidity") return getHumidityTone(value);
   if (key === "device_speed") return "vent";
   return "normal";
 }
@@ -996,18 +2410,20 @@ function getItemSecondaryMetrics(item: RoomLayoutItem): LayoutMetric[] {
     .filter((name) => name !== primaryKey)
     .map((name) => getSensorParameter(sensor, name))
     .filter((parameter): parameter is Parameter => parameter !== null)
-    .map(createParameterMetric)
-    .slice(0, 2);
+    .map(createParameterMetric);
+}
+
+function getItemHoverMetrics(item: RoomLayoutItem): LayoutMetric[] {
+  return [getItemPrimaryMetric(item), ...getItemSecondaryMetrics(item)]
+    .filter((metric): metric is LayoutMetric => metric !== null);
 }
 
 function getItemTelemetrySummary(item: RoomLayoutItem) {
-  const metrics = [getItemPrimaryMetric(item), ...getItemSecondaryMetrics(item)]
-    .filter((metric): metric is LayoutMetric => metric !== null);
-  return metrics.map((metric) => `${metric.label} ${metric.value}`).join(", ");
+  return getItemHoverMetrics(item).map((metric) => `${metric.label} ${metric.value}`).join(", ");
 }
 
 function hasItemTelemetry(item: RoomLayoutItem) {
-  return getItemPrimaryMetric(item) !== null;
+  return getItemHoverMetrics(item).length > 0;
 }
 
 function getItemTelemetryStyle(item: RoomLayoutItem) {
@@ -1560,6 +2976,8 @@ async function reloadLayout() {
 }
 
 async function saveLayout() {
+  if (isReadOnly.value) return;
+
   if (!hasTelemetryLoaded.value) {
     errorMessage.value = "Room sensors and ventilation devices are still loading. Wait for live assets before saving.";
     return;
@@ -2027,6 +3445,13 @@ function removePointerListeners() {
   min-height: 0;
   min-width: 0;
   width: 100%;
+  --layout-telemetry-cool: #0284c7;
+  --layout-telemetry-normal: #059669;
+  --layout-telemetry-warm: #d97706;
+  --layout-telemetry-hot: #dc2626;
+  --layout-telemetry-humid: #2563eb;
+  --layout-telemetry-co2: #4f46e5;
+  --layout-telemetry-vent: #0f766e;
 }
 
 .layout-editor__toolbar {
@@ -2286,6 +3711,30 @@ function removePointerListeners() {
   padding: 10px;
 }
 
+.layout-map-select-value,
+.layout-map-select-option {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.layout-map-select-value .material-symbols-outlined,
+.layout-map-select-option .material-symbols-outlined {
+  color: var(--app-muted);
+  font-size: 1rem;
+}
+
+.layout-map-select-option strong,
+.layout-map-select-option small {
+  display: block;
+}
+
+.layout-map-select-option small {
+  color: var(--app-muted);
+  font-size: 0.72rem;
+}
+
 .layout-canvas__row {
   display: flex;
   flex: 1;
@@ -2321,11 +3770,7 @@ function removePointerListeners() {
 
 .layout-board-wrap {
   align-items: center;
-  background:
-    linear-gradient(90deg, rgb(15 118 110 / 0.055) 1px, transparent 1px),
-    linear-gradient(180deg, rgb(15 118 110 / 0.055) 1px, transparent 1px),
-    var(--app-board-bg);
-  background-size: 18px 18px;
+  background: var(--app-board-bg);
   border: 1px solid var(--app-border);
   border-radius: 5px;
   display: flex;
@@ -2344,25 +3789,17 @@ function removePointerListeners() {
 
 .layout-board {
   aspect-ratio: var(--layout-ratio);
-  background:
-    repeating-linear-gradient(135deg, rgb(52 66 75 / 0.035) 0 6px, transparent 6px 12px),
-    var(--app-board-surface);
+  background: var(--app-board-surface);
   border: 2px solid var(--app-board-border);
   box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.8);
   flex: 0 1 auto;
+  height: 100%;
   max-height: 100%;
   max-width: 100%;
   min-height: 260px;
   min-width: 320px;
   position: relative;
-  width: 100%;
-  --layout-telemetry-cool: #0284c7;
-  --layout-telemetry-normal: #059669;
-  --layout-telemetry-warm: #d97706;
-  --layout-telemetry-hot: #dc2626;
-  --layout-telemetry-humid: #2563eb;
-  --layout-telemetry-co2: #4f46e5;
-  --layout-telemetry-vent: #0f766e;
+  width: auto;
 }
 
 .layout-board--edit {
@@ -2370,13 +3807,33 @@ function removePointerListeners() {
 }
 
 .layout-board__grid {
-  background:
-    linear-gradient(90deg, rgb(52 66 75 / 0.10) 1px, transparent 1px),
-    linear-gradient(180deg, rgb(52 66 75 / 0.10) 1px, transparent 1px);
-  background-size: 10% 10%;
+  display: block;
+  height: 100%;
   inset: 0;
+  opacity: 0.85;
   pointer-events: none;
   position: absolute;
+  width: 100%;
+  z-index: 0;
+}
+
+.layout-board--map-visible .layout-board__grid {
+  opacity: 0.26;
+}
+
+.layout-board__grid-line {
+  fill: none;
+  opacity: 0.48;
+  shape-rendering: geometricPrecision;
+  stroke: rgb(52 66 75 / 0.18);
+  stroke-width: 0.006rem;
+  vector-effect: non-scaling-stroke;
+}
+
+.layout-board__grid-line--major {
+  opacity: 0.62;
+  stroke: rgb(52 66 75 / 0.24);
+  stroke-width: 0.01rem;
 }
 
 .layout-board__shape {
@@ -2418,81 +3875,124 @@ function removePointerListeners() {
   pointer-events: auto;
 }
 
-.layout-board__thermal-zones {
+.layout-board__map-field {
   display: block;
   height: 100%;
   inset: 0;
-  mix-blend-mode: multiply;
+  filter: saturate(0.9) contrast(0.98);
+  mix-blend-mode: normal;
+  opacity: 0.84;
   pointer-events: none;
   position: absolute;
   width: 100%;
   z-index: 1;
 }
 
-.layout-board__thermal-zone {
-  filter: blur(0.12px);
-  opacity: 0.32;
+.layout-board__map-cells {
+  filter: blur(3px);
 }
 
-.layout-board__thermal-zone--cool { fill: #38bdf8; }
-.layout-board__thermal-zone--normal { fill: #34d399; }
-.layout-board__thermal-zone--warm { fill: #f59e0b; }
-.layout-board__thermal-zone--hot { fill: #ef4444; }
+.layout-board__map-gradient-base,
+.layout-board__map-gradient-zone {
+  shape-rendering: geometricPrecision;
+  stroke: none;
+}
 
-.layout-board__metric-strip {
-  align-items: stretch;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  left: 8px;
-  max-width: calc(100% - 16px);
+.layout-board__map-gradient-zone {
+  mix-blend-mode: multiply;
+}
+
+.layout-board__map-cell {
+  shape-rendering: auto;
+  stroke: none;
+}
+
+.layout-board__sensor-influence,
+.layout-board__vent-influence {
+  mix-blend-mode: normal;
+  stroke-linecap: round;
+  stroke-opacity: var(--layout-influence-stroke-opacity, 0.68);
+  stroke-width: 0.045rem;
+  vector-effect: non-scaling-stroke;
+}
+
+.layout-board__sensor-influence {
+  stroke-dasharray: 0.12 0.12;
+}
+
+.layout-board__vent-influence {
+  stroke-dasharray: none;
+}
+
+.layout-board__airflow-stream {
+  animation: layout-airflow-stream-drift var(--layout-airflow-duration, 1.4s) ease-in-out infinite;
+  animation-delay: var(--layout-airflow-delay, 0s);
+  fill: none;
+  filter: drop-shadow(0 0 2px rgb(14 116 144 / 0.28));
+  opacity: 0;
+  stroke: rgb(8 145 178 / 0.72);
+  stroke-dasharray: var(--layout-airflow-dasharray, 0.5 0.5);
+  stroke-dashoffset: 0.42;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.layout-board__airflow-cues {
+  display: block;
+  height: 100%;
+  inset: 0;
   pointer-events: none;
   position: absolute;
-  top: 8px;
-  z-index: 4;
+  width: 100%;
+  z-index: 5;
 }
 
-.layout-board__metric-card {
-  align-items: center;
-  background: rgb(255 255 255 / 0.88);
-  border: 1px solid color-mix(in srgb, var(--layout-telemetry-color, var(--app-border-strong)) 30%, var(--app-border));
-  border-radius: 5px;
-  box-shadow: 0 6px 14px rgb(15 23 42 / 0.08);
-  color: var(--app-text-strong);
-  display: grid;
-  gap: 1px 6px;
-  grid-template-columns: auto auto;
-  min-height: 34px;
-  padding: 4px 7px;
+.layout-board__airflow-cue-stem {
+  animation: layout-airflow-drift 1.05s linear infinite;
+  fill: none;
+  stroke: rgb(8 109 119 / 0.96);
+  stroke-dasharray: 0.2 0.12;
+  stroke-dashoffset: 0;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 1px 2px rgb(15 23 42 / 0.22));
+  stroke-width: 0.072rem;
 }
 
-.layout-board__metric-card .material-symbols-outlined {
-  color: var(--layout-telemetry-color, var(--app-muted));
-  font-size: 1rem;
-  grid-row: 1 / span 2;
+.layout-board__airflow-cue-marker {
+  fill: rgb(13 116 109 / 0.94);
 }
 
-.layout-board__metric-card strong {
-  font-family: var(--app-mono);
-  font-size: 0.74rem;
-  line-height: 0.9rem;
+@keyframes layout-airflow-drift {
+  to {
+    stroke-dashoffset: -1;
+  }
 }
 
-.layout-board__metric-card small {
-  color: var(--app-muted);
-  font-size: 0.58rem;
-  font-weight: 720;
-  line-height: 0.72rem;
-  text-transform: uppercase;
+@keyframes layout-airflow-stream-drift {
+  0% {
+    opacity: 0;
+    stroke-dashoffset: 0.48;
+  }
+
+  18%,
+  72% {
+    opacity: var(--layout-airflow-opacity, 0.48);
+  }
+
+  100% {
+    opacity: 0;
+    stroke-dashoffset: -0.32;
+  }
 }
 
-.layout-board__metric-card--cool { --layout-telemetry-color: var(--layout-telemetry-cool); }
-.layout-board__metric-card--normal { --layout-telemetry-color: var(--layout-telemetry-normal); }
-.layout-board__metric-card--warm { --layout-telemetry-color: var(--layout-telemetry-warm); }
-.layout-board__metric-card--hot { --layout-telemetry-color: var(--layout-telemetry-hot); }
-.layout-board__metric-card--humid { --layout-telemetry-color: var(--layout-telemetry-humid); }
-.layout-board__metric-card--co2 { --layout-telemetry-color: var(--layout-telemetry-co2); }
-.layout-board__metric-card--vent { --layout-telemetry-color: var(--layout-telemetry-vent); }
+@media (prefers-reduced-motion: reduce) {
+  .layout-board__airflow-stream,
+  .layout-board__airflow-cue-stem {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
 
 .layout-item {
   align-items: center;
@@ -2545,8 +4045,8 @@ function removePointerListeners() {
 }
 
 .layout-item--has-telemetry {
-  border-color: color-mix(in srgb, var(--layout-telemetry-color, currentColor) 62%, var(--app-border-strong));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--layout-telemetry-color, currentColor) 18%, transparent);
+  border-color: color-mix(in srgb, var(--layout-telemetry-color, currentColor) 34%, var(--app-border-strong));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--layout-telemetry-color, currentColor) 10%, transparent);
 }
 
 .layout-item__resize-handle,
@@ -2665,63 +4165,6 @@ function removePointerListeners() {
   white-space: nowrap;
 }
 
-.layout-item__primary-metric {
-  background: rgb(255 255 255 / 0.88);
-  border: 1px solid color-mix(in srgb, var(--layout-telemetry-color, currentColor) 28%, transparent);
-  border-radius: 3px;
-  color: var(--layout-telemetry-color, currentColor);
-  font-family: var(--app-mono);
-  font-size: 0.58rem;
-  font-weight: 820;
-  line-height: 0.72rem;
-  max-width: none;
-  padding: 0 3px;
-  position: relative;
-  white-space: nowrap;
-  z-index: 2;
-}
-
-.layout-item__metric-popover {
-  display: flex;
-  gap: 3px;
-  left: 50%;
-  pointer-events: none;
-  position: absolute;
-  top: calc(100% + 5px);
-  transform: translateX(-50%) rotate(calc(var(--layout-item-rotation, 0deg) * -1));
-  transform-origin: top center;
-  z-index: 5;
-}
-
-.layout-item__metric-chip {
-  align-items: center;
-  background: rgb(255 255 255 / 0.92);
-  border: 1px solid color-mix(in srgb, var(--layout-metric-chip-color, currentColor) 28%, var(--app-border));
-  border-radius: 999px;
-  box-shadow: 0 4px 10px rgb(15 23 42 / 0.10);
-  color: var(--layout-metric-chip-color, currentColor);
-  display: inline-flex;
-  font-family: var(--app-mono);
-  font-size: 0.56rem;
-  font-weight: 780;
-  gap: 2px;
-  line-height: 0.72rem;
-  padding: 2px 5px;
-  white-space: nowrap;
-}
-
-.layout-item__metric-chip .material-symbols-outlined {
-  font-size: 0.74rem;
-}
-
-.layout-item__metric-chip--cool { --layout-metric-chip-color: var(--layout-telemetry-cool); }
-.layout-item__metric-chip--normal { --layout-metric-chip-color: var(--layout-telemetry-normal); }
-.layout-item__metric-chip--warm { --layout-metric-chip-color: var(--layout-telemetry-warm); }
-.layout-item__metric-chip--hot { --layout-metric-chip-color: var(--layout-telemetry-hot); }
-.layout-item__metric-chip--humid { --layout-metric-chip-color: var(--layout-telemetry-humid); }
-.layout-item__metric-chip--co2 { --layout-metric-chip-color: var(--layout-telemetry-co2); }
-.layout-item__metric-chip--vent { --layout-metric-chip-color: var(--layout-telemetry-vent); }
-
 .layout-item__direction {
   height: 14px;
   left: calc(100% + 3px);
@@ -2745,6 +4188,94 @@ function removePointerListeners() {
   top: 50%;
   transform: translateY(-50%);
   width: 0;
+}
+
+.layout-item__metric-popover {
+  background: rgb(255 255 255 / 0.96);
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  box-shadow: 0 12px 28px rgb(15 23 42 / 0.14);
+  color: var(--app-text-strong);
+  display: grid;
+  gap: 6px;
+  left: 50%;
+  min-width: 172px;
+  opacity: 0;
+  padding: 8px;
+  pointer-events: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  transform: translateX(-50%) rotate(calc(var(--layout-item-rotation, 0deg) * -1));
+  transform-origin: top center;
+  transition:
+    opacity 120ms var(--app-ease-out),
+    visibility 120ms var(--app-ease-out);
+  visibility: hidden;
+  z-index: 20;
+}
+
+.layout-item:hover .layout-item__metric-popover,
+.layout-item:focus-visible .layout-item__metric-popover {
+  opacity: 1;
+  visibility: visible;
+}
+
+.layout-item__metric-title {
+  color: var(--app-muted);
+  font-family: var(--app-mono);
+  font-size: 0.62rem;
+  font-weight: 780;
+  line-height: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.layout-item__metric-list {
+  display: grid;
+  gap: 5px;
+}
+
+.layout-item__metric-chip {
+  align-items: center;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-left: 2px solid color-mix(in srgb, var(--layout-telemetry-color, var(--app-border-strong)) 58%, var(--app-border));
+  border-radius: 5px;
+  display: grid;
+  gap: 1px 6px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-height: 30px;
+  padding: 4px 6px;
+}
+
+.layout-item__metric-chip .material-symbols-outlined {
+  color: var(--layout-telemetry-color, var(--app-muted));
+  font-size: 0.95rem;
+  grid-row: 1 / span 2;
+  opacity: 0.82;
+}
+
+.layout-item__metric-chip strong {
+  font-family: var(--app-mono);
+  font-size: 0.72rem;
+  font-weight: 820;
+  line-height: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layout-item__metric-chip small {
+  color: var(--app-muted);
+  font-size: 0.55rem;
+  font-weight: 760;
+  line-height: 0.72rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .layout-item--sensor {
@@ -2880,6 +4411,125 @@ function removePointerListeners() {
   text-transform: uppercase;
 }
 
+.layout-telemetry-panel {
+  border-top: 1px solid var(--app-border);
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.layout-telemetry-panel__header {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.layout-telemetry-panel__title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.layout-telemetry-panel__title span,
+.layout-map-control > span {
+  color: var(--app-muted);
+  font-family: var(--app-mono);
+  font-size: 0.68rem;
+  font-weight: 760;
+  line-height: 1rem;
+  text-transform: uppercase;
+}
+
+.layout-telemetry-panel__title small,
+.layout-telemetry-panel__empty {
+  color: var(--app-muted);
+  font-size: 0.78rem;
+}
+
+.layout-map-control {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.layout-map-control__select {
+  min-width: 168px;
+}
+
+.layout-telemetry-summary {
+  align-items: stretch;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 8px;
+}
+
+.layout-telemetry-card {
+  align-items: center;
+  background: var(--app-surface-soft);
+  border: 1px solid var(--app-border);
+  border-left: 2px solid color-mix(in srgb, var(--layout-telemetry-color, var(--app-border-strong)) 58%, var(--app-border));
+  border-radius: 5px;
+  color: var(--app-text-strong);
+  display: grid;
+  gap: 1px 7px;
+  grid-template-columns: auto auto;
+  min-height: 38px;
+  padding: 5px 8px;
+}
+
+.layout-telemetry-card .material-symbols-outlined {
+  color: var(--layout-telemetry-color, var(--app-muted));
+  font-size: 1rem;
+  grid-row: 1 / span 2;
+  opacity: 0.82;
+}
+
+.layout-telemetry-card strong {
+  font-family: var(--app-mono);
+  font-weight: 820;
+}
+
+.layout-telemetry-card strong {
+  font-size: 0.78rem;
+  line-height: 0.95rem;
+}
+
+.layout-telemetry-card small {
+  color: var(--app-muted);
+  font-weight: 720;
+  text-transform: uppercase;
+}
+
+.layout-telemetry-card small {
+  font-size: 0.6rem;
+  line-height: 0.72rem;
+}
+
+.layout-telemetry-card--cool,
+.layout-item__metric-chip--cool { --layout-telemetry-color: var(--layout-telemetry-cool); }
+.layout-telemetry-card--normal,
+.layout-item__metric-chip--normal { --layout-telemetry-color: var(--layout-telemetry-normal); }
+.layout-telemetry-card--warm,
+.layout-item__metric-chip--warm { --layout-telemetry-color: var(--layout-telemetry-warm); }
+.layout-telemetry-card--hot,
+.layout-item__metric-chip--hot { --layout-telemetry-color: var(--layout-telemetry-hot); }
+.layout-telemetry-card--humid,
+.layout-item__metric-chip--humid { --layout-telemetry-color: var(--layout-telemetry-humid); }
+.layout-telemetry-card--co2,
+.layout-item__metric-chip--co2 { --layout-telemetry-color: var(--layout-telemetry-co2); }
+.layout-telemetry-card--vent,
+.layout-item__metric-chip--vent { --layout-telemetry-color: var(--layout-telemetry-vent); }
+
 .layout-legend span {
   align-items: center;
   color: var(--app-text-strong);
@@ -2950,16 +4600,27 @@ function removePointerListeners() {
     justify-content: center;
   }
 
+  .layout-telemetry-panel__header,
+  .layout-map-control {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .layout-map-control {
+    gap: 4px;
+  }
+
+  .layout-map-control__select {
+    min-width: 0;
+    width: 100%;
+  }
+
   .layout-editor__body {
     grid-template-columns: minmax(0, 1fr);
   }
 
   .layout-board {
     min-width: 260px;
-  }
-
-  .layout-board__metric-strip {
-    display: none;
   }
 }
 </style>
