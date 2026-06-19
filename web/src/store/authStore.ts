@@ -73,7 +73,7 @@ export const useAuthStore = defineStore("auth", {
   },
 
   getters: {
-    isAuthenticated: (state) => Boolean(state.token && state.claims),
+    isAuthenticated: (state) => Boolean(state.token && state.claims?.id),
     currentUserEmail: (state) => state.user?.email || state.claims?.email || null,
     currentUserId: (state) => state.claims?.id || null,
   },
@@ -125,15 +125,19 @@ export const useAuthStore = defineStore("auth", {
             const token = await getIdToken(user);
             this.setToken(token);
 
+            await this.registerInApi(token);
+
             if (!refreshTimer) {
               refreshTimer = setInterval(() => this.refreshToken(), 50 * 60 * 1000);
             }
-          } else if (!this.token) {
-            this.setToken(null);
-            clearRefreshTimer();
           } else {
-            this.setToken(this.token);
+            const existingToken = this.token;
+            this.setToken(existingToken);
             clearRefreshTimer();
+
+            if (existingToken) {
+              await this.registerInApi(existingToken);
+            }
           }
 
           resolveInitialState(user);

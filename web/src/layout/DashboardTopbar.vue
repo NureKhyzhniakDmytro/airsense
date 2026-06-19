@@ -19,6 +19,16 @@
         <span>Dashboard</span>
       </router-link>
 
+      <router-link
+        to="/dashboard/demo-data"
+        class="app-sidebar__tree-node app-sidebar__tree-node--root"
+        :class="{ 'app-sidebar__tree-node--active': isActive('/dashboard/demo-data', true) }"
+        aria-label="Demo data"
+      >
+        <i class="pi pi-database" />
+        <span>Demo data</span>
+      </router-link>
+
       <div v-if="envId" class="app-sidebar__tree-branch">
         <router-link
           :to="environmentRootPath"
