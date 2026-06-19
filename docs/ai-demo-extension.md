@@ -1,0 +1,232 @@
+# AI extension with demo device telemetry
+
+## Folder Structure
+
+```text
+services/
+  device-telemetry-simulator/
+    app/simulator.py
+    Dockerfile
+    requirements.txt
+  ai-prediction-service/
+    app/main.py
+    app/training.py
+    app/model_store.py
+    app/db.py
+    app/schemas.py
+    Dockerfile
+    requirements.txt
+charts/airsense/
+  templates/ai.yaml
+  values.yaml
+api/
+  Airsense.API/
+    Controllers/AiController.cs
+```
+
+## Database Tables
+
+The simulator does not store telemetry in a separate data category. It creates ordinary demo entities in the existing domain model:
+
+- `environments`;
+- `rooms`;
+- `sensors`;
+- `devices`;
+- `sensor_data`;
+- `device_data`;
+- `settings`.
+
+The AI extension adds only infrastructure tables:
+
+```sql
+CREATE TABLE ventilation_commands (
+    id bigserial PRIMARY KEY,
+    room_id int NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+    device_id int REFERENCES devices(id) ON DELETE SET NULL,
+    timestamp timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    source varchar(64) NOT NULL,
+    command_type varchar(64) NOT NULL,
+    requested_power real,
+    payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+    status varchar(32) NOT NULL DEFAULT 'created'
+);
+
+CREATE TABLE ai_model_versions (
+    id bigserial PRIMARY KEY,
+    version varchar(128) NOT NULL UNIQUE,
+    model_path varchar(512) NOT NULL,
+    metrics jsonb NOT NULL DEFAULT '{}'::jsonb,
+    trained_from timestamptz,
+    trained_to timestamptz,
+    created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    active bool NOT NULL DEFAULT FALSE
+);
+```
+
+## Device Telemetry Simulator
+
+`device-telemetry-simulator` is a demo data source. It does not mark its measurements as a separate data class in the application model. The service prepares normal demo rooms, sensors, devices and automation curves, then publishes MQTT messages in the same format as physical sensors:
+
+```text
+sensor/{parameter}
+```
+
+MQTT user property:
+
+```text
+serial-number: demo-room-1-microclimate
+```
+
+Payload:
+
+```json
+{
+  "value": 824.5,
+  "sent_at": 1781792400
+}
+```
+
+Published parameters:
+
+- `co2`;
+- `temperature`;
+- `humidity`;
+- `occupancy`.
+
+The simulator uses scenario-based generation:
+
+- `empty_room`;
+- `normal_usage`;
+- `crowded_room`;
+- `ventilation_failure`;
+- `night_mode`;
+- `critical_co2_event`.
+
+CO2 grows when occupancy increases and falls when ventilation power grows. Temperature and humidity change according to occupancy, ventilation and noise. The current ventilation level is reflected in ordinary `device_data` rows, so the rest of the system sees regular device history.
+
+## Demo Data Control UI
+
+The web application includes a dedicated dashboard page:
+
+```text
+/dashboard/demo-data
+```
+
+This page allows an authenticated user to:
+
+- prepare the demo environment, rooms, sensors and ventilation devices;
+- inspect live stream status and latest telemetry timestamps;
+- generate historical telemetry for charts and model training;
+- clear only demo history while keeping rooms and devices;
+- assign room-level simulation profiles;
+- set optional occupancy and ventilation overrides.
+
+The UI does not create a separate telemetry type. All values remain ordinary `sensor_data` and `device_data` rows. Room-level controls are stored in `demo_room_profiles`, which is a simulator configuration table, not a telemetry classification mechanism.
+
+## REST API AI Prediction Service
+
+### `GET /health`
+
+```json
+{
+  "status": "ok",
+  "model_version": "heuristic-untrained",
+  "mode": "heuristic"
+}
+```
+
+### `GET /model/version`
+
+```json
+{
+  "version": "rf-20260618143000",
+  "mode": "trained",
+  "metrics": {
+    "co2": { "mae": 35.2, "rmse": 48.9 },
+    "temperature": { "mae": 0.18, "rmse": 0.24 },
+    "humidity": { "mae": 0.7, "rmse": 1.1 }
+  }
+}
+```
+
+### `POST /predict`
+
+```json
+{
+  "sample": {
+    "room_id": 3,
+    "co2": 950,
+    "temperature": 24.1,
+    "humidity": 51.2,
+    "ventilation_power": 35,
+    "occupancy": 12
+  },
+  "horizons_minutes": [10, 20, 30]
+}
+```
+
+### `POST /simulate`
+
+```json
+{
+  "sample": {
+    "room_id": 3,
+    "co2": 1200,
+    "temperature": 25,
+    "humidity": 55,
+    "ventilation_power": 20,
+    "occupancy": 18
+  },
+  "scenarios": [
+    { "label": "quiet", "ventilation_power": 30 },
+    { "label": "boost", "ventilation_power": 80 }
+  ],
+  "horizons_minutes": [10, 20, 30]
+}
+```
+
+### `POST /recommendation`
+
+```json
+{
+  "sample": {
+    "room_id": 3,
+    "co2": 1300,
+    "temperature": 24.5,
+    "humidity": 52,
+    "ventilation_power": 25,
+    "occupancy": 20
+  },
+  "target_co2": 900,
+  "max_ventilation_power": 100,
+  "horizon_minutes": 20
+}
+```
+
+The AI service returns a recommendation but does not publish MQTT commands:
+
+```json
+{
+  "model_version": "heuristic-untrained",
+  "mode": "heuristic",
+  "suggested_ventilation_power": 80,
+  "reason": "Expected CO2 is 850.0 ppm in 20 minutes with ventilation power 80%.",
+  "predicted": { "horizon_minutes": 20, "co2": 850.0, "temperature": 24.2, "humidity": 51.1 },
+  "mqtt_command_topic": "devices/{deviceId}/control",
+  "sends_command": false
+}
+```
+
+## Report Description In Ukrainian
+
+У межах програмної системи для управління вентиляційними системами реалізовано окреме AI-розширення для прогнозування параметрів мікроклімату. Для демонстрації роботи системи використовується сервіс `Device Telemetry Simulator`, який імітує роботу датчиків і вентиляційного обладнання. Він не створює окремий тип згенерованих даних у доменній моделі, а публікує повідомлення у той самий MQTT-формат, який використовується фізичними сенсорами.
+
+Сервіс симуляції створює демонстраційні приміщення, сенсори та вентиляційні пристрої, після чого передає значення CO2, температури, вологості та зайнятості приміщення через брокер EMQX. `Telemetry Ingestion Service` приймає ці повідомлення, виконує валідацію, визначає сенсор за серійним номером і зберігає історію у стандартній таблиці `sensor_data`. Стан вентиляційного пристрою відображається у звичайній історії `device_data`.
+
+`AI Training Job` формує часовий датасет зі стандартних таблиць системи, виконує навчання моделі Random Forest для прогнозування CO2, температури та вологості на горизонтах 10, 20 і 30 хвилин, а також зберігає файл `model.joblib` і метрики якості моделі.
+
+Окремий `AI Prediction Service` на FastAPI надає REST API для прогнозування, симуляції альтернативних режимів вентиляції та формування рекомендацій. AI-модуль не має права напряму керувати вентиляційними пристроями та не публікує команди у MQTT. Він лише повертає прогноз або рекомендацію, а остаточне рішення та команду в топік `devices/{deviceId}/control` формує `Automation Service`.
+
+У Kubernetes AI-розширення розгортається як набір незалежних компонентів: Deployment для симулятора пристроїв, Deployment і Service для prediction-сервісу, CronJob для періодичного навчання моделі, ConfigMap для налаштувань, Secret для паролів PostgreSQL/MQTT, PVC для збереження моделі та HPA для масштабування prediction-сервісу.
+
+Важливо, що демонстраційні вимірювання формуються програмно, але всередині системи обробляються як звичайна телеметрія пристроїв. Такий підхід використовується для перевірки архітектурного та алгоритмічного рішення. Отримані метрики не є доказом точності для реального об'єкта. Для промислового впровадження модель необхідно донавчити та перевірити на фактичній телеметрії конкретних приміщень і вентиляційного обладнання.
