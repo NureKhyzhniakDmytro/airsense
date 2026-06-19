@@ -23,6 +23,10 @@ TestResults/
 **/.nuxt/
 **/.vite/
 
+# Python
+**/__pycache__/
+*.py[cod]
+
 # Android/Mobile
 **/.gradle/
 **/local.properties
@@ -39,3 +43,6 @@ Thumbs.db
 *.kubeconfig
 charts/airsense/values.local.yaml
 secrets/
+
+# AgentOps session artifacts
+/.agents/
