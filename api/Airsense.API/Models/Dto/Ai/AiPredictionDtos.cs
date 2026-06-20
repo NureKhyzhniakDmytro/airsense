@@ -8,7 +8,6 @@ public sealed class AiTelemetrySampleDto
     public double Temperature { get; init; }
     public double Humidity { get; init; }
     public double VentilationPower { get; init; }
-    public int Occupancy { get; init; }
 }
 
 public sealed class AiPredictionPointDto

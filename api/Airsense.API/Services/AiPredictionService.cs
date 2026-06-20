@@ -9,7 +9,8 @@ namespace Airsense.API.Services;
 public sealed class AiPredictionService(
     IDbConnection connection,
     IHttpClientFactory httpClientFactory,
-    IConfiguration configuration) : IAiPredictionService
+    IConfiguration configuration,
+    IMqttService mqttService) : IAiPredictionService
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -117,26 +118,113 @@ public sealed class AiPredictionService(
         long recommendationId,
         CancellationToken cancellationToken = default)
     {
-        const string sql = """
-                           UPDATE ventilation_commands
-                           SET status = 'accepted'
-                           WHERE id = @recommendationId
-                             AND room_id = @roomId
-                             AND source = 'ai-recommendation'
-                             AND command_type = 'recommendation'
-                             AND status IN ('recommended', 'accepted')
-                           RETURNING
-                               id AS Id,
-                               timestamp AS Timestamp,
-                               requested_power AS RequestedPower,
-                               status AS Status,
-                               payload::text AS PayloadJson
-                           """;
+        if (connection.State != ConnectionState.Open)
+            connection.Open();
 
-        var row = await connection.QueryFirstOrDefaultAsync<RecommendationRow>(
-            new CommandDefinition(sql, new { roomId, recommendationId }, cancellationToken: cancellationToken));
+        using var transaction = connection.BeginTransaction();
+        var committed = false;
+        try
+        {
+            const string selectSql = """
+                                     SELECT
+                                         vc.id AS Id,
+                                         vc.timestamp AS Timestamp,
+                                         vc.requested_power AS RequestedPower,
+                                         vc.status AS Status,
+                                         vc.payload::text AS PayloadJson,
+                                         COALESCE(vc.device_id, room_device.id) AS DeviceId
+                                     FROM ventilation_commands vc
+                                     LEFT JOIN LATERAL (
+                                         SELECT id
+                                         FROM devices
+                                         WHERE room_id = @roomId
+                                         ORDER BY id
+                                         LIMIT 1
+                                     ) room_device ON TRUE
+                                     WHERE vc.id = @recommendationId
+                                       AND vc.room_id = @roomId
+                                       AND vc.source = 'ai-recommendation'
+                                       AND vc.command_type = 'recommendation'
+                                       AND vc.status IN ('recommended', 'accepted')
+                                     FOR UPDATE OF vc
+                                     """;
 
-        return row is null ? null : MapRecommendation(row);
+            var row = await connection.QueryFirstOrDefaultAsync<RecommendationApplicationRow>(
+                new CommandDefinition(
+                    selectSql,
+                    new { roomId, recommendationId },
+                    transaction,
+                    cancellationToken: cancellationToken));
+
+            if (row is null)
+            {
+                transaction.Rollback();
+                return null;
+            }
+
+            if (row.RequestedPower is null)
+                throw new InvalidOperationException("AI recommendation does not contain a ventilation power value.");
+
+            if (row.DeviceId is null)
+                throw new InvalidOperationException("Room does not have a ventilation device to apply this recommendation.");
+
+            var requestedPower = Math.Round(Math.Clamp(row.RequestedPower.Value, 0, 100), 2);
+
+            const string insertDeviceDataSql = """
+                                               INSERT INTO device_data(device_id, value)
+                                               VALUES (@deviceId, @requestedPower)
+                                               """;
+
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    insertDeviceDataSql,
+                    new { deviceId = row.DeviceId.Value, requestedPower },
+                    transaction,
+                    cancellationToken: cancellationToken));
+
+            const string updateRecommendationSql = """
+                                                   UPDATE ventilation_commands
+                                                   SET status = 'used', device_id = @deviceId, requested_power = @requestedPower
+                                                   WHERE id = @recommendationId
+                                                   RETURNING
+                                                       id AS Id,
+                                                       timestamp AS Timestamp,
+                                                       requested_power AS RequestedPower,
+                                                       status AS Status,
+                                                       payload::text AS PayloadJson
+                                                   """;
+
+            var updated = await connection.QuerySingleAsync<RecommendationRow>(
+                new CommandDefinition(
+                    updateRecommendationSql,
+                    new
+                    {
+                        recommendationId,
+                        deviceId = row.DeviceId.Value,
+                        requestedPower
+                    },
+                    transaction,
+                    cancellationToken: cancellationToken));
+
+            transaction.Commit();
+            committed = true;
+
+            await mqttService.PublishAsync($"room/{roomId}", new
+            {
+                fanSpeed = requestedPower,
+                timestamp = new DateTimeOffset(DateTime.UtcNow).ToUnixTimeMilliseconds(),
+                source = "ai-recommendation",
+                recommendationId
+            });
+
+            return MapRecommendation(updated);
+        }
+        catch
+        {
+            if (!committed && transaction.Connection is not null)
+                transaction.Rollback();
+            throw;
+        }
     }
 
     public async Task<AiAutomationRecommendationDto?> ConsumeAcceptedRecommendationAsync(int roomId)
@@ -199,7 +287,7 @@ public sealed class AiPredictionService(
                                JOIN sensor_data sd ON sd.sensor_id = s.id
                                JOIN parameters p ON p.id = sd.parameter_id
                                WHERE s.room_id = @roomId
-                                 AND p.name IN ('co2', 'temperature', 'humidity', 'occupancy')
+                                 AND p.name IN ('co2', 'temperature', 'humidity')
                                ORDER BY p.name, s.id, sd.timestamp DESC
                            ),
                            sensor_summary AS (
@@ -207,11 +295,10 @@ public sealed class AiPredictionService(
                                    AVG(value) FILTER (WHERE parameter = 'co2') AS Co2,
                                    AVG(value) FILTER (WHERE parameter = 'temperature') AS Temperature,
                                    AVG(value) FILTER (WHERE parameter = 'humidity') AS Humidity,
-                                   COALESCE(AVG(value) FILTER (WHERE parameter = 'occupancy'), 0) AS Occupancy,
                                    MAX(timestamp) AS LatestSensorAt
                                FROM latest_sensor
                            ),
-                           latest_device AS (
+                           latest_device_per_device AS (
                                SELECT
                                    d.id AS DeviceId,
                                    dd.value AS VentilationPower,
@@ -219,21 +306,25 @@ public sealed class AiPredictionService(
                                FROM devices d
                                JOIN device_data dd ON dd.device_id = d.id
                                WHERE d.room_id = @roomId
-                               ORDER BY COALESCE(dd.applied_at, dd.timestamp) DESC, dd.id DESC
-                               LIMIT 1
+                               ORDER BY d.id, COALESCE(dd.applied_at, dd.timestamp) DESC, dd.id DESC
+                           ),
+                           latest_device AS (
+                               SELECT
+                                   AVG(VentilationPower) AS VentilationPower,
+                                   MAX(DeviceTimestamp) AS DeviceTimestamp
+                               FROM latest_device_per_device
                            )
                            SELECT
                                @roomId AS RoomId,
                                ss.Co2 AS Co2,
                                ss.Temperature AS Temperature,
                                ss.Humidity AS Humidity,
-                               ss.Occupancy AS Occupancy,
                                COALESCE(ld.VentilationPower, 0) AS VentilationPower,
                                GREATEST(
                                    COALESCE(ss.LatestSensorAt, TIMESTAMP 'epoch'),
                                    COALESCE(ld.DeviceTimestamp, TIMESTAMP 'epoch')
                                ) AS Timestamp,
-                               ld.DeviceId AS DeviceId
+                               NULL AS DeviceId
                            FROM sensor_summary ss
                            LEFT JOIN latest_device ld ON TRUE
                            """;
@@ -249,8 +340,7 @@ public sealed class AiPredictionService(
             Co2 = Math.Round(row.Co2.Value, 2),
             Temperature = Math.Round(row.Temperature.Value, 2),
             Humidity = Math.Round(row.Humidity.Value, 2),
-            VentilationPower = Math.Round(Math.Clamp(row.VentilationPower, 0, 100), 2),
-            Occupancy = Math.Max(0, (int)Math.Round(row.Occupancy))
+            VentilationPower = Math.Round(Math.Clamp(row.VentilationPower, 0, 100), 2)
         };
     }
 
@@ -359,17 +449,21 @@ public sealed class AiPredictionService(
         public double? Co2 { get; init; }
         public double? Temperature { get; init; }
         public double? Humidity { get; init; }
-        public double Occupancy { get; init; }
         public double VentilationPower { get; init; }
         public DateTime Timestamp { get; init; }
     }
 
-    private sealed class RecommendationRow
+    private class RecommendationRow
     {
         public long Id { get; init; }
         public DateTime Timestamp { get; init; }
         public double? RequestedPower { get; init; }
         public string Status { get; init; } = "";
         public string PayloadJson { get; init; } = "";
+    }
+
+    private sealed class RecommendationApplicationRow : RecommendationRow
+    {
+        public int? DeviceId { get; init; }
     }
 }

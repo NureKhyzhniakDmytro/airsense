@@ -18,7 +18,6 @@ FEATURE_COLUMNS = [
     "temperature",
     "humidity",
     "ventilation_power",
-    "occupancy",
     "hour",
     "day_of_week",
     "room_id",
@@ -72,7 +71,6 @@ def feature_row(sample: TelemetrySample) -> list[float]:
         sample.temperature,
         sample.humidity,
         sample.ventilation_power,
-        sample.occupancy,
         timestamp.hour,
         timestamp.weekday(),
         sample.room_id,
@@ -89,15 +87,11 @@ def heuristic_predictions(sample: TelemetrySample, horizons: Iterable[int]) -> l
     points: list[PredictionPoint] = []
     for horizon in horizons:
         scale = horizon / 10.0
-        co2 = sample.co2 + (sample.occupancy * 16.0 - sample.ventilation_power * 7.0) * scale
+        co2 = sample.co2 - sample.ventilation_power * 7.0 * scale
         co2 -= max(sample.co2 - 420.0, 0.0) * 0.03 * scale
 
-        temperature = sample.temperature + (
-            sample.occupancy * 0.035 - sample.ventilation_power * 0.012
-        ) * scale
-        humidity = sample.humidity + (
-            sample.occupancy * 0.06 - sample.ventilation_power * 0.025
-        ) * scale
+        temperature = sample.temperature - sample.ventilation_power * 0.012 * scale
+        humidity = sample.humidity - sample.ventilation_power * 0.025 * scale
 
         points.append(
             PredictionPoint(
@@ -114,7 +108,10 @@ def trained_predictions(bundle: ModelBundle, sample: TelemetrySample, horizons: 
     if bundle.model is None:
         return heuristic_predictions(sample, horizons)
 
-    prediction = bundle.model.predict(np.array([feature_row(sample)], dtype=float))[0]
+    try:
+        prediction = bundle.model.predict(np.array([feature_row(sample)], dtype=float))[0]
+    except ValueError:
+        return heuristic_predictions(sample, horizons)
     by_target = dict(zip(TARGET_COLUMNS, prediction, strict=False))
     requested = set(horizons)
     points = []

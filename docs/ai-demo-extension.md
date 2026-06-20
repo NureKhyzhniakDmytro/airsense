@@ -90,8 +90,7 @@ Published parameters:
 
 - `co2`;
 - `temperature`;
-- `humidity`;
-- `occupancy`.
+- `humidity`.
 
 The simulator uses scenario-based generation:
 
@@ -102,7 +101,15 @@ The simulator uses scenario-based generation:
 - `night_mode`;
 - `critical_co2_event`.
 
-CO2 grows when occupancy increases and falls when ventilation power grows. Temperature and humidity change according to occupancy, ventilation and noise. The current ventilation level is reflected in ordinary `device_data` rows, so the rest of the system sees regular device history.
+CO2 grows when the simulator's internal occupancy load increases and falls when ventilation power grows. Temperature and humidity change according to the same internal load, ventilation and noise. Occupancy is not published as sensor telemetry; it is only a demo-service scenario/profile input. The current ventilation level is reflected in ordinary `device_data` rows, so the rest of the system sees regular device history.
+
+The demo topology uses the same frontend icon and unit contract as normal user-created data:
+
+- environment icon: `industrial`;
+- alternating default room icons: `production`, `office`;
+- temperature unit: `°C`;
+- demo sensor type: `Microclimate Sensor`;
+- parameters: `co2`, `temperature`, `humidity`.
 
 ## Demo Data Control UI
 
@@ -119,7 +126,7 @@ This page allows an authenticated user to:
 - generate historical telemetry for charts and model training;
 - clear only demo history while keeping rooms and devices;
 - assign room-level simulation profiles;
-- set optional occupancy and ventilation overrides.
+- set optional internal occupancy-load and ventilation overrides.
 
 The UI does not create a separate telemetry type. All values remain ordinary `sensor_data` and `device_data` rows. Room-level controls are stored in `demo_room_profiles`, which is a simulator configuration table, not a telemetry classification mechanism.
 
@@ -158,8 +165,7 @@ The UI does not create a separate telemetry type. All values remain ordinary `se
     "co2": 950,
     "temperature": 24.1,
     "humidity": 51.2,
-    "ventilation_power": 35,
-    "occupancy": 12
+    "ventilation_power": 35
   },
   "horizons_minutes": [10, 20, 30]
 }
@@ -174,8 +180,7 @@ The UI does not create a separate telemetry type. All values remain ordinary `se
     "co2": 1200,
     "temperature": 25,
     "humidity": 55,
-    "ventilation_power": 20,
-    "occupancy": 18
+    "ventilation_power": 20
   },
   "scenarios": [
     { "label": "quiet", "ventilation_power": 30 },
@@ -194,8 +199,7 @@ The UI does not create a separate telemetry type. All values remain ordinary `se
     "co2": 1300,
     "temperature": 24.5,
     "humidity": 52,
-    "ventilation_power": 25,
-    "occupancy": 20
+    "ventilation_power": 25
   },
   "target_co2": 900,
   "max_ventilation_power": 100,
@@ -203,7 +207,7 @@ The UI does not create a separate telemetry type. All values remain ordinary `se
 }
 ```
 
-The AI service returns a recommendation but does not publish MQTT commands:
+The AI prediction service returns a recommendation but does not publish MQTT commands:
 
 ```json
 {
@@ -217,6 +221,16 @@ The AI service returns a recommendation but does not publish MQTT commands:
 }
 ```
 
+When the backend accepts a stored recommendation through `POST /ai/room/{roomId}/recommendations/{recommendationId}/accept`, the application immediately applies it:
+
+1. locks the recommendation row;
+2. resolves the target ventilation device in the room;
+3. inserts a `device_data` command row;
+4. marks the recommendation as `used`;
+5. publishes a `room/{roomId}` MQTT command with the requested fan speed.
+
+Read-only users can view AI forecasts and recommendation history. Only owners/admins can generate or apply recommendations.
+
 ## Report Description In Ukrainian
 
 У межах програмної системи для управління вентиляційними системами реалізовано окреме AI-розширення для прогнозування параметрів мікроклімату. Для демонстрації роботи системи використовується сервіс `Device Telemetry Simulator`, який імітує роботу датчиків і вентиляційного обладнання. Він не створює окремий тип згенерованих даних у доменній моделі, а публікує повідомлення у той самий MQTT-формат, який використовується фізичними сенсорами.
@@ -225,7 +239,7 @@ The AI service returns a recommendation but does not publish MQTT commands:
 
 `AI Training Job` формує часовий датасет зі стандартних таблиць системи, виконує навчання моделі Random Forest для прогнозування CO2, температури та вологості на горизонтах 10, 20 і 30 хвилин, а також зберігає файл `model.joblib` і метрики якості моделі.
 
-Окремий `AI Prediction Service` на FastAPI надає REST API для прогнозування, симуляції альтернативних режимів вентиляції та формування рекомендацій. AI-модуль не має права напряму керувати вентиляційними пристроями та не публікує команди у MQTT. Він лише повертає прогноз або рекомендацію, а остаточне рішення та команду в топік `devices/{deviceId}/control` формує `Automation Service`.
+Окремий `AI Prediction Service` на FastAPI надає REST API для прогнозування, симуляції альтернативних режимів вентиляції та формування рекомендацій. AI-модуль не має права напряму керувати вентиляційними пристроями та не публікує команди у MQTT. Він лише повертає прогноз або рекомендацію. Після підтвердження рекомендації backend фіксує команду у стандартній історії `device_data`, змінює статус рекомендації на `used` і публікує MQTT-команду для відповідного приміщення.
 
 У Kubernetes AI-розширення розгортається як набір незалежних компонентів: Deployment для симулятора пристроїв, Deployment і Service для prediction-сервісу, CronJob для періодичного навчання моделі, ConfigMap для налаштувань, Secret для паролів PostgreSQL/MQTT, PVC для збереження моделі та HPA для масштабування prediction-сервісу.
 

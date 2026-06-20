@@ -55,10 +55,6 @@
           <strong>{{ formatNumber(sample.ventilation_power) }}%</strong>
         </div>
         <div class="ai-sample">
-          <span>Occupancy</span>
-          <strong>{{ sample.occupancy }}</strong>
-        </div>
-        <div class="ai-sample">
           <span>Sample age</span>
           <strong>{{ formatAge(insights.telemetry_age_seconds) }}</strong>
         </div>
@@ -128,7 +124,7 @@
         <p v-if="latestRecommendation?.reason">{{ latestRecommendation.reason }}</p>
         <p v-else>Generate a recommendation from the current room sample and model version.</p>
 
-        <div class="ai-recommendation__actions">
+        <div v-if="!isReadOnly" class="ai-recommendation__actions">
           <Button
             type="button"
             label="Generate"
@@ -155,7 +151,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, inject, onMounted, ref, type ComputedRef } from "vue";
 import Button from "primevue/button";
 import Message from "primevue/message";
 import { useToast } from "primevue/usetoast";
@@ -176,6 +172,8 @@ const isLoading = ref(false);
 const isCreatingRecommendation = ref(false);
 const isAcceptingRecommendation = ref(false);
 const errorMessage = ref("");
+const injectedReadOnly = inject<ComputedRef<boolean>>("roomReadOnly", computed(() => false));
+const isReadOnly = computed(() => injectedReadOnly.value);
 
 const sample = computed(() => insights.value?.sample ?? null);
 const latestRecommendation = computed(() => insights.value?.recent_recommendations?.[0] ?? null);
@@ -214,6 +212,8 @@ const loadInsights = async () => {
 };
 
 const createRecommendation = async () => {
+  if (isReadOnly.value) return;
+
   isCreatingRecommendation.value = true;
   errorMessage.value = "";
   try {
@@ -229,12 +229,14 @@ const createRecommendation = async () => {
 };
 
 const acceptRecommendation = async (recommendationId: number) => {
+  if (isReadOnly.value) return;
+
   isAcceptingRecommendation.value = true;
   errorMessage.value = "";
   try {
     const recommendation = await acceptRoomAiRecommendation(props.roomId, recommendationId);
     upsertRecommendation(recommendation);
-    toast.add({ severity: "success", summary: "Recommendation applied", detail: "Automation will use it on the next telemetry event.", life: 3000 });
+    toast.add({ severity: "success", summary: "Recommendation applied", detail: "Command was sent to the room ventilation device.", life: 3000 });
   } catch (error) {
     console.error("Failed to apply AI recommendation:", error);
     errorMessage.value = "Unable to apply this recommendation.";

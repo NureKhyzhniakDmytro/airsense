@@ -8,8 +8,9 @@ import joblib
 import numpy as np
 import pandas as pd
 from psycopg.types.json import Jsonb
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.multioutput import MultiOutputRegressor
 
 from .db import connect, ensure_schema
 from .model_store import FEATURE_COLUMNS, HORIZONS, TARGET_COLUMNS, model_path, save_heuristic_artifact
@@ -31,7 +32,7 @@ def load_telemetry() -> pd.DataFrame:
             JOIN sensors s ON s.id = sd.sensor_id
             JOIN parameters p ON p.id = sd.parameter_id
             WHERE s.room_id IS NOT NULL
-              AND p.name IN ('co2', 'temperature', 'humidity', 'occupancy')
+              AND p.name IN ('co2', 'temperature', 'humidity')
             GROUP BY s.room_id, date_trunc('minute', sd.timestamp), p.name
         ),
         pivoted AS (
@@ -40,32 +41,43 @@ def load_telemetry() -> pd.DataFrame:
                 timestamp,
                 AVG(value) FILTER (WHERE parameter = 'co2') AS co2,
                 AVG(value) FILTER (WHERE parameter = 'temperature') AS temperature,
-                AVG(value) FILTER (WHERE parameter = 'humidity') AS humidity,
-                COALESCE(AVG(value) FILTER (WHERE parameter = 'occupancy'), 0) AS occupancy
+                AVG(value) FILTER (WHERE parameter = 'humidity') AS humidity
             FROM sensor_points
             GROUP BY room_id, timestamp
+        ),
+        with_device AS (
+            SELECT
+                p.room_id,
+                p.timestamp,
+                p.co2,
+                p.temperature,
+                p.humidity,
+                COALESCE((
+                    SELECT AVG(latest_device.value)
+                    FROM (
+                        SELECT DISTINCT ON (d.id)
+                            dd.value
+                        FROM devices d
+                        JOIN device_data dd ON dd.device_id = d.id
+                        WHERE d.room_id = p.room_id
+                          AND dd.timestamp <= p.timestamp
+                        ORDER BY d.id, dd.timestamp DESC, dd.id DESC
+                    ) latest_device
+                ), 0) AS ventilation_power
+            FROM pivoted p
+            WHERE p.co2 IS NOT NULL
+              AND p.temperature IS NOT NULL
+              AND p.humidity IS NOT NULL
         )
         SELECT
-            p.room_id,
-            p.timestamp,
-            p.co2,
-            p.temperature,
-            p.humidity,
-            COALESCE((
-                SELECT dd.value
-                FROM devices d
-                JOIN device_data dd ON dd.device_id = d.id
-                WHERE d.room_id = p.room_id
-                  AND dd.timestamp <= p.timestamp
-                ORDER BY dd.timestamp DESC
-                LIMIT 1
-            ), 0) AS ventilation_power,
-            p.occupancy
-        FROM pivoted p
-        WHERE p.co2 IS NOT NULL
-          AND p.temperature IS NOT NULL
-          AND p.humidity IS NOT NULL
-        ORDER BY p.timestamp
+            room_id,
+            timestamp,
+            co2,
+            temperature,
+            humidity,
+            ventilation_power
+        FROM with_device
+        ORDER BY timestamp
     """
     with connect() as conn:
         return pd.read_sql(query, conn)
@@ -182,10 +194,16 @@ def train() -> dict:
     x_validation = validation_df[FEATURE_COLUMNS].to_numpy(dtype=float)
     y_validation = validation_df[TARGET_COLUMNS].to_numpy(dtype=float)
 
-    model = RandomForestRegressor(
-        n_estimators=120,
-        min_samples_leaf=2,
-        random_state=42,
+    model = MultiOutputRegressor(
+        HistGradientBoostingRegressor(
+            max_iter=260,
+            learning_rate=0.045,
+            max_leaf_nodes=31,
+            min_samples_leaf=20,
+            l2_regularization=0.01,
+            monotonic_cst=[1, 1, 1, -1, 0, 0, 0],
+            random_state=42,
+        ),
         n_jobs=-1,
     )
     model.fit(x_train, y_train)
@@ -198,7 +216,7 @@ def train() -> dict:
         "validation": int(len(validation_df)),
     }
 
-    version = f"rf-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    version = f"hgb-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
     artifact = {
         "kind": "sklearn",
         "version": version,

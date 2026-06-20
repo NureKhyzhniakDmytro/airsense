@@ -5,7 +5,6 @@ export interface AiTelemetrySample {
   temperature: number;
   humidity: number;
   ventilation_power: number;
-  occupancy: number;
 }
 
 export interface AiPredictionPoint {

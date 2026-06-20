@@ -13,7 +13,6 @@ class TelemetrySample(BaseModel):
     temperature: float = Field(gt=-40, lt=80)
     humidity: float = Field(ge=0, le=100)
     ventilation_power: float = Field(ge=0, le=100)
-    occupancy: int = Field(ge=0)
 
     def effective_timestamp(self) -> datetime:
         if self.timestamp is None:

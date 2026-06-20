@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Airsense.API.Models.Dto.Ai;
 using Airsense.API.Repository;
 using Airsense.API.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -40,7 +41,7 @@ public class AiController(
     [HttpGet("room/{roomId:int}")]
     public async Task<IActionResult> RoomInsights(int roomId, CancellationToken cancellationToken)
     {
-        var accessError = await ValidateRoomAccessAsync(roomId);
+        var accessError = await ValidateRoomReadAccessAsync(roomId);
         if (accessError is not null)
             return accessError;
 
@@ -60,7 +61,7 @@ public class AiController(
     [HttpPost("room/{roomId:int}/recommendation")]
     public async Task<IActionResult> CreateRoomRecommendation(int roomId, CancellationToken cancellationToken)
     {
-        var accessError = await ValidateRoomAccessAsync(roomId);
+        var accessError = await ValidateRoomManageAccessAsync(roomId);
         if (accessError is not null)
             return accessError;
 
@@ -87,13 +88,21 @@ public class AiController(
         long recommendationId,
         CancellationToken cancellationToken)
     {
-        var accessError = await ValidateRoomAccessAsync(roomId);
+        var accessError = await ValidateRoomManageAccessAsync(roomId);
         if (accessError is not null)
             return accessError;
 
-        var accepted = await aiPredictionService.AcceptRecommendationAsync(roomId, recommendationId, cancellationToken);
-        if (accepted is null)
-            return NotFound(new { message = "AI recommendation not found" });
+        AiRecommendationAuditDto? accepted;
+        try
+        {
+            accepted = await aiPredictionService.AcceptRecommendationAsync(roomId, recommendationId, cancellationToken);
+            if (accepted is null)
+                return NotFound(new { message = "AI recommendation not found" });
+        }
+        catch (InvalidOperationException error)
+        {
+            return BadRequest(new { message = error.Message });
+        }
 
         return Ok(accepted);
     }
@@ -128,7 +137,13 @@ public class AiController(
         }
     }
 
-    private async Task<IActionResult?> ValidateRoomAccessAsync(int roomId)
+    private Task<IActionResult?> ValidateRoomReadAccessAsync(int roomId) =>
+        ValidateRoomAccessAsync(roomId, requireManageAccess: false);
+
+    private Task<IActionResult?> ValidateRoomManageAccessAsync(int roomId) =>
+        ValidateRoomAccessAsync(roomId, requireManageAccess: true);
+
+    private async Task<IActionResult?> ValidateRoomAccessAsync(int roomId, bool requireManageAccess)
     {
         if (!int.TryParse(User.FindFirst("id")?.Value, out var userId))
             return BadRequest(new { message = "You are not registered" });
@@ -137,7 +152,11 @@ public class AiController(
         if (room is null)
             return NotFound(new { message = "Room not found" });
 
-        if (!await roomRepository.IsHasAccessAsync(userId, roomId))
+        var hasAccess = requireManageAccess
+            ? await roomRepository.IsHasAccessAsync(userId, roomId)
+            : await roomRepository.IsMemberAsync(userId, roomId);
+
+        if (!hasAccess)
             return Forbid();
 
         return null;
