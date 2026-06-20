@@ -13,6 +13,8 @@ class TelemetrySample(BaseModel):
     temperature: float = Field(gt=-40, lt=80)
     humidity: float = Field(ge=0, le=100)
     ventilation_power: float = Field(ge=0, le=100)
+    supply_ventilation_power: float | None = Field(default=None, ge=0, le=100)
+    exhaust_ventilation_power: float | None = Field(default=None, ge=0, le=100)
 
     def effective_timestamp(self) -> datetime:
         if self.timestamp is None:
@@ -20,6 +22,12 @@ class TelemetrySample(BaseModel):
         if self.timestamp.tzinfo is None:
             return self.timestamp.replace(tzinfo=timezone.utc)
         return self.timestamp.astimezone(timezone.utc)
+
+    def effective_supply_ventilation_power(self) -> float:
+        return self.ventilation_power if self.supply_ventilation_power is None else self.supply_ventilation_power
+
+    def effective_exhaust_ventilation_power(self) -> float:
+        return self.ventilation_power if self.exhaust_ventilation_power is None else self.exhaust_ventilation_power
 
 
 class PredictRequest(BaseModel):

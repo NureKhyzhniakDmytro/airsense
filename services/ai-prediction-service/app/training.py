@@ -45,6 +45,25 @@ def load_telemetry() -> pd.DataFrame:
             FROM sensor_points
             GROUP BY room_id, timestamp
         ),
+        vent_roles AS (
+            SELECT
+                r.id AS room_id,
+                (item ->> 'device_id')::int AS device_id,
+                CASE
+                    WHEN lower(item ->> 'airflow_role') IN ('supply', 'exhaust') THEN lower(item ->> 'airflow_role')
+                    WHEN lower(COALESCE(item ->> 'label', '')) ~ '(extract|exhaust|return|outlet)' THEN 'exhaust'
+                    ELSE 'supply'
+                END AS airflow_role
+            FROM rooms r
+            CROSS JOIN LATERAL jsonb_array_elements(
+                CASE
+                    WHEN jsonb_typeof(r.layout -> 'items') = 'array' THEN r.layout -> 'items'
+                    ELSE '[]'::jsonb
+                END
+            ) AS item
+            WHERE lower(item ->> 'type') = 'vent'
+              AND (item ->> 'device_id') ~ '^[0-9]+$'
+        ),
         with_device AS (
             SELECT
                 p.room_id,
@@ -52,19 +71,35 @@ def load_telemetry() -> pd.DataFrame:
                 p.co2,
                 p.temperature,
                 p.humidity,
-                COALESCE((
-                    SELECT AVG(latest_device.value)
-                    FROM (
-                        SELECT DISTINCT ON (d.id)
-                            dd.value
-                        FROM devices d
-                        JOIN device_data dd ON dd.device_id = d.id
-                        WHERE d.room_id = p.room_id
-                          AND dd.timestamp <= p.timestamp
-                        ORDER BY d.id, dd.timestamp DESC, dd.id DESC
-                    ) latest_device
-                ), 0) AS ventilation_power
+                COALESCE(device_summary.ventilation_power, 0) AS ventilation_power,
+                COALESCE(device_summary.supply_ventilation_power, 0) AS supply_ventilation_power,
+                COALESCE(device_summary.exhaust_ventilation_power, 0) AS exhaust_ventilation_power
             FROM pivoted p
+            LEFT JOIN LATERAL (
+                SELECT
+                    AVG(latest_device.value) AS ventilation_power,
+                    AVG(latest_device.value) FILTER (WHERE latest_device.airflow_role = 'supply') AS supply_ventilation_power,
+                    AVG(latest_device.value) FILTER (WHERE latest_device.airflow_role = 'exhaust') AS exhaust_ventilation_power
+                FROM (
+                    SELECT DISTINCT ON (room_devices.id)
+                        dd.value,
+                        room_devices.airflow_role
+                    FROM (
+                        SELECT
+                            d.id,
+                            COALESCE(
+                                vr.airflow_role,
+                                CASE WHEN row_number() OVER (ORDER BY d.id) % 2 = 0 THEN 'exhaust' ELSE 'supply' END
+                            ) AS airflow_role
+                        FROM devices d
+                        LEFT JOIN vent_roles vr ON vr.room_id = d.room_id AND vr.device_id = d.id
+                        WHERE d.room_id = p.room_id
+                    ) room_devices
+                    JOIN device_data dd ON dd.device_id = room_devices.id
+                    WHERE dd.timestamp <= p.timestamp
+                    ORDER BY room_devices.id, dd.timestamp DESC, dd.id DESC
+                ) latest_device
+            ) device_summary ON TRUE
             WHERE p.co2 IS NOT NULL
               AND p.temperature IS NOT NULL
               AND p.humidity IS NOT NULL
@@ -75,7 +110,9 @@ def load_telemetry() -> pd.DataFrame:
             co2,
             temperature,
             humidity,
-            ventilation_power
+            ventilation_power,
+            supply_ventilation_power,
+            exhaust_ventilation_power
         FROM with_device
         ORDER BY timestamp
     """
@@ -201,7 +238,7 @@ def train() -> dict:
             max_leaf_nodes=31,
             min_samples_leaf=20,
             l2_regularization=0.01,
-            monotonic_cst=[1, 1, 1, -1, 0, 0, 0],
+            monotonic_cst=[1, 1, 1, -1, -1, -1, 0, 0, 0],
             random_state=42,
         ),
         n_jobs=-1,

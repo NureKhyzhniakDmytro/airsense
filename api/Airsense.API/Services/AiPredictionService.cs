@@ -172,13 +172,15 @@ public sealed class AiPredictionService(
 
             const string insertDeviceDataSql = """
                                                INSERT INTO device_data(device_id, value)
-                                               VALUES (@deviceId, @requestedPower)
+                                               SELECT id, @requestedPower
+                                               FROM devices
+                                               WHERE room_id = @roomId
                                                """;
 
             await connection.ExecuteAsync(
                 new CommandDefinition(
                     insertDeviceDataSql,
-                    new { deviceId = row.DeviceId.Value, requestedPower },
+                    new { roomId, requestedPower },
                     transaction,
                     cancellationToken: cancellationToken));
 
@@ -298,19 +300,51 @@ public sealed class AiPredictionService(
                                    MAX(timestamp) AS LatestSensorAt
                                FROM latest_sensor
                            ),
-                           latest_device_per_device AS (
+                           vent_items AS (
+                               SELECT
+                                   (item ->> 'device_id')::int AS DeviceId,
+                                   CASE
+                                       WHEN lower(item ->> 'airflow_role') IN ('supply', 'exhaust') THEN lower(item ->> 'airflow_role')
+                                       WHEN lower(COALESCE(item ->> 'label', '')) ~ '(extract|exhaust|return|outlet)' THEN 'exhaust'
+                                       ELSE 'supply'
+                                   END AS AirflowRole
+                               FROM rooms r
+                               CROSS JOIN LATERAL jsonb_array_elements(
+                                   CASE
+                                       WHEN jsonb_typeof(r.layout -> 'items') = 'array' THEN r.layout -> 'items'
+                                       ELSE '[]'::jsonb
+                                   END
+                               ) AS item
+                               WHERE r.id = @roomId
+                                 AND lower(item ->> 'type') = 'vent'
+                                 AND (item ->> 'device_id') ~ '^[0-9]+$'
+                           ),
+                           room_devices AS (
                                SELECT
                                    d.id AS DeviceId,
+                                   COALESCE(
+                                       vi.AirflowRole,
+                                       CASE WHEN row_number() OVER (ORDER BY d.id) % 2 = 0 THEN 'exhaust' ELSE 'supply' END
+                                   ) AS AirflowRole
+                               FROM devices d
+                               LEFT JOIN vent_items vi ON vi.DeviceId = d.id
+                               WHERE d.room_id = @roomId
+                           ),
+                           latest_device_per_device AS (
+                               SELECT DISTINCT ON (rd.DeviceId)
+                                   rd.DeviceId,
+                                   rd.AirflowRole,
                                    dd.value AS VentilationPower,
                                    COALESCE(dd.applied_at, dd.timestamp) AS DeviceTimestamp
-                               FROM devices d
-                               JOIN device_data dd ON dd.device_id = d.id
-                               WHERE d.room_id = @roomId
-                               ORDER BY d.id, COALESCE(dd.applied_at, dd.timestamp) DESC, dd.id DESC
+                               FROM room_devices rd
+                               JOIN device_data dd ON dd.device_id = rd.DeviceId
+                               ORDER BY rd.DeviceId, COALESCE(dd.applied_at, dd.timestamp) DESC, dd.id DESC
                            ),
                            latest_device AS (
                                SELECT
                                    AVG(VentilationPower) AS VentilationPower,
+                                   AVG(VentilationPower) FILTER (WHERE AirflowRole = 'supply') AS SupplyVentilationPower,
+                                   AVG(VentilationPower) FILTER (WHERE AirflowRole = 'exhaust') AS ExhaustVentilationPower,
                                    MAX(DeviceTimestamp) AS DeviceTimestamp
                                FROM latest_device_per_device
                            )
@@ -320,6 +354,8 @@ public sealed class AiPredictionService(
                                ss.Temperature AS Temperature,
                                ss.Humidity AS Humidity,
                                COALESCE(ld.VentilationPower, 0) AS VentilationPower,
+                               COALESCE(ld.SupplyVentilationPower, 0) AS SupplyVentilationPower,
+                               COALESCE(ld.ExhaustVentilationPower, 0) AS ExhaustVentilationPower,
                                GREATEST(
                                    COALESCE(ss.LatestSensorAt, TIMESTAMP 'epoch'),
                                    COALESCE(ld.DeviceTimestamp, TIMESTAMP 'epoch')
@@ -340,7 +376,9 @@ public sealed class AiPredictionService(
             Co2 = Math.Round(row.Co2.Value, 2),
             Temperature = Math.Round(row.Temperature.Value, 2),
             Humidity = Math.Round(row.Humidity.Value, 2),
-            VentilationPower = Math.Round(Math.Clamp(row.VentilationPower, 0, 100), 2)
+            VentilationPower = Math.Round(Math.Clamp(row.VentilationPower, 0, 100), 2),
+            SupplyVentilationPower = Math.Round(Math.Clamp(row.SupplyVentilationPower, 0, 100), 2),
+            ExhaustVentilationPower = Math.Round(Math.Clamp(row.ExhaustVentilationPower, 0, 100), 2)
         };
     }
 
@@ -450,6 +488,8 @@ public sealed class AiPredictionService(
         public double? Temperature { get; init; }
         public double? Humidity { get; init; }
         public double VentilationPower { get; init; }
+        public double SupplyVentilationPower { get; init; }
+        public double ExhaustVentilationPower { get; init; }
         public DateTime Timestamp { get; init; }
     }
 

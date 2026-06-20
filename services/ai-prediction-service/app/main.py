@@ -52,8 +52,14 @@ def simulate_endpoint(request: SimulateRequest) -> SimulateResponse:
     scenarios = []
     for scenario in request.scenarios:
         sample = TelemetrySample(
-            **request.sample.model_dump(exclude={"ventilation_power"}),
+            **request.sample.model_dump(exclude={
+                "ventilation_power",
+                "supply_ventilation_power",
+                "exhaust_ventilation_power",
+            }),
             ventilation_power=scenario.ventilation_power,
+            supply_ventilation_power=scenario.ventilation_power,
+            exhaust_ventilation_power=scenario.ventilation_power,
         )
         scenarios.append(
             ScenarioSimulation(
@@ -77,8 +83,14 @@ def recommendation_endpoint(request: RecommendationRequest) -> RecommendationRes
 
     for power in candidates:
         sample = TelemetrySample(
-            **request.sample.model_dump(exclude={"ventilation_power"}),
+            **request.sample.model_dump(exclude={
+                "ventilation_power",
+                "supply_ventilation_power",
+                "exhaust_ventilation_power",
+            }),
             ventilation_power=power,
+            supply_ventilation_power=power,
+            exhaust_ventilation_power=power,
         )
         prediction = predict(bundle, sample, [horizon])[0]
         if best_prediction is None:

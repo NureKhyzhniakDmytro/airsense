@@ -18,6 +18,8 @@ FEATURE_COLUMNS = [
     "temperature",
     "humidity",
     "ventilation_power",
+    "supply_ventilation_power",
+    "exhaust_ventilation_power",
     "hour",
     "day_of_week",
     "room_id",
@@ -71,6 +73,8 @@ def feature_row(sample: TelemetrySample) -> list[float]:
         sample.temperature,
         sample.humidity,
         sample.ventilation_power,
+        sample.effective_supply_ventilation_power(),
+        sample.effective_exhaust_ventilation_power(),
         timestamp.hour,
         timestamp.weekday(),
         sample.room_id,
@@ -85,13 +89,17 @@ def clamp(value: float, lower: float, upper: float) -> float:
 
 def heuristic_predictions(sample: TelemetrySample, horizons: Iterable[int]) -> list[PredictionPoint]:
     points: list[PredictionPoint] = []
+    supply_power = sample.effective_supply_ventilation_power()
+    exhaust_power = sample.effective_exhaust_ventilation_power()
+    exchange_power = max(sample.ventilation_power, (supply_power + exhaust_power) / 2)
+    balance_factor = 1 - abs(supply_power - exhaust_power) / 180
     for horizon in horizons:
         scale = horizon / 10.0
-        co2 = sample.co2 - sample.ventilation_power * 7.0 * scale
+        co2 = sample.co2 - exchange_power * (6.2 + balance_factor * 1.1) * scale
         co2 -= max(sample.co2 - 420.0, 0.0) * 0.03 * scale
 
-        temperature = sample.temperature - sample.ventilation_power * 0.012 * scale
-        humidity = sample.humidity - sample.ventilation_power * 0.025 * scale
+        temperature = sample.temperature - (supply_power * 0.013 + exhaust_power * 0.005) * scale
+        humidity = sample.humidity - (supply_power * 0.026 + exhaust_power * 0.011) * scale
 
         points.append(
             PredictionPoint(

@@ -54,6 +54,14 @@
           <span>Ventilation</span>
           <strong>{{ formatNumber(sample.ventilation_power) }}%</strong>
         </div>
+        <div v-if="sample.supply_ventilation_power !== null && sample.supply_ventilation_power !== undefined" class="ai-sample">
+          <span>Supply</span>
+          <strong>{{ formatNumber(sample.supply_ventilation_power) }}%</strong>
+        </div>
+        <div v-if="sample.exhaust_ventilation_power !== null && sample.exhaust_ventilation_power !== undefined" class="ai-sample">
+          <span>Exhaust</span>
+          <strong>{{ formatNumber(sample.exhaust_ventilation_power) }}%</strong>
+        </div>
         <div class="ai-sample">
           <span>Sample age</span>
           <strong>{{ formatAge(insights.telemetry_age_seconds) }}</strong>
