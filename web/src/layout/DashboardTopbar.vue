@@ -9,15 +9,83 @@
     </div>
 
     <nav class="app-sidebar__tree" aria-label="Workspace navigation">
-      <router-link
-        to="/dashboard"
-        class="app-sidebar__tree-node app-sidebar__tree-node--root"
-        :class="{ 'app-sidebar__tree-node--active': isActive('/dashboard', true) }"
-        aria-label="Dashboard"
-      >
-        <i class="pi pi-th-large" />
-        <span>Dashboard</span>
-      </router-link>
+      <div class="app-sidebar__tree-group">
+        <router-link
+          to="/dashboard"
+          class="app-sidebar__tree-node app-sidebar__tree-node--root"
+          :class="{ 'app-sidebar__tree-node--active': isActive('/dashboard', true) }"
+          aria-label="Dashboard"
+        >
+          <i class="pi pi-th-large" />
+          <span>Dashboard</span>
+        </router-link>
+
+        <div v-if="envId" class="app-sidebar__tree-children app-sidebar__tree-children--dashboard">
+          <div class="app-sidebar__tree-branch">
+            <router-link
+              :to="environmentRootPath"
+              class="app-sidebar__tree-node app-sidebar__tree-node--parent"
+              :class="{ 'app-sidebar__tree-node--active': isEnvironmentActive }"
+              :aria-label="`Environment ${envId}`"
+            >
+              <i class="pi pi-building" />
+              <span>ENV-{{ envId }}</span>
+            </router-link>
+
+            <div class="app-sidebar__tree-children">
+              <div class="app-sidebar__tree-branch app-sidebar__tree-branch--rooms">
+                <router-link
+                  :to="environmentRootPath"
+                  class="app-sidebar__tree-node app-sidebar__tree-node--child"
+                  :class="{ 'app-sidebar__tree-node--active': isActive(environmentRootPath, true) }"
+                  aria-label="Rooms"
+                >
+                  <i class="pi pi-list" />
+                  <span>Rooms</span>
+                </router-link>
+
+                <div v-if="roomId" class="app-sidebar__tree-children app-sidebar__tree-children--room">
+                  <div class="app-sidebar__tree-branch app-sidebar__tree-branch--room">
+                    <router-link
+                      :to="roomRootPath"
+                      class="app-sidebar__tree-node app-sidebar__tree-node--parent"
+                      :class="{ 'app-sidebar__tree-node--active': isRoomActive }"
+                      :aria-label="`Room ${roomId}`"
+                    >
+                      <i class="pi pi-home" />
+                      <span>ROOM-{{ roomId }}</span>
+                    </router-link>
+
+                    <div class="app-sidebar__tree-children app-sidebar__tree-children--room-pages">
+                      <router-link
+                        v-for="item in roomMenu"
+                        :key="item.name"
+                        :to="item.path"
+                        class="app-sidebar__tree-node app-sidebar__tree-node--child"
+                        :class="{ 'app-sidebar__tree-node--active': isActive(item.path, item.exact) }"
+                        :aria-label="item.name"
+                      >
+                        <i :class="item.icon" />
+                        <span>{{ item.name }}</span>
+                      </router-link>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <router-link
+                :to="`/dashboard/env/${envId}/members`"
+                class="app-sidebar__tree-node app-sidebar__tree-node--child"
+                :class="{ 'app-sidebar__tree-node--active': isActive(`/dashboard/env/${envId}/members`, true) }"
+                aria-label="Members"
+              >
+                <i class="pi pi-users" />
+                <span>Members</span>
+              </router-link>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <router-link
         to="/dashboard/demo-data"
@@ -29,57 +97,6 @@
         <span>Demo data</span>
       </router-link>
 
-      <div v-if="envId" class="app-sidebar__tree-branch">
-        <router-link
-          :to="environmentRootPath"
-          class="app-sidebar__tree-node app-sidebar__tree-node--parent"
-          :class="{ 'app-sidebar__tree-node--active': isEnvironmentActive }"
-          :aria-label="`Environment ${envId}`"
-        >
-          <i class="pi pi-building" />
-          <span>ENV-{{ envId }}</span>
-        </router-link>
-
-        <div class="app-sidebar__tree-children">
-          <router-link
-            v-for="item in environmentMenu"
-            :key="item.name"
-            :to="item.path"
-            class="app-sidebar__tree-node app-sidebar__tree-node--child"
-            :class="{ 'app-sidebar__tree-node--active': isActive(item.path, item.exact) }"
-            :aria-label="item.name"
-          >
-            <i :class="item.icon" />
-            <span>{{ item.name }}</span>
-          </router-link>
-
-          <div v-if="roomId" class="app-sidebar__tree-branch app-sidebar__tree-branch--room">
-            <router-link
-              :to="roomRootPath"
-              class="app-sidebar__tree-node app-sidebar__tree-node--parent"
-              :class="{ 'app-sidebar__tree-node--active': isRoomActive }"
-              :aria-label="`Room ${roomId}`"
-            >
-              <i class="pi pi-home" />
-              <span>ROOM-{{ roomId }}</span>
-            </router-link>
-
-            <div class="app-sidebar__tree-children app-sidebar__tree-children--room">
-              <router-link
-                v-for="item in roomMenu"
-                :key="item.name"
-                :to="item.path"
-                class="app-sidebar__tree-node app-sidebar__tree-node--child"
-                :class="{ 'app-sidebar__tree-node--active': isActive(item.path, item.exact) }"
-                :aria-label="item.name"
-              >
-                <i :class="item.icon" />
-                <span>{{ item.name }}</span>
-              </router-link>
-            </div>
-          </div>
-        </div>
-      </div>
     </nav>
 
     <div class="app-sidebar__spacer" />
@@ -133,15 +150,6 @@ const roomRootPath = computed(() => (
     ? `/env/${envId.value}/room/${roomId.value}/parameters`
     : environmentRootPath.value
 ));
-
-const environmentMenu = computed<SidebarItem[]>(() => {
-  if (!envId.value) return [];
-
-  return [
-    { name: "Rooms", path: `/dashboard/env/${envId.value}/rooms`, icon: "pi pi-list", exact: true },
-    { name: "Members", path: `/dashboard/env/${envId.value}/members`, icon: "pi pi-users", exact: true },
-  ];
-});
 
 const roomMenu = computed<SidebarItem[]>(() => {
   if (!envId.value || !roomId.value) return [];
