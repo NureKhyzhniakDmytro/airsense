@@ -55,6 +55,7 @@ class VentPlacement:
     x: float
     y: float
     rotation: float
+    airflow_role: str
 
 
 MACHINES = [
@@ -68,8 +69,8 @@ SENSORS = [
     SensorPlacement("-3", "S3 Exhaust Zone", Point(14.6, 4.4)),
 ]
 VENTS = [
-    VentPlacement("", "V1 Supply Fan", 16.95, 1.25, 180),
-    VentPlacement("-2", "V2 Extract Fan", 16.95, 7.7, 180),
+    VentPlacement("", "V1 Supply Fan", 16.95, 1.25, 180, "supply"),
+    VentPlacement("-2", "V2 Extract Fan", 16.95, 7.7, 180, "exhaust"),
 ]
 
 
@@ -213,7 +214,7 @@ def ensure_device(cur, serial: str, room_id: int) -> int:
 
 def build_layout(sensor_ids: list[int], sensor_serials: list[str], device_ids: list[int], device_serials: list[str]) -> dict:
     items = [
-        {"id": "door-main", "type": "door", "label": "Service Door", "x": 0.0, "y": 4.4, "width": 0.32, "height": 1.4, "rotation": 90},
+        {"id": "door-main", "type": "door", "label": "Service Door", "x": -0.54, "y": 4.94, "width": 1.4, "height": 0.32, "rotation": -90},
         {"id": "window-north", "type": "window", "label": "High Window", "x": 5.8, "y": 0.0, "width": 3.0, "height": 0.24, "rotation": 0},
         {"id": "operator-zone", "type": "zone", "label": "Operator Shift Zone", "x": 1.2, "y": 7.8, "width": 4.2, "height": 1.4, "rotation": 0},
     ]
@@ -253,6 +254,7 @@ def build_layout(sensor_ids: list[int], sensor_serials: list[str], device_ids: l
             "label": placement.label,
             "device_id": device_id,
             "serial_number": serial,
+            "airflow_role": placement.airflow_role,
             "x": placement.x,
             "y": placement.y,
             "width": 0.8,
@@ -317,16 +319,36 @@ def gaussian(distance: float, sigma: float) -> float:
     return math.exp(-((distance / sigma) ** 2))
 
 
-def vent_influence(point: Point, fan_avg: float) -> float:
-    influence = 0.0
+def vent_axis(vent: VentPlacement) -> Point:
+    radians = math.radians(vent.rotation)
+    return Point(math.cos(radians), math.sin(radians))
+
+
+def vent_influence(point: Point, supply_power: float, exhaust_power: float) -> tuple[float, float]:
+    supply = 0.0
+    exhaust = 0.0
+
     for vent in VENTS:
-        source = Point(vent.x + 0.4, vent.y + 0.4)
-        dx = source.x - point.x
-        dy = point.y - source.y
-        downstream = max(0.0, dx)
-        lateral = abs(dy)
-        influence += gaussian(downstream, 8.5) * gaussian(lateral, 2.1)
-    return clamp(influence * (fan_avg / 100), 0, 1)
+        axis = vent_axis(vent)
+        center = Point(vent.x + 0.4, vent.y + 0.4)
+        source = Point(center.x + axis.x * 0.4, center.y + axis.y * 0.4)
+        delta_x = point.x - source.x
+        delta_y = point.y - source.y
+        forward = max(0.0, delta_x * axis.x + delta_y * axis.y)
+        lateral = abs(delta_x * -axis.y + delta_y * axis.x)
+        plume = gaussian(forward, 8.8 if vent.airflow_role == "supply" else 7.2) * gaussian(
+            lateral,
+            2.0 if vent.airflow_role == "supply" else 2.8,
+        )
+        local = gaussian(math.hypot(delta_x, delta_y), 1.15)
+        effect = plume + local * (0.22 if vent.airflow_role == "supply" else 0.16)
+
+        if vent.airflow_role == "supply":
+            supply += effect * (supply_power / 100)
+        else:
+            exhaust += effect * (exhaust_power / 100)
+
+    return clamp(supply, 0, 1), clamp(exhaust, 0, 1)
 
 
 def parse_end_at(value: str | None) -> datetime | None:
@@ -389,13 +411,16 @@ def seed_history(
         fan_2 += (target_fan + 6 - fan_2) * 0.22 + rng.uniform(-1.5, 1.3)
         fan_1 = clamp(fan_1, 0, 100)
         fan_2 = clamp(fan_2, 0, 100)
-        fan_avg = (fan_1 + fan_2) / 2
+        supply_power = fan_1
+        exhaust_power = fan_2
+        air_exchange = (supply_power + exhaust_power) / 2
+        balance_factor = 1 - abs(supply_power - exhaust_power) / 180
 
-        co2 += occupancy * 3.15 * dt - (co2 - 420) * (0.026 + fan_avg * 0.0009) * dt + rng.uniform(-7, 8)
+        co2 += occupancy * 3.15 * dt - (co2 - 420) * (0.024 + air_exchange * 0.00092 * balance_factor) * dt + rng.uniform(-7, 8)
         co2 = clamp(co2, 410, 2100)
-        room_temp += heat_kw * 0.011 * dt + occupancy * 0.014 * dt - fan_avg * 0.0075 * dt + (outdoor_temp - room_temp) * 0.008 * dt + rng.uniform(-0.04, 0.05)
+        room_temp += heat_kw * 0.011 * dt + occupancy * 0.014 * dt - (supply_power * 0.0082 + exhaust_power * 0.0038) * dt + (outdoor_temp - room_temp) * 0.008 * dt + rng.uniform(-0.04, 0.05)
         room_temp = clamp(room_temp, 18, 39)
-        humidity += occupancy * 0.035 * dt - fan_avg * 0.006 * dt + (48 - humidity) * 0.018 * dt + rng.uniform(-0.12, 0.14)
+        humidity += occupancy * 0.035 * dt - (supply_power * 0.0065 + exhaust_power * 0.003) * dt + (48 - humidity) * 0.018 * dt + rng.uniform(-0.12, 0.14)
         humidity = clamp(humidity, 30, 75)
 
         machine_heat_by_key = {machine.key: machine.heat_load_kw * loads[machine.key] for machine in MACHINES}
@@ -404,10 +429,10 @@ def seed_history(
             for machine in MACHINES:
                 distance = math.hypot(placement.point.x - machine.center.x, placement.point.y - machine.center.y)
                 local_heat += machine_heat_by_key[machine.key] * 0.13 * gaussian(distance, 3.3)
-            airflow = vent_influence(placement.point, fan_avg)
-            temp_value = room_temp + local_heat - airflow * (0.6 + fan_avg * 0.008) + rng.uniform(-0.12, 0.12)
-            co2_value = co2 + (occupancy - 8) * (5.5 if placement.serial_suffix != "-3" else 2.4) - airflow * 80 + rng.uniform(-18, 18)
-            humidity_value = humidity + occupancy * 0.08 - airflow * 1.5 - max(0, local_heat) * 0.08 + rng.uniform(-0.55, 0.55)
+            supply_airflow, exhaust_airflow = vent_influence(placement.point, supply_power, exhaust_power)
+            temp_value = room_temp + local_heat - supply_airflow * (0.7 + supply_power * 0.01) - exhaust_airflow * (0.25 + exhaust_power * 0.005) + rng.uniform(-0.12, 0.12)
+            co2_value = co2 + (occupancy - 8) * (5.5 if placement.serial_suffix != "-3" else 2.4) - supply_airflow * 95 - exhaust_airflow * 55 + rng.uniform(-18, 18)
+            humidity_value = humidity + occupancy * 0.08 - supply_airflow * 1.8 - exhaust_airflow * 0.8 - max(0, local_heat) * 0.08 + rng.uniform(-0.55, 0.55)
             naive_ts = timestamp.replace(tzinfo=None)
             sensor_rows.extend([
                 (sensor_id, parameter_ids["temperature"], naive_ts, round(clamp(temp_value, 16, 45), 2), naive_ts),

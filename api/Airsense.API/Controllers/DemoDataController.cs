@@ -19,6 +19,8 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
     private const string DemoRoomPrefix = "Demo Room";
     private const string DemoSensorLikePattern = "demo-room-%-microclimate%";
     private const string DemoDeviceLikePattern = "demo-room-%-ventilation%";
+    private const int DefaultDemoSensorCount = 3;
+    private const int DefaultDemoDeviceCount = 2;
 
     private static readonly string[] Scenarios =
     [
@@ -72,8 +74,8 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
         await EnsureDemoControlSchemaAsync();
         var roomName = NormalizeText(request?.Name, await GetNextRoomNameAsync());
         var roomIcon = NormalizeText(request?.Icon, "room");
-        var sensorCount = request?.SensorCount ?? 1;
-        var deviceCount = request?.DeviceCount ?? 1;
+        var sensorCount = request?.SensorCount ?? DefaultDemoSensorCount;
+        var deviceCount = request?.DeviceCount ?? DefaultDemoDeviceCount;
 
         EnsureConnectionOpen();
         int roomId;
@@ -345,9 +347,10 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
             WITH demo_env AS (
                 SELECT id FROM environments WHERE name = @name ORDER BY id LIMIT 1
             ),
-            latest_sensor AS (
-                SELECT DISTINCT ON (s.room_id, p.name)
+            latest_sensor_per_sensor AS (
+                SELECT DISTINCT ON (s.id, p.name)
                     s.room_id,
+                    s.id AS SensorId,
                     p.name,
                     sd.value,
                     sd.timestamp
@@ -355,27 +358,36 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
                 JOIN sensor_data sd ON sd.sensor_id = s.id
                 JOIN parameters p ON p.id = sd.parameter_id
                 WHERE s.serial_number LIKE @sensorPattern
-                ORDER BY s.room_id, p.name, sd.timestamp DESC
+                ORDER BY s.id, p.name, sd.timestamp DESC, sd.id DESC
             ),
             sensor_pivot AS (
                 SELECT
                     room_id,
-                    MAX(value) FILTER (WHERE name = 'co2') AS Co2,
-                    MAX(value) FILTER (WHERE name = 'temperature') AS Temperature,
-                    MAX(value) FILTER (WHERE name = 'humidity') AS Humidity,
+                    AVG(value) FILTER (WHERE name = 'co2') AS Co2,
+                    AVG(value) FILTER (WHERE name = 'temperature') AS Temperature,
+                    AVG(value) FILTER (WHERE name = 'humidity') AS Humidity,
                     MAX(timestamp) AS LastTelemetryAt
-                FROM latest_sensor
+                FROM latest_sensor_per_sensor
                 GROUP BY room_id
             ),
-            latest_device AS (
-                SELECT DISTINCT ON (d.room_id)
+            latest_device_per_device AS (
+                SELECT DISTINCT ON (d.id)
                     d.room_id,
+                    d.id,
                     dd.value AS VentilationPower,
                     dd.timestamp AS LastDeviceAt
                 FROM devices d
                 JOIN device_data dd ON dd.device_id = d.id
                 WHERE d.serial_number LIKE @devicePattern
-                ORDER BY d.room_id, dd.timestamp DESC
+                ORDER BY d.id, dd.timestamp DESC, dd.id DESC
+            ),
+            latest_device AS (
+                SELECT
+                    room_id,
+                    AVG(VentilationPower) AS VentilationPower,
+                    MAX(LastDeviceAt) AS LastDeviceAt
+                FROM latest_device_per_device
+                GROUP BY room_id
             )
             SELECT
                 r.id AS RoomId,
@@ -449,8 +461,19 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
 
         for (var index = 1; index <= roomCount; index++)
         {
-            var roomId = await EnsureRoomAsync(context.EnvironmentId, $"{DemoRoomPrefix} {index}", index % 2 == 0 ? "office" : "production", transaction);
-            await AddDemoAssetsAsync(roomId, context.SensorTypeId, 1, 1, transaction);
+            var roomId = await EnsureRoomAsync(
+                context.EnvironmentId,
+                $"{DemoRoomPrefix} {index}",
+                index % 2 == 0 ? "office" : "production",
+                transaction,
+                index);
+            await EnsureDemoAssetCountsAsync(
+                roomId,
+                context.SensorTypeId,
+                DefaultDemoSensorCount,
+                DefaultDemoDeviceCount,
+                transaction,
+                index);
             await EnsureCo2CurveAsync(roomId, context.ParameterIds["co2"], transaction);
             await EnsureProfileAsync(roomId, transaction);
             await SyncDemoRoomLayoutAssetsAsync(roomId, transaction);
@@ -628,7 +651,46 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
         int sensorTypeId,
         int sensorCount,
         int deviceCount,
-        IDbTransaction transaction)
+        IDbTransaction transaction,
+        int? demoSlot = null)
+    {
+        var existingSensorCount = await connection.QuerySingleAsync<int>(
+            "SELECT COUNT(*) FROM sensors WHERE room_id = @roomId AND serial_number LIKE @sensorPattern",
+            new { roomId, sensorPattern = DemoSensorLikePattern },
+            transaction);
+        var existingDeviceCount = await connection.QuerySingleAsync<int>(
+            "SELECT COUNT(*) FROM devices WHERE room_id = @roomId AND serial_number LIKE @devicePattern",
+            new { roomId, devicePattern = DemoDeviceLikePattern },
+            transaction);
+        var serialGroup = demoSlot ?? roomId;
+
+        for (var index = 1; index <= sensorCount; index++)
+        {
+            var serialIndex = existingSensorCount + index;
+            await EnsureSensorAsync(
+                CreateDemoAssetSerial(serialGroup, "microclimate", serialIndex),
+                sensorTypeId,
+                roomId,
+                transaction);
+        }
+
+        for (var index = 1; index <= deviceCount; index++)
+        {
+            var serialIndex = existingDeviceCount + index;
+            await EnsureDeviceAsync(
+                CreateDemoAssetSerial(serialGroup, "ventilation", serialIndex),
+                roomId,
+                transaction);
+        }
+    }
+
+    private async Task EnsureDemoAssetCountsAsync(
+        int roomId,
+        int sensorTypeId,
+        int targetSensorCount,
+        int targetDeviceCount,
+        IDbTransaction transaction,
+        int? demoSlot = null)
     {
         var existingSensorCount = await connection.QuerySingleAsync<int>(
             "SELECT COUNT(*) FROM sensors WHERE room_id = @roomId AND serial_number LIKE @sensorPattern",
@@ -639,17 +701,13 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
             new { roomId, devicePattern = DemoDeviceLikePattern },
             transaction);
 
-        for (var index = 1; index <= sensorCount; index++)
-        {
-            var serialIndex = existingSensorCount + index;
-            await EnsureSensorAsync(CreateDemoAssetSerial(roomId, "microclimate", serialIndex), sensorTypeId, roomId, transaction);
-        }
-
-        for (var index = 1; index <= deviceCount; index++)
-        {
-            var serialIndex = existingDeviceCount + index;
-            await EnsureDeviceAsync(CreateDemoAssetSerial(roomId, "ventilation", serialIndex), roomId, transaction);
-        }
+        await AddDemoAssetsAsync(
+            roomId,
+            sensorTypeId,
+            Math.Max(0, targetSensorCount - existingSensorCount),
+            Math.Max(0, targetDeviceCount - existingDeviceCount),
+            transaction,
+            demoSlot);
     }
 
     private async Task<DemoReadingsApplyResultDto> ApplyRoomReadingsInternalAsync(int roomId, DemoRoomReadingsRequest request)
@@ -720,10 +778,20 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
         };
     }
 
-    private static string CreateDemoAssetSerial(int roomId, string suffix, int index)
+    private static string CreateDemoAssetSerial(int demoSlot, string suffix, int index)
     {
-        var serial = $"demo-room-{roomId}-{suffix}";
+        var serial = $"demo-room-{demoSlot}-{suffix}";
         return index <= 1 ? serial : $"{serial}-{index}";
+    }
+
+    private static string[] CreateDemoSlotSerials(int demoSlot)
+    {
+        var serials = new List<string>();
+        for (var index = 1; index <= DefaultDemoSensorCount; index++)
+            serials.Add(CreateDemoAssetSerial(demoSlot, "microclimate", index));
+        for (var index = 1; index <= DefaultDemoDeviceCount; index++)
+            serials.Add(CreateDemoAssetSerial(demoSlot, "ventilation", index));
+        return serials.ToArray();
     }
 
     private static string NormalizeText(string? value, string fallback)
@@ -738,7 +806,7 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
             return "Sensor count must be between 0 and 20";
         if (request?.DeviceCount is < 0 or > 20)
             return "Ventilation device count must be between 0 and 20";
-        if ((request?.SensorCount ?? 1) + (request?.DeviceCount ?? 1) == 0)
+        if ((request?.SensorCount ?? DefaultDemoSensorCount) + (request?.DeviceCount ?? DefaultDemoDeviceCount) == 0)
             return "Create at least one sensor or ventilation device";
 
         return null;
@@ -914,8 +982,53 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
         return envId;
     }
 
-    private async Task<int> EnsureRoomAsync(int envId, string name, string icon, IDbTransaction transaction)
+    private async Task<int> EnsureRoomAsync(
+        int envId,
+        string name,
+        string icon,
+        IDbTransaction transaction,
+        int? demoSlot = null)
     {
+        if (demoSlot.HasValue)
+        {
+            var roomIdByAssets = await connection.QuerySingleOrDefaultAsync<int?>(
+                """
+                SELECT asset_rooms.room_id
+                FROM (
+                    SELECT s.room_id
+                    FROM sensors s
+                    JOIN rooms r ON r.id = s.room_id
+                    WHERE r.environment_id = @envId
+                      AND s.serial_number = ANY(@serials)
+                    UNION ALL
+                    SELECT d.room_id
+                    FROM devices d
+                    JOIN rooms r ON r.id = d.room_id
+                    WHERE r.environment_id = @envId
+                      AND d.serial_number = ANY(@serials)
+                ) asset_rooms
+                GROUP BY asset_rooms.room_id
+                ORDER BY COUNT(*) DESC, asset_rooms.room_id
+                LIMIT 1
+                """,
+                new { envId, serials = CreateDemoSlotSerials(demoSlot.Value) },
+                transaction);
+
+            if (roomIdByAssets.HasValue)
+            {
+                await connection.ExecuteAsync(
+                    """
+                    UPDATE rooms
+                    SET icon = @icon
+                    WHERE id = @roomId
+                      AND icon IN ('factory', 'home')
+                    """,
+                    new { roomId = roomIdByAssets.Value, icon },
+                    transaction);
+                return roomIdByAssets.Value;
+            }
+        }
+
         var roomId = await connection.QuerySingleAsync<int>(
             """
             WITH inserted AS (
@@ -1011,30 +1124,48 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
     {
         await connection.ExecuteAsync(
             """
-            WITH demo_rooms AS (
+            WITH room_scope AS (
                 SELECT r.id AS room_id,
                        r.layout,
-                       CASE
-                           WHEN (r.layout ->> 'width') ~ '^[0-9]+(\.[0-9]+)?$' THEN (r.layout ->> 'width')::numeric
-                           ELSE 6::numeric
-                       END AS width,
-                       CASE
-                           WHEN (r.layout ->> 'height') ~ '^[0-9]+(\.[0-9]+)?$' THEN (r.layout ->> 'height')::numeric
-                           ELSE 4::numeric
-                       END AS height,
-                       COALESCE(NULLIF(r.layout ->> 'unit', ''), 'm') AS unit,
-                       CASE
-                           WHEN jsonb_typeof(r.layout -> 'geometry') = 'object' THEN r.layout -> 'geometry'
-                           ELSE '{"type":"rectangle","points":[{"x":0,"y":0},{"x":6,"y":0},{"x":6,"y":4},{"x":0,"y":4}]}'::jsonb
-                       END AS geometry,
-                       CASE
-                           WHEN jsonb_typeof(r.layout -> 'items') = 'array' THEN r.layout -> 'items'
-                           ELSE '[]'::jsonb
-                       END AS items
+                       row_number() OVER (ORDER BY r.id) AS demo_index
                 FROM rooms r
                 JOIN environments e ON e.id = r.environment_id
                 WHERE e.name = @demoEnvironmentName
-                  AND r.id = @roomId
+            ),
+            room_profiles AS (
+                SELECT rs.room_id,
+                       rs.layout,
+                       (mod((rs.demo_index - 1), 4) + 1)::int AS profile_index
+                FROM room_scope rs
+                WHERE rs.room_id = @roomId
+            ),
+            demo_rooms AS (
+                SELECT rp.room_id,
+                       rp.layout,
+                       rp.profile_index,
+                       CASE rp.profile_index
+                           WHEN 1 THEN 18::numeric
+                           WHEN 2 THEN 10::numeric
+                           WHEN 3 THEN 12::numeric
+                           ELSE 14::numeric
+                       END AS width,
+                       CASE rp.profile_index
+                           WHEN 1 THEN 9::numeric
+                           WHEN 2 THEN 7::numeric
+                           WHEN 3 THEN 8::numeric
+                           ELSE 7::numeric
+                       END AS height,
+                       'm' AS unit,
+                       CASE rp.profile_index
+                           WHEN 1 THEN '{"type":"rectangle","points":[{"x":0,"y":0},{"x":18,"y":0},{"x":18,"y":9},{"x":0,"y":9}]}'::jsonb
+                           WHEN 2 THEN '{"type":"l_shape","points":[{"x":0,"y":0},{"x":10,"y":0},{"x":10,"y":4.2},{"x":6.6,"y":4.2},{"x":6.6,"y":7},{"x":0,"y":7}]}'::jsonb
+                           WHEN 3 THEN '{"type":"t_shape","points":[{"x":3.2,"y":0},{"x":8.8,"y":0},{"x":8.8,"y":2.2},{"x":12,"y":2.2},{"x":12,"y":5.8},{"x":8.8,"y":5.8},{"x":8.8,"y":8},{"x":3.2,"y":8},{"x":3.2,"y":5.8},{"x":0,"y":5.8},{"x":0,"y":2.2},{"x":3.2,"y":2.2}]}'::jsonb
+                           ELSE '{"type":"custom","points":[{"x":0,"y":0},{"x":14,"y":0},{"x":14,"y":5.6},{"x":11.8,"y":5.6},{"x":11.8,"y":7},{"x":2.1,"y":7},{"x":2.1,"y":5.9},{"x":0,"y":5.9}]}'::jsonb
+                       END AS geometry,
+                       CASE
+                           WHEN jsonb_typeof(rp.layout -> 'items') = 'array' THEN rp.layout -> 'items'
+                           ELSE '[]'::jsonb
+                       END AS items
             ),
             current_items AS (
                 SELECT dr.room_id,
@@ -1047,16 +1178,67 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
                 SELECT room_id,
                        COALESCE(
                            jsonb_agg(item ORDER BY ordinality)
-                               FILTER (WHERE item IS NOT NULL AND COALESCE(lower(item ->> 'type'), '') NOT IN ('sensor', 'vent')),
+                               FILTER (
+                                   WHERE item IS NOT NULL
+                                     AND COALESCE(lower(item ->> 'type'), '') NOT IN ('sensor', 'vent')
+                                     AND COALESCE(item ->> 'demo_template_item', 'false') <> 'true'
+                                     AND NOT (COALESCE(item ->> 'id', '') = ANY(ARRAY[
+                                         'door-main', 'door-service', 'door-lab',
+                                         'window-north', 'window-east', 'window-strip',
+                                         'operator-zone', 'meeting-zone', 'airlock-zone', 'maintenance-zone',
+                                         'machine-press', 'machine-furnace', 'machine-compressor',
+                                         'desk-row', 'printer-station', 'storage-shelves',
+                                         'lab-bench-a', 'lab-bench-b', 'rack-cold', 'chemical-cabinet',
+                                         'rack-east', 'rack-west', 'packing-line', 'obstacle-column'
+                                     ]::text[]))
+                               ),
                            '[]'::jsonb
                        ) AS items
                 FROM current_items
                 GROUP BY room_id
             ),
+            template_items AS (
+                SELECT dr.room_id,
+                       COALESCE(jsonb_agg(profile_item.item ORDER BY profile_item.sort_key), '[]'::jsonb) AS items
+                FROM demo_rooms dr
+                CROSS JOIN LATERAL (
+                    SELECT *
+                    FROM (VALUES
+                        (1, 10, jsonb_build_object('id', 'door-main', 'type', 'door', 'label', 'Service Door', 'x', -0.54, 'y', 4.94, 'width', 1.4, 'height', 0.32, 'rotation', -90, 'demo_template_item', true)),
+                        (1, 20, jsonb_build_object('id', 'window-north', 'type', 'window', 'label', 'High Window', 'x', 5.8, 'y', 0.0, 'width', 3.0, 'height', 0.24, 'rotation', 0, 'demo_template_item', true)),
+                        (1, 30, jsonb_build_object('id', 'operator-zone', 'type', 'zone', 'label', 'Operator Shift Zone', 'x', 1.2, 'y', 7.75, 'width', 4.2, 'height', 1.0, 'rotation', 0, 'demo_template_item', true)),
+                        (1, 40, jsonb_build_object('id', 'machine-press', 'type', 'equipment', 'label', 'CNC Press #1', 'x', 2.6, 'y', 1.6, 'width', 3.0, 'height', 1.6, 'rotation', 0, 'heat_load_kw', 18.0, 'thermal_load', 'high', 'demo_template_item', true)),
+                        (1, 50, jsonb_build_object('id', 'machine-furnace', 'type', 'equipment', 'label', 'Heat Treatment Furnace', 'x', 7.2, 'y', 4.2, 'width', 3.2, 'height', 1.8, 'rotation', 0, 'heat_load_kw', 32.0, 'thermal_load', 'high', 'demo_template_item', true)),
+                        (1, 60, jsonb_build_object('id', 'machine-compressor', 'type', 'equipment', 'label', 'Compressor Station', 'x', 12.3, 'y', 5.85, 'width', 2.4, 'height', 1.5, 'rotation', -8, 'heat_load_kw', 14.0, 'thermal_load', 'medium', 'demo_template_item', true)),
+                        (2, 10, jsonb_build_object('id', 'door-main', 'type', 'door', 'label', 'Office Entry', 'x', -0.45, 'y', 5.45, 'width', 1.2, 'height', 0.3, 'rotation', -90, 'demo_template_item', true)),
+                        (2, 20, jsonb_build_object('id', 'window-east', 'type', 'window', 'label', 'Facade Window', 'x', 8.1, 'y', 0.0, 'width', 1.5, 'height', 0.22, 'rotation', 0, 'demo_template_item', true)),
+                        (2, 30, jsonb_build_object('id', 'desk-row', 'type', 'furniture', 'label', 'Desk Row', 'x', 1.0, 'y', 1.0, 'width', 3.3, 'height', 1.25, 'rotation', 0, 'demo_template_item', true)),
+                        (2, 40, jsonb_build_object('id', 'meeting-zone', 'type', 'zone', 'label', 'Meeting Zone', 'x', 1.0, 'y', 5.05, 'width', 4.7, 'height', 1.35, 'rotation', 0, 'demo_template_item', true)),
+                        (2, 50, jsonb_build_object('id', 'printer-station', 'type', 'equipment', 'label', 'Printer Station', 'x', 7.25, 'y', 1.1, 'width', 1.1, 'height', 0.8, 'rotation', 0, 'heat_load_kw', 2.5, 'thermal_load', 'low', 'demo_template_item', true)),
+                        (2, 60, jsonb_build_object('id', 'storage-shelves', 'type', 'obstacle', 'label', 'Storage Shelves', 'x', 5.0, 'y', 2.55, 'width', 1.2, 'height', 1.05, 'rotation', 0, 'demo_template_item', true)),
+                        (3, 10, jsonb_build_object('id', 'door-lab', 'type', 'door', 'label', 'Lab Entry', 'x', 5.4, 'y', 7.72, 'width', 1.2, 'height', 0.28, 'rotation', 180, 'demo_template_item', true)),
+                        (3, 20, jsonb_build_object('id', 'airlock-zone', 'type', 'zone', 'label', 'Airlock Zone', 'x', 4.6, 'y', 5.9, 'width', 2.8, 'height', 1.15, 'rotation', 0, 'demo_template_item', true)),
+                        (3, 30, jsonb_build_object('id', 'lab-bench-a', 'type', 'equipment', 'label', 'Process Bench A', 'x', 1.0, 'y', 3.0, 'width', 2.0, 'height', 1.0, 'rotation', 0, 'heat_load_kw', 5.0, 'thermal_load', 'low', 'demo_template_item', true)),
+                        (3, 40, jsonb_build_object('id', 'lab-bench-b', 'type', 'equipment', 'label', 'Process Bench B', 'x', 9.0, 'y', 3.0, 'width', 2.0, 'height', 1.0, 'rotation', 0, 'heat_load_kw', 7.0, 'thermal_load', 'medium', 'demo_template_item', true)),
+                        (3, 50, jsonb_build_object('id', 'rack-cold', 'type', 'equipment', 'label', 'Cold Storage Rack', 'x', 4.05, 'y', 0.55, 'width', 3.9, 'height', 1.0, 'rotation', 0, 'heat_load_kw', 3.5, 'thermal_load', 'low', 'demo_template_item', true)),
+                        (3, 60, jsonb_build_object('id', 'chemical-cabinet', 'type', 'obstacle', 'label', 'Chemical Cabinet', 'x', 4.25, 'y', 3.45, 'width', 1.2, 'height', 0.9, 'rotation', 0, 'demo_template_item', true)),
+                        (4, 10, jsonb_build_object('id', 'door-service', 'type', 'door', 'label', 'Service Door', 'x', -0.48, 'y', 3.18, 'width', 1.25, 'height', 0.3, 'rotation', -90, 'demo_template_item', true)),
+                        (4, 20, jsonb_build_object('id', 'window-strip', 'type', 'window', 'label', 'Inspection Window', 'x', 4.2, 'y', 0.0, 'width', 2.2, 'height', 0.22, 'rotation', 0, 'demo_template_item', true)),
+                        (4, 30, jsonb_build_object('id', 'rack-east', 'type', 'equipment', 'label', 'Server Rack East', 'x', 9.9, 'y', 0.9, 'width', 1.2, 'height', 3.0, 'rotation', 0, 'heat_load_kw', 9.0, 'thermal_load', 'medium', 'demo_template_item', true)),
+                        (4, 40, jsonb_build_object('id', 'rack-west', 'type', 'equipment', 'label', 'Server Rack West', 'x', 3.0, 'y', 0.9, 'width', 1.2, 'height', 3.0, 'rotation', 0, 'heat_load_kw', 8.5, 'thermal_load', 'medium', 'demo_template_item', true)),
+                        (4, 50, jsonb_build_object('id', 'packing-line', 'type', 'equipment', 'label', 'Packing Line', 'x', 5.3, 'y', 4.6, 'width', 4.4, 'height', 1.0, 'rotation', 0, 'heat_load_kw', 11.0, 'thermal_load', 'medium', 'demo_template_item', true)),
+                        (4, 60, jsonb_build_object('id', 'maintenance-zone', 'type', 'zone', 'label', 'Maintenance Zone', 'x', 1.0, 'y', 4.35, 'width', 3.0, 'height', 1.15, 'rotation', 0, 'demo_template_item', true)),
+                        (4, 70, jsonb_build_object('id', 'obstacle-column', 'type', 'obstacle', 'label', 'Structural Column', 'x', 6.65, 'y', 2.4, 'width', 0.55, 'height', 0.55, 'rotation', 0, 'demo_template_item', true))
+                    ) AS profile_item(profile_index, sort_key, item)
+                    WHERE profile_item.profile_index = dr.profile_index
+                ) profile_item
+                GROUP BY dr.room_id
+            ),
             ranked_sensors AS (
                 SELECT dr.room_id,
                        dr.width,
                        dr.height,
+                       dr.profile_index,
                        s.id,
                        s.serial_number,
                        row_number() OVER (PARTITION BY dr.room_id ORDER BY s.id) AS rn
@@ -1067,11 +1249,62 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
                 SELECT dr.room_id,
                        dr.width,
                        dr.height,
+                       dr.profile_index,
                        d.id,
                        d.serial_number,
                        row_number() OVER (PARTITION BY dr.room_id ORDER BY d.id) AS rn
                 FROM demo_rooms dr
                 JOIN devices d ON d.room_id = dr.room_id
+            ),
+            sensor_defaults AS (
+                SELECT s.*,
+                       CASE s.rn
+                           WHEN 1 THEN CASE s.profile_index WHEN 1 THEN 'S1 Press Zone' WHEN 2 THEN 'S1 Supply Zone' WHEN 3 THEN 'S1 Left Bench' ELSE 'S1 Rack Intake' END
+                           WHEN 2 THEN CASE s.profile_index WHEN 1 THEN 'S2 Furnace Zone' WHEN 2 THEN 'S2 Meeting Zone' WHEN 3 THEN 'S2 Center Cross' ELSE 'S2 Line Center' END
+                           WHEN 3 THEN CASE s.profile_index WHEN 1 THEN 'S3 Exhaust Zone' WHEN 2 THEN 'S3 Return Zone' WHEN 3 THEN 'S3 Right Bench' ELSE 'S3 Exhaust Zone' END
+                           ELSE 'Sensor #' || s.id
+                       END AS default_label,
+                       CASE s.profile_index
+                           WHEN 1 THEN CASE s.rn WHEN 1 THEN 2.92 WHEN 2 THEN 8.32 WHEN 3 THEN 14.32 ELSE greatest(0::numeric, least(s.width - 0.56, 1.0 + (((s.rn - 1) % 5)::numeric * 2.4))) END
+                           WHEN 2 THEN CASE s.rn WHEN 1 THEN 1.2 WHEN 2 THEN 5.25 WHEN 3 THEN 8.45 ELSE greatest(0::numeric, least(s.width - 0.56, 0.9 + (((s.rn - 1) % 4)::numeric * 1.6))) END
+                           WHEN 3 THEN CASE s.rn WHEN 1 THEN 1.1 WHEN 2 THEN 5.72 WHEN 3 THEN 10.05 ELSE greatest(0::numeric, least(s.width - 0.56, 1.0 + (((s.rn - 1) % 4)::numeric * 2.1))) END
+                           ELSE CASE s.rn WHEN 1 THEN 2.0 WHEN 2 THEN 6.5 WHEN 3 THEN 11.6 ELSE greatest(0::numeric, least(s.width - 0.56, 1.0 + (((s.rn - 1) % 4)::numeric * 2.4))) END
+                       END AS default_x,
+                       CASE s.profile_index
+                           WHEN 1 THEN CASE s.rn WHEN 1 THEN 4.02 WHEN 2 THEN 6.62 WHEN 3 THEN 4.12 ELSE greatest(0::numeric, least(s.height - 0.56, 0.8 + (((s.rn - 1) / 5)::numeric * 1.2))) END
+                           WHEN 2 THEN CASE s.rn WHEN 1 THEN 2.55 WHEN 2 THEN 5.75 WHEN 3 THEN 2.75 ELSE greatest(0::numeric, least(s.height - 0.56, 0.8 + (((s.rn - 1) / 4)::numeric * 1.1))) END
+                           WHEN 3 THEN CASE s.rn WHEN 1 THEN 3.42 WHEN 2 THEN 1.0 WHEN 3 THEN 3.42 ELSE greatest(0::numeric, least(s.height - 0.56, 0.8 + (((s.rn - 1) / 4)::numeric * 1.2))) END
+                           ELSE CASE s.rn WHEN 1 THEN 1.4 WHEN 2 THEN 4.7 WHEN 3 THEN 2.2 ELSE greatest(0::numeric, least(s.height - 0.56, 0.8 + (((s.rn - 1) / 4)::numeric * 1.1))) END
+                       END AS default_y
+                FROM ranked_sensors s
+            ),
+            device_defaults AS (
+                SELECT d.*,
+                       CASE WHEN d.rn % 2 = 0 THEN 'exhaust' ELSE 'supply' END AS default_airflow_role,
+                       CASE d.rn
+                           WHEN 1 THEN 'V1 Supply Fan'
+                           WHEN 2 THEN 'V2 Extract Fan'
+                           ELSE 'Vent #' || d.id
+                       END AS default_label,
+                       CASE d.profile_index
+                           WHEN 1 THEN CASE d.rn WHEN 1 THEN 16.95 WHEN 2 THEN 16.95 WHEN 3 THEN 0.25 WHEN 4 THEN 0.25 ELSE greatest(0::numeric, least(d.width - 0.8, d.width - 1.1 - (((d.rn - 1) % 3)::numeric * 1.0))) END
+                           WHEN 2 THEN CASE d.rn WHEN 1 THEN 0.25 WHEN 2 THEN 8.95 WHEN 3 THEN 3.1 WHEN 4 THEN 6.0 ELSE greatest(0::numeric, least(d.width - 0.8, d.width - 1.1 - (((d.rn - 1) % 3)::numeric * 1.0))) END
+                           WHEN 3 THEN CASE d.rn WHEN 1 THEN 5.6 WHEN 2 THEN 5.6 WHEN 3 THEN 0.25 WHEN 4 THEN 10.95 ELSE greatest(0::numeric, least(d.width - 0.8, d.width - 1.1 - (((d.rn - 1) % 3)::numeric * 1.0))) END
+                           ELSE CASE d.rn WHEN 1 THEN 0.3 WHEN 2 THEN 12.9 WHEN 3 THEN 6.7 WHEN 4 THEN 10.7 ELSE greatest(0::numeric, least(d.width - 0.8, d.width - 1.1 - (((d.rn - 1) % 3)::numeric * 1.0))) END
+                       END AS default_x,
+                       CASE d.profile_index
+                           WHEN 1 THEN CASE d.rn WHEN 1 THEN 1.25 WHEN 2 THEN 7.7 WHEN 3 THEN 1.0 WHEN 4 THEN 7.2 ELSE greatest(0::numeric, least(d.height - 0.8, 0.7 + (((d.rn - 1) / 3)::numeric * 1.1))) END
+                           WHEN 2 THEN CASE d.rn WHEN 1 THEN 1.0 WHEN 2 THEN 3.1 WHEN 3 THEN 6.05 WHEN 4 THEN 0.25 ELSE greatest(0::numeric, least(d.height - 0.8, 0.7 + (((d.rn - 1) / 3)::numeric * 1.1))) END
+                           WHEN 3 THEN CASE d.rn WHEN 1 THEN 7.05 WHEN 2 THEN 0.2 WHEN 3 THEN 3.2 WHEN 4 THEN 3.2 ELSE greatest(0::numeric, least(d.height - 0.8, 0.7 + (((d.rn - 1) / 3)::numeric * 1.1))) END
+                           ELSE CASE d.rn WHEN 1 THEN 2.6 WHEN 2 THEN 1.2 WHEN 3 THEN 6.1 WHEN 4 THEN 5.05 ELSE greatest(0::numeric, least(d.height - 0.8, 0.7 + (((d.rn - 1) / 3)::numeric * 1.1))) END
+                       END AS default_y,
+                       CASE d.profile_index
+                           WHEN 1 THEN CASE d.rn WHEN 1 THEN 180 WHEN 2 THEN 180 WHEN 3 THEN 0 WHEN 4 THEN 0 ELSE 180 END
+                           WHEN 2 THEN CASE d.rn WHEN 1 THEN 0 WHEN 2 THEN 180 WHEN 3 THEN 270 WHEN 4 THEN 90 ELSE 180 END
+                           WHEN 3 THEN CASE d.rn WHEN 1 THEN 270 WHEN 2 THEN 90 WHEN 3 THEN 0 WHEN 4 THEN 180 ELSE 180 END
+                           ELSE CASE d.rn WHEN 1 THEN 0 WHEN 2 THEN 180 WHEN 3 THEN 270 WHEN 4 THEN 180 ELSE 180 END
+                       END AS default_rotation
+                FROM ranked_devices d
             ),
             existing_sensor_items AS (
                 SELECT s.room_id,
@@ -1080,11 +1313,16 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
                        (ci.item - 'device_id') || jsonb_build_object(
                            'id', 'sensor-' || s.id,
                            'type', 'sensor',
-                           'label', COALESCE(NULLIF(ci.item ->> 'label', ''), 'Sensor #' || s.id),
+                           'label', s.default_label,
                            'sensor_id', s.id,
-                           'serial_number', s.serial_number
+                           'serial_number', s.serial_number,
+                           'x', round(s.default_x, 2),
+                           'y', round(s.default_y, 2),
+                           'width', 0.56,
+                           'height', 0.56,
+                           'rotation', 0
                        ) AS item
-                FROM ranked_sensors s
+                FROM sensor_defaults s
                 JOIN LATERAL (
                     SELECT item, ordinality
                     FROM current_items ci
@@ -1103,16 +1341,16 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
                        jsonb_build_object(
                            'id', 'sensor-' || s.id,
                            'type', 'sensor',
-                           'label', 'Sensor #' || s.id,
+                           'label', s.default_label,
                            'sensor_id', s.id,
                            'serial_number', s.serial_number,
-                           'x', round(greatest(0::numeric, least(s.width - 0.55, 0.45 + (((s.rn - 1) % 4)::numeric * 1.15))), 2),
-                           'y', round(greatest(0::numeric, least(s.height - 0.55, 0.55 + (((s.rn - 1) / 4)::numeric * 0.85))), 2),
-                           'width', 0.55,
-                           'height', 0.55,
+                           'x', round(s.default_x, 2),
+                           'y', round(s.default_y, 2),
+                           'width', 0.56,
+                           'height', 0.56,
                            'rotation', 0
                        ) AS item
-                FROM ranked_sensors s
+                FROM sensor_defaults s
                 WHERE NOT EXISTS (
                     SELECT 1
                     FROM existing_sensor_items existing
@@ -1127,11 +1365,17 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
                        (ci.item - 'sensor_id') || jsonb_build_object(
                            'id', 'vent-' || d.id,
                            'type', 'vent',
-                           'label', COALESCE(NULLIF(ci.item ->> 'label', ''), 'Vent #' || d.id),
+                           'label', d.default_label,
                            'device_id', d.id,
-                           'serial_number', d.serial_number
+                           'serial_number', d.serial_number,
+                           'airflow_role', d.default_airflow_role,
+                           'x', round(d.default_x, 2),
+                           'y', round(d.default_y, 2),
+                           'width', 0.8,
+                           'height', 0.8,
+                           'rotation', d.default_rotation
                        ) AS item
-                FROM ranked_devices d
+                FROM device_defaults d
                 JOIN LATERAL (
                     SELECT item, ordinality
                     FROM current_items ci
@@ -1150,16 +1394,17 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
                        jsonb_build_object(
                            'id', 'vent-' || d.id,
                            'type', 'vent',
-                           'label', 'Vent #' || d.id,
+                           'label', d.default_label,
                            'device_id', d.id,
                            'serial_number', d.serial_number,
-                           'x', round(greatest(0::numeric, least(d.width - 0.75, d.width - 1.2 - (((d.rn - 1) % 3)::numeric * 1.1))), 2),
-                           'y', round(greatest(0::numeric, least(d.height - 0.75, 0.55 + (((d.rn - 1) / 3)::numeric * 1.0))), 2),
-                           'width', 0.75,
-                           'height', 0.75,
-                           'rotation', 0
+                           'airflow_role', d.default_airflow_role,
+                           'x', round(d.default_x, 2),
+                           'y', round(d.default_y, 2),
+                           'width', 0.8,
+                           'height', 0.8,
+                           'rotation', d.default_rotation
                        ) AS item
-                FROM ranked_devices d
+                FROM device_defaults d
                 WHERE NOT EXISTS (
                     SELECT 1
                     FROM existing_device_items existing
@@ -1189,9 +1434,11 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
                            'height', dr.height,
                            'unit', dr.unit,
                            'geometry', dr.geometry,
-                           'items', COALESCE(p.items, '[]'::jsonb) || COALESCE(g.items, '[]'::jsonb)
+                           'demo_template_version', 'rich-demo-v2',
+                           'items', COALESCE(t.items, '[]'::jsonb) || COALESCE(p.items, '[]'::jsonb) || COALESCE(g.items, '[]'::jsonb)
                        ) AS layout
                 FROM demo_rooms dr
+                LEFT JOIN template_items t ON t.room_id = dr.room_id
                 LEFT JOIN preserved_items p ON p.room_id = dr.room_id
                 LEFT JOIN generated_items g ON g.room_id = dr.room_id
             )
