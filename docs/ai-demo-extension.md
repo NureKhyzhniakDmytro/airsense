@@ -101,7 +101,9 @@ The simulator uses scenario-based generation:
 - `night_mode`;
 - `critical_co2_event`.
 
-CO2 grows when the simulator's internal occupancy load increases and falls when ventilation power grows. Temperature and humidity change according to the same internal load, ventilation and noise. Occupancy is not published as sensor telemetry; it is only a demo-service scenario/profile input. The current ventilation level is reflected in ordinary `device_data` rows, so the rest of the system sees regular device history.
+CO2 grows when the simulator's internal occupancy load increases and falls when effective ventilation grows. Temperature and humidity change according to internal load, equipment heat, supply/exhaust ventilation influence and measurement noise. Occupancy is not published as sensor telemetry; it is only a demo-service scenario/profile input. The current supply/exhaust ventilation levels are reflected in ordinary `device_data` rows, so the rest of the system sees regular device history.
+
+The simulator also reads room layouts. Sensor coordinates, ventilation device role/rotation and equipment `heat_load_kw` values affect generated readings, which creates spatial variation between sensors in the same room. This is a simplified engineering model, not a CFD calculation. The external basis and limitations are recorded in `docs/air-quality-research.md`.
 
 The demo topology uses the same frontend icon and unit contract as normal user-created data:
 
@@ -235,7 +237,7 @@ Read-only users can view AI forecasts and recommendation history. Only owners/ad
 
 У межах програмної системи для управління вентиляційними системами реалізовано окреме AI-розширення для прогнозування параметрів мікроклімату. Для демонстрації роботи системи використовується сервіс `Device Telemetry Simulator`, який імітує роботу датчиків і вентиляційного обладнання. Він не створює окремий тип згенерованих даних у доменній моделі, а публікує повідомлення у той самий MQTT-формат, який використовується фізичними сенсорами.
 
-Сервіс симуляції створює демонстраційні приміщення, сенсори та вентиляційні пристрої, після чого передає значення CO2, температури, вологості та зайнятості приміщення через брокер EMQX. `Telemetry Ingestion Service` приймає ці повідомлення, виконує валідацію, визначає сенсор за серійним номером і зберігає історію у стандартній таблиці `sensor_data`. Стан вентиляційного пристрою відображається у звичайній історії `device_data`.
+Сервіс симуляції створює демонстраційні приміщення, сенсори та вентиляційні пристрої, після чого передає значення CO2, температури та вологості через брокер EMQX. `Telemetry Ingestion Service` приймає ці повідомлення, виконує валідацію, визначає сенсор за серійним номером і зберігає історію у стандартній таблиці `sensor_data`. Зайнятість приміщення використовується тільки як внутрішній параметр сценарію симуляції, а не як телеметрія датчика. Стан припливної та витяжної вентиляції відображається у звичайній історії `device_data`.
 
 `AI Training Job` формує часовий датасет зі стандартних таблиць системи, виконує навчання моделі Random Forest для прогнозування CO2, температури та вологості на горизонтах 10, 20 і 30 хвилин, а також зберігає файл `model.joblib` і метрики якості моделі.
 

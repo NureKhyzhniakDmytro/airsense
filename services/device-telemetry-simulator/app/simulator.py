@@ -11,7 +11,7 @@ import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Iterable
+from typing import Any, Iterable
 from urllib.parse import quote_plus
 
 import numpy as np
@@ -48,8 +48,37 @@ DEFAULT_DEMO_DEVICE_COUNT = 2
 
 @dataclass(frozen=True)
 class SensorTarget:
+    sensor_id: int
     serial: str
     parameters: tuple[str, ...]
+    x: float
+    y: float
+
+
+@dataclass(frozen=True)
+class VentTarget:
+    device_id: int
+    airflow_role: str
+    x: float
+    y: float
+    rotation: float
+
+
+@dataclass(frozen=True)
+class HeatSource:
+    x: float
+    y: float
+    heat_load_kw: float
+
+
+@dataclass(frozen=True)
+class LayoutFeatures:
+    width: float
+    height: float
+    sensor_points_by_id: dict[int, tuple[float, float]]
+    sensor_points_by_serial: dict[str, tuple[float, float]]
+    vent_targets_by_device_id: dict[int, VentTarget]
+    heat_sources: tuple[HeatSource, ...]
 
 
 @dataclass
@@ -59,6 +88,10 @@ class RoomState:
     sensor_targets: tuple[SensorTarget, ...]
     device_ids: tuple[int, ...]
     scenario: str
+    vent_targets: tuple[VentTarget, ...] = ()
+    heat_sources: tuple[HeatSource, ...] = ()
+    width: float = 10.0
+    height: float = 6.0
     co2: float = 520.0
     temperature: float = 22.0
     humidity: float = 45.0
@@ -128,6 +161,234 @@ def clamp(value: float, lower: float, upper: float) -> float:
     return max(lower, min(upper, value))
 
 
+def to_float(value: Any, default: float) -> float:
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def to_int(value: Any) -> int | None:
+    try:
+        if value is None or value == "":
+            return None
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_layout(layout: Any) -> dict[str, Any]:
+    if isinstance(layout, dict):
+        return layout
+    if isinstance(layout, str) and layout.strip():
+        try:
+            parsed = json.loads(layout)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def layout_items(layout: dict[str, Any]) -> list[dict[str, Any]]:
+    items = layout.get("items")
+    if not isinstance(items, list):
+        return []
+    return [item for item in items if isinstance(item, dict)]
+
+
+def item_center(item: dict[str, Any]) -> tuple[float, float]:
+    x = to_float(item.get("x"), 0.0)
+    y = to_float(item.get("y"), 0.0)
+    width = to_float(item.get("width"), 0.0)
+    height = to_float(item.get("height"), 0.0)
+    return x + width / 2.0, y + height / 2.0
+
+
+def gaussian(distance: float, sigma: float) -> float:
+    sigma = max(sigma, 0.001)
+    return math.exp(-((distance / sigma) ** 2))
+
+
+def stable_offset(key: str, amplitude: float) -> float:
+    digest = hashlib.md5(key.encode("utf-8")).hexdigest()
+    raw = int(digest[:8], 16) / 0xFFFFFFFF
+    return (raw * 2.0 - 1.0) * amplitude
+
+
+def airflow_role_from_item(item: dict[str, Any], fallback_index: int = 0) -> str:
+    role = str(item.get("airflow_role") or "").strip().lower()
+    label = str(item.get("label") or "").strip().lower()
+    if role in {"supply", "inlet", "intake"} or any(token in label for token in ("supply", "inlet", "intake")):
+        return "supply"
+    if role in {"exhaust", "extract", "return", "outlet"} or any(
+        token in label for token in ("extract", "exhaust", "return", "outlet")
+    ):
+        return "exhaust"
+    return "exhaust" if fallback_index % 2 == 1 else "supply"
+
+
+def airflow_axis(rotation: float) -> tuple[float, float]:
+    radians = math.radians(rotation)
+    return math.cos(radians), math.sin(radians)
+
+
+def fallback_sensor_point(width: float, height: float, sensor_index: int) -> tuple[float, float]:
+    columns = (0.22, 0.5, 0.78)
+    row = sensor_index // len(columns)
+    column = columns[sensor_index % len(columns)]
+    return width * column, height * (0.35 + min(row, 2) * 0.2)
+
+
+def fallback_vent_target(device_id: int, width: float, height: float, device_index: int) -> VentTarget:
+    role = "exhaust" if device_index % 2 == 1 else "supply"
+    if role == "supply":
+        return VentTarget(device_id=device_id, airflow_role=role, x=0.35, y=height * 0.35, rotation=0.0)
+    return VentTarget(device_id=device_id, airflow_role=role, x=max(width - 0.35, 0.0), y=height * 0.65, rotation=180.0)
+
+
+def heat_load_for_item(item: dict[str, Any]) -> float:
+    explicit_load = to_float(item.get("heat_load_kw"), -1.0)
+    if explicit_load >= 0:
+        return explicit_load
+
+    thermal_load = str(item.get("thermal_load") or "").strip().lower()
+    if thermal_load == "high":
+        return 14.0
+    if thermal_load == "medium":
+        return 7.0
+    if thermal_load == "low":
+        return 2.5
+    return 0.0
+
+
+def extract_layout_features(raw_layout: Any) -> LayoutFeatures:
+    layout = parse_layout(raw_layout)
+    width = max(to_float(layout.get("width"), 10.0), 1.0)
+    height = max(to_float(layout.get("height"), 6.0), 1.0)
+    sensor_points_by_id: dict[int, tuple[float, float]] = {}
+    sensor_points_by_serial: dict[str, tuple[float, float]] = {}
+    vent_targets_by_device_id: dict[int, VentTarget] = {}
+    heat_sources: list[HeatSource] = []
+    vent_index = 0
+
+    for item in layout_items(layout):
+        item_type = str(item.get("type") or "").strip().lower()
+        center_x, center_y = item_center(item)
+
+        if item_type == "sensor":
+            sensor_id = to_int(item.get("sensor_id"))
+            if sensor_id is not None:
+                sensor_points_by_id[sensor_id] = (center_x, center_y)
+            serial = str(item.get("serial_number") or "").strip()
+            if serial:
+                sensor_points_by_serial[serial] = (center_x, center_y)
+            continue
+
+        if item_type == "vent":
+            device_id = to_int(item.get("device_id"))
+            if device_id is None:
+                continue
+            vent_targets_by_device_id[device_id] = VentTarget(
+                device_id=device_id,
+                airflow_role=airflow_role_from_item(item, vent_index),
+                x=center_x,
+                y=center_y,
+                rotation=to_float(item.get("rotation"), 0.0),
+            )
+            vent_index += 1
+            continue
+
+        if item_type == "equipment":
+            heat_load_kw = heat_load_for_item(item)
+            if heat_load_kw > 0:
+                heat_sources.append(HeatSource(x=center_x, y=center_y, heat_load_kw=heat_load_kw))
+
+    return LayoutFeatures(
+        width=width,
+        height=height,
+        sensor_points_by_id=sensor_points_by_id,
+        sensor_points_by_serial=sensor_points_by_serial,
+        vent_targets_by_device_id=vent_targets_by_device_id,
+        heat_sources=tuple(heat_sources),
+    )
+
+
+def room_shift_activity(now: datetime) -> float:
+    hour = now.hour + now.minute / 60.0
+    if now.weekday() >= 5:
+        return 0.22 if 8.0 <= hour < 16.0 else 0.08
+    if 6.0 <= hour < 14.0:
+        return 0.92
+    if 14.0 <= hour < 22.0:
+        return 0.82
+    return 0.16
+
+
+def heat_source_load(state: RoomState, source: HeatSource, now: datetime) -> float:
+    activity = room_shift_activity(now)
+    cycle = 0.72 + 0.28 * math.sin(now.timestamp() / 780.0 + state.room_id * 0.73 + source.heat_load_kw * 0.11)
+    return source.heat_load_kw * clamp(activity * cycle, 0.05, 1.0)
+
+
+def total_heat_load(state: RoomState, now: datetime) -> float:
+    return sum(heat_source_load(state, source, now) for source in state.heat_sources)
+
+
+def local_heat_at(state: RoomState, x: float, y: float, now: datetime) -> float:
+    heat = 0.0
+    for source in state.heat_sources:
+        distance = math.hypot(x - source.x, y - source.y)
+        heat += heat_source_load(state, source, now) * 0.105 * gaussian(distance, 2.8)
+    return heat
+
+
+def ventilation_role_powers(state: RoomState, now: datetime | None = None) -> tuple[float, float]:
+    now = now or datetime.now(timezone.utc)
+    phase = math.sin(now.timestamp() / 95.0 + state.room_id * 1.37)
+    balance = 2.8 * phase
+    supply_power = state.ventilation_power + balance
+    exhaust_power = state.ventilation_power + 4.0 - balance * 0.55
+
+    if state.scenario == "ventilation_failure":
+        supply_power *= 0.72
+        exhaust_power *= 0.58
+    elif state.scenario == "critical_co2_event":
+        supply_power += 3.0
+        exhaust_power += 9.0
+    elif state.scenario == "night_mode":
+        supply_power -= 2.0
+        exhaust_power += 1.0
+
+    return clamp(supply_power, 0.0, 100.0), clamp(exhaust_power, 0.0, 100.0)
+
+
+def vent_influence_at(state: RoomState, x: float, y: float, supply_power: float, exhaust_power: float) -> tuple[float, float]:
+    supply = 0.0
+    exhaust = 0.0
+    for vent in state.vent_targets:
+        axis_x, axis_y = airflow_axis(vent.rotation)
+        source_x = vent.x + axis_x * 0.35
+        source_y = vent.y + axis_y * 0.35
+        delta_x = x - source_x
+        delta_y = y - source_y
+        forward = max(0.0, delta_x * axis_x + delta_y * axis_y)
+        lateral = abs(delta_x * -axis_y + delta_y * axis_x)
+        distance = math.hypot(delta_x, delta_y)
+
+        if vent.airflow_role == "supply":
+            plume = gaussian(forward, 8.0) * gaussian(lateral, 1.9)
+            local = gaussian(distance, 1.1)
+            supply += (plume + local * 0.18) * (supply_power / 100.0)
+        else:
+            plume = gaussian(forward, 6.6) * gaussian(lateral, 2.7)
+            local = gaussian(distance, 1.35)
+            exhaust += (plume + local * 0.24) * (exhaust_power / 100.0)
+
+    return clamp(supply, 0.0, 1.0), clamp(exhaust, 0.0, 1.0)
+
+
 def choose_scenario(room_id: int, tick: int, rotation_ticks: int) -> str:
     rotating_scenarios = SCENARIOS[1:]
     index = (tick // max(rotation_ticks, 1) + room_id) % len(rotating_scenarios)
@@ -189,23 +450,28 @@ def update_state(
     if scenario == "ventilation_failure":
         state.ventilation_power = min(state.ventilation_power, 10.0)
 
+    supply_power, exhaust_power = ventilation_role_powers(state, now)
+    exchange_power = (supply_power + exhaust_power) / 2.0
+    balance_factor = 1.0 - abs(supply_power - exhaust_power) / 180.0
+    active_heat_load_kw = total_heat_load(state, now)
     minutes = interval_seconds / 60.0
-    co2_generation = state.occupancy * 18.0 * minutes
-    co2_removal = state.ventilation_power * 7.5 * minutes
-    outdoor_recovery = (state.co2 - 420.0) * 0.025 * minutes
+    co2_generation = state.occupancy * 6.5 * minutes
+    co2_excess = max(state.co2 - 420.0, 0.0)
+    co2_removal = co2_excess * (0.055 + exchange_power * 0.0045 * balance_factor) * minutes
+    outdoor_recovery = co2_excess * 0.01 * minutes
     critical_boost = 18.0 * minutes if scenario == "critical_co2_event" else 0.0
 
     state.co2 += co2_generation - co2_removal - outdoor_recovery + critical_boost + rng.normal(0, 7.0)
     state.co2 = clamp(state.co2, 410.0, 3200.0)
 
-    heat_gain = state.occupancy * 0.018 * minutes
-    ventilation_cooling = state.ventilation_power * 0.006 * minutes
+    heat_gain = (state.occupancy * 0.018 + active_heat_load_kw * 0.0012) * minutes
+    ventilation_cooling = (supply_power * 0.0064 + exhaust_power * 0.0028) * minutes
     night_cooling = 0.025 * minutes if scenario == "night_mode" else 0.0
     state.temperature += heat_gain - ventilation_cooling - night_cooling + rng.normal(0, 0.035)
     state.temperature = clamp(state.temperature, 17.0, 32.0)
 
     humidity_gain = state.occupancy * 0.03 * minutes
-    ventilation_drying = state.ventilation_power * 0.018 * minutes
+    ventilation_drying = (supply_power * 0.014 + exhaust_power * 0.007) * minutes
     state.humidity += humidity_gain - ventilation_drying + rng.normal(0, 0.12)
     state.humidity = clamp(state.humidity, 25.0, 85.0)
 
@@ -873,13 +1139,18 @@ def seed_demo_topology_if_empty(cur, parameter_ids: dict[str, int], sensor_type_
 
 
 def load_room_states(cur) -> list[RoomState]:
-    cur.execute("SELECT id, name FROM rooms ORDER BY id")
+    cur.execute("SELECT id, name, layout FROM rooms ORDER BY id")
     rooms = cur.fetchall()
+    layout_features_by_room = {
+        int(room_id): extract_layout_features(layout)
+        for room_id, _room_name, layout in rooms
+    }
 
     cur.execute(
         """
         SELECT
             s.room_id,
+            s.id,
             s.serial_number,
             COALESCE(
                 array_agg(p.name ORDER BY p.name) FILTER (WHERE p.name IS NOT NULL),
@@ -894,14 +1165,12 @@ def load_room_states(cur) -> list[RoomState]:
         ORDER BY s.room_id, s.id
         """
     )
-    sensors_by_room: dict[int, list[SensorTarget]] = {}
-    for room_id, serial, parameters in cur.fetchall():
+    sensor_rows_by_room: dict[int, list[tuple[int, str, tuple[str, ...]]]] = {}
+    for room_id, sensor_id, serial, parameters in cur.fetchall():
         enabled_parameters = tuple(parameter for parameter in parameters if parameter in PARAMETERS)
         if not enabled_parameters:
             continue
-        sensors_by_room.setdefault(int(room_id), []).append(
-            SensorTarget(serial=str(serial), parameters=enabled_parameters)
-        )
+        sensor_rows_by_room.setdefault(int(room_id), []).append((int(sensor_id), str(serial), enabled_parameters))
 
     cur.execute(
         """
@@ -916,15 +1185,43 @@ def load_room_states(cur) -> list[RoomState]:
         devices_by_room.setdefault(int(room_id), []).append(int(device_id))
 
     states: list[RoomState] = []
-    for index, (room_id, room_name) in enumerate(rooms, start=1):
+    for index, (room_id, room_name, _layout) in enumerate(rooms, start=1):
         room_id = int(room_id)
+        layout_features = layout_features_by_room.get(room_id, extract_layout_features({}))
+        sensor_targets: list[SensorTarget] = []
+        for sensor_index, (sensor_id, serial, enabled_parameters) in enumerate(sensor_rows_by_room.get(room_id, ())):
+            x, y = (
+                layout_features.sensor_points_by_id.get(sensor_id)
+                or layout_features.sensor_points_by_serial.get(serial)
+                or fallback_sensor_point(layout_features.width, layout_features.height, sensor_index)
+            )
+            sensor_targets.append(
+                SensorTarget(
+                    sensor_id=sensor_id,
+                    serial=serial,
+                    parameters=enabled_parameters,
+                    x=x,
+                    y=y,
+                )
+            )
+
+        device_ids = tuple(devices_by_room.get(room_id, ()))
+        vent_targets = tuple(
+            layout_features.vent_targets_by_device_id.get(device_id)
+            or fallback_vent_target(device_id, layout_features.width, layout_features.height, device_index)
+            for device_index, device_id in enumerate(device_ids)
+        )
         states.append(
             RoomState(
                 room_id=room_id,
                 room_name=str(room_name),
-                sensor_targets=tuple(sensors_by_room.get(room_id, ())),
-                device_ids=tuple(devices_by_room.get(room_id, ())),
+                sensor_targets=tuple(sensor_targets),
+                device_ids=device_ids,
                 scenario=SCENARIOS[room_id % len(SCENARIOS)],
+                vent_targets=vent_targets,
+                heat_sources=layout_features.heat_sources,
+                width=layout_features.width,
+                height=layout_features.height,
                 co2=500.0 + (room_id % 9) * 24.0,
                 temperature=21.0 + (room_id % 5) * 0.45,
                 humidity=40.0 + (room_id % 7) * 1.2,
@@ -989,22 +1286,45 @@ def connect_client() -> mqtt.Client:
     return client
 
 
-def telemetry_values(state: RoomState, parameters: Iterable[str], sensor_index: int = 0) -> dict[str, float]:
-    co2_offset = sensor_index * 18.0
-    temperature_offset = (sensor_index - 1) * 0.35
-    humidity_offset = (1 - sensor_index) * 0.55
-    pressure_offset = (sensor_index - 1) * 0.18
+def telemetry_values(
+    state: RoomState,
+    target: SensorTarget,
+    sensor_index: int,
+    rng: np.random.Generator,
+    supply_power: float,
+    exhaust_power: float,
+) -> dict[str, float]:
+    now = datetime.now(timezone.utc)
+    supply_airflow, exhaust_airflow = vent_influence_at(state, target.x, target.y, supply_power, exhaust_power)
+    local_heat = local_heat_at(state, target.x, target.y, now)
+    sensor_phase = math.sin(now.timestamp() / 125.0 + state.room_id * 0.47 + sensor_index * 1.18)
+    co2_offset = stable_offset(f"{target.serial}:co2", 9.0) + state.occupancy * (1.1 + sensor_phase * 0.35)
+    temperature_offset = stable_offset(f"{target.serial}:temperature", 0.18) + local_heat
+    humidity_offset = stable_offset(f"{target.serial}:humidity", 0.38) + state.occupancy * 0.045 - local_heat * 0.12
+    pressure_offset = stable_offset(f"{target.serial}:pressure", 0.09) + (exhaust_power - supply_power) * 0.006
     values: dict[str, float] = {}
 
-    for parameter in parameters:
+    for parameter in target.parameters:
         if parameter == "co2":
-            values[parameter] = round(clamp(state.co2 + co2_offset, 410.0, 3200.0), 2)
+            ventilation_offset = supply_airflow * (32.0 + supply_power * 0.25) + exhaust_airflow * (24.0 + exhaust_power * 0.18)
+            values[parameter] = round(
+                clamp(state.co2 + co2_offset - ventilation_offset + rng.normal(0, 8.5), 410.0, 3200.0),
+                2,
+            )
         elif parameter == "temperature":
-            values[parameter] = round(clamp(state.temperature + temperature_offset, 17.0, 32.0), 2)
+            ventilation_offset = supply_airflow * (0.55 + supply_power * 0.008) + exhaust_airflow * (0.22 + exhaust_power * 0.0035)
+            values[parameter] = round(
+                clamp(state.temperature + temperature_offset - ventilation_offset + rng.normal(0, 0.085), 17.0, 35.0),
+                2,
+            )
         elif parameter == "humidity":
-            values[parameter] = round(clamp(state.humidity + humidity_offset, 25.0, 85.0), 2)
+            ventilation_offset = supply_airflow * (1.05 + supply_power * 0.012) + exhaust_airflow * (0.5 + exhaust_power * 0.006)
+            values[parameter] = round(
+                clamp(state.humidity + humidity_offset - ventilation_offset + rng.normal(0, 0.28), 20.0, 90.0),
+                2,
+            )
         elif parameter == "pressure":
-            values[parameter] = round(clamp(state.pressure + pressure_offset, 970.0, 1045.0), 2)
+            values[parameter] = round(clamp(state.pressure + pressure_offset + rng.normal(0, 0.045), 970.0, 1045.0), 2)
 
     return values
 
@@ -1023,15 +1343,22 @@ def persist_device_state(states: Iterable[RoomState]) -> None:
     with connect_db() as conn:
         with conn.cursor() as cur:
             for state in states:
-                for index, device_id in enumerate(state.device_ids):
-                    role_bias = 5.0 if index % 2 == 1 else 0.0
-                    value = clamp(state.ventilation_power + role_bias, 0.0, 100.0)
+                now = datetime.now(timezone.utc)
+                supply_power, exhaust_power = ventilation_role_powers(state, now)
+                vent_targets = state.vent_targets or tuple(
+                    fallback_vent_target(device_id, state.width, state.height, index)
+                    for index, device_id in enumerate(state.device_ids)
+                )
+                for index, vent in enumerate(vent_targets):
+                    base_value = exhaust_power if vent.airflow_role == "exhaust" else supply_power
+                    pulse = math.sin(now.timestamp() / 37.0 + state.room_id * 0.61 + index * 1.17) * 1.35
+                    value = clamp(base_value + pulse, 0.0, 100.0)
                     cur.execute(
                         """
                         INSERT INTO device_data(device_id, value, applied, applied_at)
                         VALUES (%s, %s, TRUE, CURRENT_TIMESTAMP)
                         """,
-                        (device_id, round(value, 2)),
+                        (vent.device_id, round(value, 2)),
                     )
 
 
@@ -1123,6 +1450,7 @@ def publish_loop(client: mqtt.Client, states: Iterable[RoomState]) -> None:
                 state.scenario = profile.scenario
 
             update_state(state, interval_seconds, rng, profile)
+            supply_power, exhaust_power = ventilation_role_powers(state)
 
             if not client.is_connected():
                 logger.warning("MQTT client is not connected; skipping telemetry publish")
@@ -1132,7 +1460,14 @@ def publish_loop(client: mqtt.Client, states: Iterable[RoomState]) -> None:
             base_sent_at = int(time.time()) - max(published_values, 1)
             sent_at_offset = 0
             for sensor_index, target in enumerate(state.sensor_targets):
-                for parameter, value in telemetry_values(state, target.parameters, sensor_index).items():
+                for parameter, value in telemetry_values(
+                    state,
+                    target,
+                    sensor_index,
+                    rng,
+                    supply_power,
+                    exhaust_power,
+                ).items():
                     publish_sensor_value(
                         client,
                         target.serial,

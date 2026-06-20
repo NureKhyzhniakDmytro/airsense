@@ -93,10 +93,13 @@ def heuristic_predictions(sample: TelemetrySample, horizons: Iterable[int]) -> l
     exhaust_power = sample.effective_exhaust_ventilation_power()
     exchange_power = max(sample.ventilation_power, (supply_power + exhaust_power) / 2)
     balance_factor = 1 - abs(supply_power - exhaust_power) / 180
+    outdoor_co2 = 420.0
     for horizon in horizons:
+        minutes = float(horizon)
         scale = horizon / 10.0
-        co2 = sample.co2 - exchange_power * (6.2 + balance_factor * 1.1) * scale
-        co2 -= max(sample.co2 - 420.0, 0.0) * 0.03 * scale
+        co2_excess = max(sample.co2 - outdoor_co2, 0.0)
+        ventilation_decay = 0.004 + exchange_power * 0.00045 * balance_factor
+        co2 = outdoor_co2 + co2_excess * math.exp(-ventilation_decay * minutes)
 
         temperature = sample.temperature - (supply_power * 0.013 + exhaust_power * 0.005) * scale
         humidity = sample.humidity - (supply_power * 0.026 + exhaust_power * 0.011) * scale
