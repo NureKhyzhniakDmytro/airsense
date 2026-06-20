@@ -14,6 +14,8 @@ namespace Airsense.API.Controllers;
 public class DemoDataController(IDbConnection connection) : ControllerBase
 {
     private const string DemoEnvironmentName = "AirSense Demo Environment";
+    private const string DemoEnvironmentIcon = "industrial";
+    private const string DemoOwnerEmail = "khijnyak.dima@gmail.com";
     private const string DemoRoomPrefix = "Demo Room";
     private const string DemoSensorLikePattern = "demo-room-%-microclimate%";
     private const string DemoDeviceLikePattern = "demo-room-%-ventilation%";
@@ -82,6 +84,7 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
             await AddDemoAssetsAsync(roomId, context.SensorTypeId, sensorCount, deviceCount, transaction);
             await EnsureCo2CurveAsync(roomId, context.ParameterIds["co2"], transaction);
             await EnsureProfileAsync(roomId, transaction);
+            await SyncDemoRoomLayoutAssetsAsync(roomId, transaction);
             transaction.Commit();
         }
 
@@ -144,6 +147,7 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
         await AddDemoAssetsAsync(roomId, context.SensorTypeId, sensorCount, deviceCount, transaction);
         await EnsureCo2CurveAsync(roomId, context.ParameterIds["co2"], transaction);
         await EnsureProfileAsync(roomId, transaction);
+        await SyncDemoRoomLayoutAssetsAsync(roomId, transaction);
         transaction.Commit();
 
         return Ok(await GetStatusInternalAsync());
@@ -359,7 +363,6 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
                     MAX(value) FILTER (WHERE name = 'co2') AS Co2,
                     MAX(value) FILTER (WHERE name = 'temperature') AS Temperature,
                     MAX(value) FILTER (WHERE name = 'humidity') AS Humidity,
-                    MAX(value) FILTER (WHERE name = 'occupancy') AS Occupancy,
                     MAX(timestamp) AS LastTelemetryAt
                 FROM latest_sensor
                 GROUP BY room_id
@@ -390,7 +393,6 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
                 sp.Co2 AS Co2,
                 sp.Temperature AS Temperature,
                 sp.Humidity AS Humidity,
-                sp.Occupancy AS Occupancy,
                 ld.VentilationPower AS VentilationPower,
                 CASE
                     WHEN sp.LastTelemetryAt IS NULL THEN ld.LastDeviceAt
@@ -451,6 +453,7 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
             await AddDemoAssetsAsync(roomId, context.SensorTypeId, 1, 1, transaction);
             await EnsureCo2CurveAsync(roomId, context.ParameterIds["co2"], transaction);
             await EnsureProfileAsync(roomId, transaction);
+            await SyncDemoRoomLayoutAssetsAsync(roomId, transaction);
         }
 
         transaction.Commit();
@@ -517,7 +520,7 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
 
         var parameterIds = (await connection.QueryAsync<(int Id, string Name)>(
             "SELECT id AS Id, name AS Name FROM parameters WHERE name = ANY(@names)",
-            new { names = new[] { "co2", "temperature", "humidity", "occupancy" } }))
+            new { names = new[] { "co2", "temperature", "humidity" } }))
             .ToDictionary(x => x.Name, x => x.Id);
 
         EnsureConnectionOpen();
@@ -544,8 +547,7 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
                         await InsertSensorValueAsync(sensorId, parameterIds["co2"], state.Co2, timestamp, transaction);
                         await InsertSensorValueAsync(sensorId, parameterIds["temperature"], state.Temperature, timestamp, transaction);
                         await InsertSensorValueAsync(sensorId, parameterIds["humidity"], state.Humidity, timestamp, transaction);
-                        await InsertSensorValueAsync(sensorId, parameterIds["occupancy"], state.Occupancy, timestamp, transaction);
-                        sensorRows += 4;
+                        sensorRows += 3;
                     }
                 }
 
@@ -580,10 +582,9 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
     {
         var parameterIds = new Dictionary<string, int>
         {
-            ["temperature"] = await EnsureParameterAsync("temperature", "C", -50, 50, transaction),
+            ["temperature"] = await EnsureParameterAsync("temperature", "°C", -50, 50, transaction),
             ["humidity"] = await EnsureParameterAsync("humidity", "%", 0, 100, transaction),
-            ["co2"] = await EnsureParameterAsync("co2", "ppm", 300, 5000, transaction),
-            ["occupancy"] = await EnsureParameterAsync("occupancy", "people", 0, 100, transaction)
+            ["co2"] = await EnsureParameterAsync("co2", "ppm", 300, 5000, transaction)
         };
         var typeId = await EnsureSensorTypeAsync("Microclimate Sensor", parameterIds.Values, transaction);
         var envId = await EnsureEnvironmentAsync(transaction);
@@ -655,7 +656,7 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
     {
         var parameterIds = (await connection.QueryAsync<(int Id, string Name)>(
             "SELECT id AS Id, name AS Name FROM parameters WHERE name = ANY(@names)",
-            new { names = new[] { "co2", "temperature", "humidity", "occupancy" } }))
+            new { names = new[] { "co2", "temperature", "humidity" } }))
             .ToDictionary(x => x.Name, x => x.Id);
 
         EnsureConnectionOpen();
@@ -692,11 +693,6 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
             if (request.Humidity.HasValue)
             {
                 await InsertSensorValueAsync(sensorId, parameterIds["humidity"], request.Humidity.Value, timestamp, transaction);
-                sensorRows++;
-            }
-            if (request.Occupancy.HasValue)
-            {
-                await InsertSensorValueAsync(sensorId, parameterIds["occupancy"], request.Occupancy.Value, timestamp, transaction);
                 sensorRows++;
             }
         }
@@ -755,11 +751,9 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
         if (request.Co2 is < 300 or > 5000)
             return "CO2 must be between 300 and 5000 ppm";
         if (request.Temperature is < -50 or > 50)
-            return "Temperature must be between -50 and 50 C";
+            return "Temperature must be between -50 and 50 °C";
         if (request.Humidity is < 0 or > 100)
             return "Humidity must be between 0 and 100%";
-        if (request.Occupancy is < 0 or > 100)
-            return "Occupancy must be between 0 and 100";
         if (request.VentilationPower is < 0 or > 100)
             return "Ventilation power must be between 0 and 100%";
 
@@ -770,13 +764,12 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
     {
         return request.Co2.HasValue
                || request.Temperature.HasValue
-               || request.Humidity.HasValue
-               || request.Occupancy.HasValue;
+               || request.Humidity.HasValue;
     }
 
     private async Task<int> EnsureParameterAsync(string name, string unit, double minValue, double maxValue, IDbTransaction transaction)
     {
-        return await connection.QuerySingleAsync<int>(
+        var parameterId = await connection.QuerySingleAsync<int>(
             """
             WITH inserted AS (
                 INSERT INTO parameters(name, unit, min_value, max_value)
@@ -791,10 +784,29 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
             """,
             new { name, unit, minValue, maxValue },
             transaction);
+
+        await connection.ExecuteAsync(
+            """
+            UPDATE parameters
+            SET unit = @unit,
+                min_value = @minValue,
+                max_value = @maxValue
+            WHERE id = @parameterId
+              AND (
+                unit IS DISTINCT FROM @unit
+                OR min_value IS DISTINCT FROM @minValue
+                OR max_value IS DISTINCT FROM @maxValue
+              )
+            """,
+            new { parameterId, unit, minValue, maxValue },
+            transaction);
+
+        return parameterId;
     }
 
     private async Task<int> EnsureSensorTypeAsync(string name, IEnumerable<int> parameterIds, IDbTransaction transaction)
     {
+        var requestedParameterIds = parameterIds.Distinct().ToArray();
         var typeId = await connection.QuerySingleAsync<int>(
             """
             WITH inserted AS (
@@ -811,7 +823,16 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
             new { name },
             transaction);
 
-        foreach (var parameterId in parameterIds)
+        await connection.ExecuteAsync(
+            """
+            DELETE FROM sensor_type_parameters
+            WHERE type_id = @typeId
+              AND NOT (parameter_id = ANY(@requestedParameterIds))
+            """,
+            new { typeId, requestedParameterIds },
+            transaction);
+
+        foreach (var parameterId in requestedParameterIds)
         {
             await connection.ExecuteAsync(
                 """
@@ -835,7 +856,7 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
             """
             WITH inserted AS (
                 INSERT INTO environments(name, icon)
-                SELECT @name, 'factory'
+                SELECT @name, @icon
                 WHERE NOT EXISTS (SELECT 1 FROM environments WHERE name = @name)
                 RETURNING id
             )
@@ -843,13 +864,47 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
             UNION ALL
             SELECT id FROM environments WHERE name = @name ORDER BY id LIMIT 1
             """,
-            new { name = DemoEnvironmentName },
+            new { name = DemoEnvironmentName, icon = DemoEnvironmentIcon },
+            transaction);
+
+        await connection.ExecuteAsync(
+            """
+            UPDATE environments
+            SET icon = @icon
+            WHERE id = @envId
+              AND (icon IS NULL OR icon IN ('factory', 'building', ''))
+            """,
+            new { envId, icon = DemoEnvironmentIcon },
+            transaction);
+
+        await connection.ExecuteAsync(
+            """
+            WITH demo_owner AS (
+                INSERT INTO users(uid, name, email)
+                VALUES (@uid, @name, @email)
+                ON CONFLICT (email) DO UPDATE SET
+                    name = EXCLUDED.name
+                RETURNING id
+            )
+            INSERT INTO environment_members(member_id, environment_id, role)
+            SELECT demo_owner.id, @envId, 'owner'
+            FROM demo_owner
+            ON CONFLICT (member_id, environment_id) DO UPDATE SET
+                role = EXCLUDED.role
+            """,
+            new
+            {
+                envId,
+                uid = $"pending:{DemoOwnerEmail}",
+                name = DemoOwnerEmail,
+                email = DemoOwnerEmail
+            },
             transaction);
 
         await connection.ExecuteAsync(
             """
             INSERT INTO environment_members(member_id, environment_id, role)
-            SELECT id, @envId, 'owner'
+            SELECT id, @envId, 'user'
             FROM users
             ON CONFLICT (member_id, environment_id) DO NOTHING
             """,
@@ -861,7 +916,7 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
 
     private async Task<int> EnsureRoomAsync(int envId, string name, string icon, IDbTransaction transaction)
     {
-        return await connection.QuerySingleAsync<int>(
+        var roomId = await connection.QuerySingleAsync<int>(
             """
             WITH inserted AS (
                 INSERT INTO rooms(name, environment_id, icon)
@@ -877,6 +932,18 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
             """,
             new { envId, name, icon },
             transaction);
+
+        await connection.ExecuteAsync(
+            """
+            UPDATE rooms
+            SET icon = @icon
+            WHERE id = @roomId
+              AND icon IN ('factory', 'home')
+            """,
+            new { roomId, icon },
+            transaction);
+
+        return roomId;
     }
 
     private async Task EnsureSensorAsync(string serialNumber, int typeId, int roomId, IDbTransaction transaction)
@@ -937,6 +1004,204 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
             ON CONFLICT (room_id) DO NOTHING
             """,
             new { roomId },
+            transaction);
+    }
+
+    private async Task SyncDemoRoomLayoutAssetsAsync(int roomId, IDbTransaction transaction)
+    {
+        await connection.ExecuteAsync(
+            """
+            WITH demo_rooms AS (
+                SELECT r.id AS room_id,
+                       r.layout,
+                       CASE
+                           WHEN (r.layout ->> 'width') ~ '^[0-9]+(\.[0-9]+)?$' THEN (r.layout ->> 'width')::numeric
+                           ELSE 6::numeric
+                       END AS width,
+                       CASE
+                           WHEN (r.layout ->> 'height') ~ '^[0-9]+(\.[0-9]+)?$' THEN (r.layout ->> 'height')::numeric
+                           ELSE 4::numeric
+                       END AS height,
+                       COALESCE(NULLIF(r.layout ->> 'unit', ''), 'm') AS unit,
+                       CASE
+                           WHEN jsonb_typeof(r.layout -> 'geometry') = 'object' THEN r.layout -> 'geometry'
+                           ELSE '{"type":"rectangle","points":[{"x":0,"y":0},{"x":6,"y":0},{"x":6,"y":4},{"x":0,"y":4}]}'::jsonb
+                       END AS geometry,
+                       CASE
+                           WHEN jsonb_typeof(r.layout -> 'items') = 'array' THEN r.layout -> 'items'
+                           ELSE '[]'::jsonb
+                       END AS items
+                FROM rooms r
+                JOIN environments e ON e.id = r.environment_id
+                WHERE e.name = @demoEnvironmentName
+                  AND r.id = @roomId
+            ),
+            current_items AS (
+                SELECT dr.room_id,
+                       item.value AS item,
+                       item.ordinality
+                FROM demo_rooms dr
+                LEFT JOIN LATERAL jsonb_array_elements(dr.items) WITH ORDINALITY AS item(value, ordinality) ON TRUE
+            ),
+            preserved_items AS (
+                SELECT room_id,
+                       COALESCE(
+                           jsonb_agg(item ORDER BY ordinality)
+                               FILTER (WHERE item IS NOT NULL AND COALESCE(lower(item ->> 'type'), '') NOT IN ('sensor', 'vent')),
+                           '[]'::jsonb
+                       ) AS items
+                FROM current_items
+                GROUP BY room_id
+            ),
+            ranked_sensors AS (
+                SELECT dr.room_id,
+                       dr.width,
+                       dr.height,
+                       s.id,
+                       s.serial_number,
+                       row_number() OVER (PARTITION BY dr.room_id ORDER BY s.id) AS rn
+                FROM demo_rooms dr
+                JOIN sensors s ON s.room_id = dr.room_id
+            ),
+            ranked_devices AS (
+                SELECT dr.room_id,
+                       dr.width,
+                       dr.height,
+                       d.id,
+                       d.serial_number,
+                       row_number() OVER (PARTITION BY dr.room_id ORDER BY d.id) AS rn
+                FROM demo_rooms dr
+                JOIN devices d ON d.room_id = dr.room_id
+            ),
+            existing_sensor_items AS (
+                SELECT s.room_id,
+                       10 AS sort_group,
+                       ci.ordinality AS sort_key,
+                       (ci.item - 'device_id') || jsonb_build_object(
+                           'id', 'sensor-' || s.id,
+                           'type', 'sensor',
+                           'label', COALESCE(NULLIF(ci.item ->> 'label', ''), 'Sensor #' || s.id),
+                           'sensor_id', s.id,
+                           'serial_number', s.serial_number
+                       ) AS item
+                FROM ranked_sensors s
+                JOIN LATERAL (
+                    SELECT item, ordinality
+                    FROM current_items ci
+                    WHERE ci.room_id = s.room_id
+                      AND lower(ci.item ->> 'type') = 'sensor'
+                      AND (ci.item ->> 'sensor_id') ~ '^[0-9]+$'
+                      AND (ci.item ->> 'sensor_id')::int = s.id
+                    ORDER BY ordinality
+                    LIMIT 1
+                ) ci ON TRUE
+            ),
+            missing_sensor_items AS (
+                SELECT s.room_id,
+                       10 AS sort_group,
+                       s.rn + 10000 AS sort_key,
+                       jsonb_build_object(
+                           'id', 'sensor-' || s.id,
+                           'type', 'sensor',
+                           'label', 'Sensor #' || s.id,
+                           'sensor_id', s.id,
+                           'serial_number', s.serial_number,
+                           'x', round(greatest(0::numeric, least(s.width - 0.55, 0.45 + (((s.rn - 1) % 4)::numeric * 1.15))), 2),
+                           'y', round(greatest(0::numeric, least(s.height - 0.55, 0.55 + (((s.rn - 1) / 4)::numeric * 0.85))), 2),
+                           'width', 0.55,
+                           'height', 0.55,
+                           'rotation', 0
+                       ) AS item
+                FROM ranked_sensors s
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM existing_sensor_items existing
+                    WHERE existing.room_id = s.room_id
+                      AND (existing.item ->> 'sensor_id')::int = s.id
+                )
+            ),
+            existing_device_items AS (
+                SELECT d.room_id,
+                       20 AS sort_group,
+                       ci.ordinality AS sort_key,
+                       (ci.item - 'sensor_id') || jsonb_build_object(
+                           'id', 'vent-' || d.id,
+                           'type', 'vent',
+                           'label', COALESCE(NULLIF(ci.item ->> 'label', ''), 'Vent #' || d.id),
+                           'device_id', d.id,
+                           'serial_number', d.serial_number
+                       ) AS item
+                FROM ranked_devices d
+                JOIN LATERAL (
+                    SELECT item, ordinality
+                    FROM current_items ci
+                    WHERE ci.room_id = d.room_id
+                      AND lower(ci.item ->> 'type') = 'vent'
+                      AND (ci.item ->> 'device_id') ~ '^[0-9]+$'
+                      AND (ci.item ->> 'device_id')::int = d.id
+                    ORDER BY ordinality
+                    LIMIT 1
+                ) ci ON TRUE
+            ),
+            missing_device_items AS (
+                SELECT d.room_id,
+                       20 AS sort_group,
+                       d.rn + 10000 AS sort_key,
+                       jsonb_build_object(
+                           'id', 'vent-' || d.id,
+                           'type', 'vent',
+                           'label', 'Vent #' || d.id,
+                           'device_id', d.id,
+                           'serial_number', d.serial_number,
+                           'x', round(greatest(0::numeric, least(d.width - 0.75, d.width - 1.2 - (((d.rn - 1) % 3)::numeric * 1.1))), 2),
+                           'y', round(greatest(0::numeric, least(d.height - 0.75, 0.55 + (((d.rn - 1) / 3)::numeric * 1.0))), 2),
+                           'width', 0.75,
+                           'height', 0.75,
+                           'rotation', 0
+                       ) AS item
+                FROM ranked_devices d
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM existing_device_items existing
+                    WHERE existing.room_id = d.room_id
+                      AND (existing.item ->> 'device_id')::int = d.id
+                )
+            ),
+            asset_items AS (
+                SELECT room_id, sort_group, sort_key, item FROM existing_sensor_items
+                UNION ALL
+                SELECT room_id, sort_group, sort_key, item FROM missing_sensor_items
+                UNION ALL
+                SELECT room_id, sort_group, sort_key, item FROM existing_device_items
+                UNION ALL
+                SELECT room_id, sort_group, sort_key, item FROM missing_device_items
+            ),
+            generated_items AS (
+                SELECT room_id,
+                       COALESCE(jsonb_agg(item ORDER BY sort_group, sort_key), '[]'::jsonb) AS items
+                FROM asset_items
+                GROUP BY room_id
+            ),
+            next_layouts AS (
+                SELECT dr.room_id,
+                       jsonb_build_object(
+                           'width', dr.width,
+                           'height', dr.height,
+                           'unit', dr.unit,
+                           'geometry', dr.geometry,
+                           'items', COALESCE(p.items, '[]'::jsonb) || COALESCE(g.items, '[]'::jsonb)
+                       ) AS layout
+                FROM demo_rooms dr
+                LEFT JOIN preserved_items p ON p.room_id = dr.room_id
+                LEFT JOIN generated_items g ON g.room_id = dr.room_id
+            )
+            UPDATE rooms r
+            SET layout = next_layouts.layout
+            FROM next_layouts
+            WHERE r.id = next_layouts.room_id
+              AND r.layout IS DISTINCT FROM next_layouts.layout
+            """,
+            new { roomId, demoEnvironmentName = DemoEnvironmentName },
             transaction);
     }
 
@@ -1078,7 +1343,6 @@ public class DemoRoomReadingsRequest
     public double? Co2 { get; set; }
     public double? Temperature { get; set; }
     public double? Humidity { get; set; }
-    public int? Occupancy { get; set; }
     public double? VentilationPower { get; set; }
 }
 
@@ -1132,7 +1396,6 @@ public class DemoRoomStatusDto
     public double? Co2 { get; set; }
     public double? Temperature { get; set; }
     public double? Humidity { get; set; }
-    public double? Occupancy { get; set; }
     public double? VentilationPower { get; set; }
     public DateTime? LastActivityAt { get; set; }
 }

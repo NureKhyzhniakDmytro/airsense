@@ -37,7 +37,10 @@ SCENARIOS = (
     "critical_co2_event",
 )
 
-PARAMETERS = ("co2", "temperature", "humidity", "occupancy")
+PARAMETERS = ("co2", "temperature", "humidity")
+DEFAULT_DEMO_ENVIRONMENT_ICON = "industrial"
+DEFAULT_DEMO_ROOM_ICONS = ("production", "office")
+DEFAULT_DEMO_OWNER_EMAIL = "khijnyak.dima@gmail.com"
 
 
 @dataclass
@@ -198,6 +201,21 @@ def ensure_parameter(cur, name: str, unit: str, min_value: float, max_value: flo
     cur.execute("SELECT id FROM parameters WHERE name = %s", (name,))
     row = cur.fetchone()
     if row:
+        cur.execute(
+            """
+            UPDATE parameters
+            SET unit = %s,
+                min_value = %s,
+                max_value = %s
+            WHERE id = %s
+              AND (
+                unit IS DISTINCT FROM %s
+                OR min_value IS DISTINCT FROM %s
+                OR max_value IS DISTINCT FROM %s
+              )
+            """,
+            (unit, min_value, max_value, row[0], unit, min_value, max_value),
+        )
         return row[0]
 
     cur.execute(
@@ -208,6 +226,7 @@ def ensure_parameter(cur, name: str, unit: str, min_value: float, max_value: flo
 
 
 def ensure_sensor_type(cur, type_name: str, parameter_ids: Iterable[int]) -> int:
+    requested_parameter_ids = list(dict.fromkeys(parameter_ids))
     cur.execute("SELECT id FROM sensor_types WHERE name = %s", (type_name,))
     row = cur.fetchone()
     if row:
@@ -216,7 +235,16 @@ def ensure_sensor_type(cur, type_name: str, parameter_ids: Iterable[int]) -> int
         cur.execute("INSERT INTO sensor_types(name) VALUES (%s) RETURNING id", (type_name,))
         type_id = cur.fetchone()[0]
 
-    for parameter_id in parameter_ids:
+    cur.execute(
+        """
+        DELETE FROM sensor_type_parameters
+        WHERE type_id = %s
+          AND NOT (parameter_id = ANY(%s))
+        """,
+        (type_id, requested_parameter_ids),
+    )
+
+    for parameter_id in requested_parameter_ids:
         cur.execute(
             """
             INSERT INTO sensor_type_parameters(type_id, parameter_id)
@@ -245,7 +273,7 @@ def ensure_demo_control_schema(cur) -> None:
     )
 
 
-def ensure_environment(cur, name: str, icon: str) -> int:
+def ensure_environment(cur, name: str, icon: str, owner_email: str) -> int:
     cur.execute("SELECT id FROM environments WHERE name = %s ORDER BY id LIMIT 1", (name,))
     row = cur.fetchone()
     if row:
@@ -256,8 +284,36 @@ def ensure_environment(cur, name: str, icon: str) -> int:
 
     cur.execute(
         """
+        UPDATE environments
+        SET icon = %s
+        WHERE id = %s
+          AND (icon IS NULL OR icon IN ('factory', 'building', ''))
+        """,
+        (icon, env_id),
+    )
+
+    cur.execute(
+        """
+        WITH demo_owner AS (
+            INSERT INTO users(uid, name, email)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (email) DO UPDATE SET
+                name = EXCLUDED.name
+            RETURNING id
+        )
         INSERT INTO environment_members(member_id, environment_id, role)
-        SELECT id, %s, 'owner'
+        SELECT demo_owner.id, %s, 'owner'
+        FROM demo_owner
+        ON CONFLICT (member_id, environment_id) DO UPDATE SET
+            role = EXCLUDED.role
+        """,
+        (f"pending:{owner_email}", owner_email, owner_email, env_id),
+    )
+
+    cur.execute(
+        """
+        INSERT INTO environment_members(member_id, environment_id, role)
+        SELECT id, %s, 'user'
         FROM users
         ON CONFLICT (member_id, environment_id) DO NOTHING
         """,
@@ -273,7 +329,17 @@ def ensure_room(cur, env_id: int, room_name: str, icon: str) -> int:
     )
     row = cur.fetchone()
     if row:
-        return row[0]
+        room_id = row[0]
+        cur.execute(
+            """
+            UPDATE rooms
+            SET icon = %s
+            WHERE id = %s
+              AND icon IN ('factory', 'home')
+            """,
+            (icon, room_id),
+        )
+        return room_id
 
     cur.execute(
         "INSERT INTO rooms(name, environment_id, icon) VALUES (%s, %s, %s) RETURNING id",
@@ -344,9 +410,211 @@ def ensure_room_profile(cur, room_id: int) -> None:
     )
 
 
+def ensure_room_layout(cur, room_id: int) -> None:
+    cur.execute(
+        """
+        WITH room_data AS (
+            SELECT r.id AS room_id,
+                   r.layout,
+                   CASE
+                       WHEN (r.layout ->> 'width') ~ '^[0-9]+(\\.[0-9]+)?$' THEN (r.layout ->> 'width')::numeric
+                       ELSE 6::numeric
+                   END AS width,
+                   CASE
+                       WHEN (r.layout ->> 'height') ~ '^[0-9]+(\\.[0-9]+)?$' THEN (r.layout ->> 'height')::numeric
+                       ELSE 4::numeric
+                   END AS height,
+                   COALESCE(NULLIF(r.layout ->> 'unit', ''), 'm') AS unit,
+                   CASE
+                       WHEN jsonb_typeof(r.layout -> 'geometry') = 'object' THEN r.layout -> 'geometry'
+                       ELSE '{"type":"rectangle","points":[{"x":0,"y":0},{"x":6,"y":0},{"x":6,"y":4},{"x":0,"y":4}]}'::jsonb
+                   END AS geometry,
+                   CASE
+                       WHEN jsonb_typeof(r.layout -> 'items') = 'array' THEN r.layout -> 'items'
+                       ELSE '[]'::jsonb
+                   END AS items
+            FROM rooms r
+            WHERE r.id = %s
+        ),
+        current_items AS (
+            SELECT rd.room_id,
+                   item.value AS item,
+                   item.ordinality
+            FROM room_data rd
+            LEFT JOIN LATERAL jsonb_array_elements(rd.items) WITH ORDINALITY AS item(value, ordinality) ON TRUE
+        ),
+        preserved_items AS (
+            SELECT room_id,
+                   COALESCE(
+                       jsonb_agg(item ORDER BY ordinality)
+                           FILTER (WHERE item IS NOT NULL AND COALESCE(lower(item ->> 'type'), '') NOT IN ('sensor', 'vent')),
+                       '[]'::jsonb
+                   ) AS items
+            FROM current_items
+            GROUP BY room_id
+        ),
+        ranked_sensors AS (
+            SELECT rd.room_id,
+                   rd.width,
+                   rd.height,
+                   s.id,
+                   s.serial_number,
+                   row_number() OVER (PARTITION BY rd.room_id ORDER BY s.id) AS rn
+            FROM room_data rd
+            JOIN sensors s ON s.room_id = rd.room_id
+        ),
+        ranked_devices AS (
+            SELECT rd.room_id,
+                   rd.width,
+                   rd.height,
+                   d.id,
+                   d.serial_number,
+                   row_number() OVER (PARTITION BY rd.room_id ORDER BY d.id) AS rn
+            FROM room_data rd
+            JOIN devices d ON d.room_id = rd.room_id
+        ),
+        existing_sensor_items AS (
+            SELECT s.room_id,
+                   10 AS sort_group,
+                   ci.ordinality AS sort_key,
+                   (ci.item - 'device_id') || jsonb_build_object(
+                       'id', 'sensor-' || s.id,
+                       'type', 'sensor',
+                       'label', COALESCE(NULLIF(ci.item ->> 'label', ''), 'Sensor #' || s.id),
+                       'sensor_id', s.id,
+                       'serial_number', s.serial_number
+                   ) AS item
+            FROM ranked_sensors s
+            JOIN LATERAL (
+                SELECT item, ordinality
+                FROM current_items ci
+                WHERE ci.room_id = s.room_id
+                  AND lower(ci.item ->> 'type') = 'sensor'
+                  AND (ci.item ->> 'sensor_id') ~ '^[0-9]+$'
+                  AND (ci.item ->> 'sensor_id')::int = s.id
+                ORDER BY ordinality
+                LIMIT 1
+            ) ci ON TRUE
+        ),
+        missing_sensor_items AS (
+            SELECT s.room_id,
+                   10 AS sort_group,
+                   s.rn + 10000 AS sort_key,
+                   jsonb_build_object(
+                       'id', 'sensor-' || s.id,
+                       'type', 'sensor',
+                       'label', 'Sensor #' || s.id,
+                       'sensor_id', s.id,
+                       'serial_number', s.serial_number,
+                       'x', round(greatest(0::numeric, least(s.width - 0.55, 0.45 + (mod(s.rn - 1, 4)::numeric * 1.15))), 2),
+                       'y', round(greatest(0::numeric, least(s.height - 0.55, 0.55 + (((s.rn - 1) / 4)::numeric * 0.85))), 2),
+                       'width', 0.55,
+                       'height', 0.55,
+                       'rotation', 0
+                   ) AS item
+            FROM ranked_sensors s
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM existing_sensor_items existing
+                WHERE existing.room_id = s.room_id
+                  AND (existing.item ->> 'sensor_id')::int = s.id
+            )
+        ),
+        existing_device_items AS (
+            SELECT d.room_id,
+                   20 AS sort_group,
+                   ci.ordinality AS sort_key,
+                   (ci.item - 'sensor_id') || jsonb_build_object(
+                       'id', 'vent-' || d.id,
+                       'type', 'vent',
+                       'label', COALESCE(NULLIF(ci.item ->> 'label', ''), 'Vent #' || d.id),
+                       'device_id', d.id,
+                       'serial_number', d.serial_number
+                   ) AS item
+            FROM ranked_devices d
+            JOIN LATERAL (
+                SELECT item, ordinality
+                FROM current_items ci
+                WHERE ci.room_id = d.room_id
+                  AND lower(ci.item ->> 'type') = 'vent'
+                  AND (ci.item ->> 'device_id') ~ '^[0-9]+$'
+                  AND (ci.item ->> 'device_id')::int = d.id
+                ORDER BY ordinality
+                LIMIT 1
+            ) ci ON TRUE
+        ),
+        missing_device_items AS (
+            SELECT d.room_id,
+                   20 AS sort_group,
+                   d.rn + 10000 AS sort_key,
+                   jsonb_build_object(
+                       'id', 'vent-' || d.id,
+                       'type', 'vent',
+                       'label', 'Vent #' || d.id,
+                       'device_id', d.id,
+                       'serial_number', d.serial_number,
+                       'x', round(greatest(0::numeric, least(d.width - 0.75, d.width - 1.2 - (mod(d.rn - 1, 3)::numeric * 1.1))), 2),
+                       'y', round(greatest(0::numeric, least(d.height - 0.75, 0.55 + (((d.rn - 1) / 3)::numeric * 1.0))), 2),
+                       'width', 0.75,
+                       'height', 0.75,
+                       'rotation', 0
+                   ) AS item
+            FROM ranked_devices d
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM existing_device_items existing
+                WHERE existing.room_id = d.room_id
+                  AND (existing.item ->> 'device_id')::int = d.id
+            )
+        ),
+        asset_items AS (
+            SELECT room_id, sort_group, sort_key, item FROM existing_sensor_items
+            UNION ALL
+            SELECT room_id, sort_group, sort_key, item FROM missing_sensor_items
+            UNION ALL
+            SELECT room_id, sort_group, sort_key, item FROM existing_device_items
+            UNION ALL
+            SELECT room_id, sort_group, sort_key, item FROM missing_device_items
+        ),
+        generated_items AS (
+            SELECT room_id,
+                   COALESCE(jsonb_agg(item ORDER BY sort_group, sort_key), '[]'::jsonb) AS items
+            FROM asset_items
+            GROUP BY room_id
+        ),
+        next_layouts AS (
+            SELECT rd.room_id,
+                   jsonb_build_object(
+                       'width', rd.width,
+                       'height', rd.height,
+                       'unit', rd.unit,
+                       'geometry', rd.geometry,
+                       'items', COALESCE(p.items, '[]'::jsonb) || COALESCE(g.items, '[]'::jsonb)
+                   ) AS layout
+            FROM room_data rd
+            LEFT JOIN preserved_items p ON p.room_id = rd.room_id
+            LEFT JOIN generated_items g ON g.room_id = rd.room_id
+        )
+        UPDATE rooms r
+        SET layout = next_layouts.layout
+        FROM next_layouts
+        WHERE r.id = next_layouts.room_id
+          AND r.layout IS DISTINCT FROM next_layouts.layout
+        """,
+        (room_id,),
+    )
+
+
 def bootstrap_demo_topology() -> list[RoomState]:
     room_count = env_int("ROOM_COUNT", 4)
     env_name = os.getenv("DEMO_ENVIRONMENT_NAME", "AirSense Demo Environment")
+    env_icon = os.getenv("DEMO_ENVIRONMENT_ICON", DEFAULT_DEMO_ENVIRONMENT_ICON)
+    owner_email = os.getenv("DEMO_OWNER_EMAIL", DEFAULT_DEMO_OWNER_EMAIL)
+    room_icons = tuple(
+        icon.strip()
+        for icon in os.getenv("DEMO_ROOM_ICONS", ",".join(DEFAULT_DEMO_ROOM_ICONS)).split(",")
+        if icon.strip()
+    ) or DEFAULT_DEMO_ROOM_ICONS
     room_prefix = os.getenv("DEMO_ROOM_PREFIX", "Demo Room")
 
     with connect_db() as conn:
@@ -356,21 +624,21 @@ def bootstrap_demo_topology() -> list[RoomState]:
                 "temperature": ensure_parameter(cur, "temperature", "°C", -50, 50),
                 "humidity": ensure_parameter(cur, "humidity", "%", 0, 100),
                 "co2": ensure_parameter(cur, "co2", "ppm", 300, 5000),
-                "occupancy": ensure_parameter(cur, "occupancy", "people", 0, 100),
             }
             type_id = ensure_sensor_type(cur, "Microclimate Sensor", parameter_ids.values())
-            env_id = ensure_environment(cur, env_name, "factory")
+            env_id = ensure_environment(cur, env_name, env_icon, owner_email)
 
             states: list[RoomState] = []
             for index in range(1, room_count + 1):
                 room_name = f"{room_prefix} {index}"
-                room_id = ensure_room(cur, env_id, room_name, "factory" if index % 2 else "home")
+                room_id = ensure_room(cur, env_id, room_name, room_icons[(index - 1) % len(room_icons)])
                 sensor_serial = f"demo-room-{room_id}-microclimate"
                 device_serial = f"demo-room-{room_id}-ventilation"
                 ensure_sensor(cur, sensor_serial, type_id, room_id)
                 device_id = ensure_device(cur, device_serial, room_id)
                 ensure_co2_curve(cur, room_id, parameter_ids["co2"])
                 ensure_room_profile(cur, room_id)
+                ensure_room_layout(cur, room_id)
 
                 states.append(
                     RoomState(
@@ -433,7 +701,6 @@ def telemetry_values(state: RoomState) -> dict[str, float]:
         "co2": round(state.co2, 2),
         "temperature": round(state.temperature, 2),
         "humidity": round(state.humidity, 2),
-        "occupancy": float(state.occupancy),
     }
 
 

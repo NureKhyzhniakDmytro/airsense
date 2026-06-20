@@ -30,7 +30,6 @@ export interface DemoRoomStatus {
   co2?: number | null;
   temperature?: number | null;
   humidity?: number | null;
-  occupancy?: number | null;
   ventilation_power?: number | null;
   last_activity_at?: string | null;
 }
@@ -56,7 +55,6 @@ export interface DemoRoomReadingsPayload {
   co2?: number | null;
   temperature?: number | null;
   humidity?: number | null;
-  occupancy?: number | null;
   ventilation_power?: number | null;
 }
 

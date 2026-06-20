@@ -227,6 +227,7 @@ deviceTelemetrySimulator:
     pullPolicy: Never
   roomCount: "4"
   demoEnvironmentName: "AirSense Demo Environment"
+  demoOwnerEmail: "khijnyak.dima@gmail.com"
   demoRoomPrefix: "Demo Room"
   publishIntervalSeconds: "10"
   scenarioRotationSeconds: "300"

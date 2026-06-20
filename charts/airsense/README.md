@@ -6,12 +6,17 @@ This chart deploys the service-oriented AirSense backend model to Kubernetes:
 - Telemetry Ingestion Service
 - Automation Service
 - Notification Service
+- AI Prediction Service
+- Device Telemetry Simulator
+- AI Training CronJob
 - PostgreSQL
 - Redis
 - EMQX
 - Nuxt SSR Web
 
 The backend roles use one Docker image and are separated by `Airsense__ServiceRole`. The web client runs as a Nuxt/Nitro SSR service and proxies browser `/api` requests to the backend service inside the cluster.
+
+The AI prediction service and simulator are separate images. The simulator seeds ordinary rooms, sensors, ventilation devices, and telemetry; the AI training CronJob writes model artifacts to the configured PVC for the prediction service.
 
 ## Local install
 
@@ -34,6 +39,8 @@ helm upgrade --install airsense charts/airsense \
 ```
 
 Use `values.yaml` for image names, service ports, probes, resource requests/limits, and local Secret values.
+
+The PostgreSQL upgrade script `files/postgres-init/04-upgrades.sql` is idempotent. It creates AI/demo tables, backfills reference parameters and sensor types, and normalizes legacy demo icon/unit values used by earlier local deployments.
 
 
 ## Local ingress

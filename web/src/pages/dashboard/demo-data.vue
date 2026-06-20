@@ -174,11 +174,6 @@
           </label>
 
           <label class="demo-field">
-            <span>People</span>
-            <InputNumber v-model="roomForm.readings.occupancy" :min="0" :max="100" fluid />
-          </label>
-
-          <label class="demo-field">
             <span>Vent</span>
             <InputNumber v-model="roomForm.readings.ventilation_power" :min="0" :max="100" suffix="%" fluid />
           </label>
@@ -380,11 +375,6 @@
               </label>
 
               <label class="demo-row-field">
-                <span>People</span>
-                <InputNumber v-model="readingDrafts[room.room_id].occupancy" :min="0" :max="100" fluid />
-              </label>
-
-              <label class="demo-row-field">
                 <span>Vent</span>
                 <InputNumber v-model="readingDrafts[room.room_id].ventilation_power" :min="0" :max="100" suffix="%" fluid />
               </label>
@@ -462,7 +452,6 @@ type ReadingDraft = {
   co2: number | null;
   temperature: number | null;
   humidity: number | null;
-  occupancy: number | null;
   ventilation_power: number | null;
 };
 
@@ -496,7 +485,6 @@ const roomForm = reactive({
     co2: 900,
     temperature: 22,
     humidity: 45,
-    occupancy: 4,
     ventilation_power: 35,
   } as ReadingDraft,
 });
@@ -570,7 +558,6 @@ const syncDrafts = () => {
       co2: roundForInput(room.co2, 0, 900),
       temperature: roundForInput(room.temperature, 1, 22),
       humidity: roundForInput(room.humidity, 0, 45),
-      occupancy: roundForInput(room.occupancy, 0, 4),
       ventilation_power: roundForInput(room.ventilation_power, 0, 35),
     };
   }
@@ -784,7 +771,6 @@ function buildReadingsPayload(draft: ReadingDraft): DemoRoomReadingsPayload {
     co2: draft.co2,
     temperature: draft.temperature,
     humidity: draft.humidity,
-    occupancy: draft.occupancy,
     ventilation_power: draft.ventilation_power,
   };
 }
