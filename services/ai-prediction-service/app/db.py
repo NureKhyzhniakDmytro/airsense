@@ -35,6 +35,12 @@ CREATE TABLE IF NOT EXISTS ai_model_versions (
 
 CREATE INDEX IF NOT EXISTS idx_ai_model_versions_active_created
     ON ai_model_versions(active, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_sensor_data_sensor_parameter_timestamp
+    ON sensor_data(sensor_id, parameter_id, timestamp);
+
+CREATE INDEX IF NOT EXISTS idx_device_data_device_timestamp
+    ON device_data(device_id, timestamp DESC, id DESC);
 """
 
 

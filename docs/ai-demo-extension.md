@@ -134,6 +134,19 @@ The UI does not create a separate telemetry type. All values remain ordinary `se
 
 ## REST API AI Prediction Service
 
+## Training Data Sources
+
+`AI Training Job` builds a supervised time-series dataset from two sources:
+
+- ordinary AirSense telemetry in PostgreSQL (`sensor_data` and `device_data`);
+- optional normalized public datasets from `services/ai-prediction-service/datasets/normalized`.
+
+External rows are not inserted into the application telemetry tables. They are read only during training through the same AirSense feature contract: `co2`, `temperature`, `humidity`, `ventilation_power`, `supply_ventilation_power`, `exhaust_ventilation_power`, time features and `room_id`. Synthetic/demo snapshots can be exported to `services/ai-prediction-service/datasets/synthetic` for reproducibility without adding a new telemetry class to the domain model.
+
+The trained model is a scikit-learn `MultiOutputRegressor` over `HistGradientBoostingRegressor`. It predicts CO2, temperature and humidity for 10, 20 and 30 minute horizons and stores the active artifact as `model.joblib`.
+
+The exact public and synthetic datasets used for the current training run are documented in `docs/ai-training-datasets.md`.
+
 ### `GET /health`
 
 ```json
@@ -239,7 +252,7 @@ Read-only users can view AI forecasts and recommendation history. Only owners/ad
 
 Сервіс симуляції створює демонстраційні приміщення, сенсори та вентиляційні пристрої, після чого передає значення CO2, температури та вологості через брокер EMQX. `Telemetry Ingestion Service` приймає ці повідомлення, виконує валідацію, визначає сенсор за серійним номером і зберігає історію у стандартній таблиці `sensor_data`. Зайнятість приміщення використовується тільки як внутрішній параметр сценарію симуляції, а не як телеметрія датчика. Стан припливної та витяжної вентиляції відображається у звичайній історії `device_data`.
 
-`AI Training Job` формує часовий датасет зі стандартних таблиць системи, виконує навчання моделі Random Forest для прогнозування CO2, температури та вологості на горизонтах 10, 20 і 30 хвилин, а також зберігає файл `model.joblib` і метрики якості моделі.
+`AI Training Job` формує часовий датасет зі стандартних таблиць системи та, за наявності, з нормалізованих відкритих наборів даних. Зовнішні записи не додаються до таблиць телеметрії застосунку, а використовуються лише як додаткове джерело для навчання. Модель реалізована за допомогою scikit-learn як `MultiOutputRegressor` над `HistGradientBoostingRegressor` і прогнозує CO2, температуру та вологість на горизонтах 10, 20 і 30 хвилин. Після навчання зберігаються файл `model.joblib` і метрики якості моделі.
 
 Окремий `AI Prediction Service` на FastAPI надає REST API для прогнозування, симуляції альтернативних режимів вентиляції та формування рекомендацій. AI-модуль не має права напряму керувати вентиляційними пристроями та не публікує команди у MQTT. Він лише повертає прогноз або рекомендацію. Після підтвердження рекомендації backend фіксує команду у стандартній історії `device_data`, змінює статус рекомендації на `used` і публікує MQTT-команду для відповідного приміщення.
 

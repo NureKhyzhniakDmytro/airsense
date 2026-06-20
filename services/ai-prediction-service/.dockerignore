@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+datasets/raw/
+datasets/synthetic/

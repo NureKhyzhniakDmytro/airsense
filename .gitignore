@@ -46,3 +46,11 @@ secrets/
 
 # AgentOps session artifacts
 /.agents/
+
+# AI training datasets
+services/ai-prediction-service/datasets/raw/*
+!services/ai-prediction-service/datasets/raw/.gitkeep
+services/ai-prediction-service/datasets/normalized/*.csv
+services/ai-prediction-service/datasets/normalized/*.json
+services/ai-prediction-service/datasets/synthetic/*.csv
+services/ai-prediction-service/datasets/synthetic/*.json
