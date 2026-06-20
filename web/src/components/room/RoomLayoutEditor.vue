@@ -916,6 +916,7 @@ const viewLegendItemTypes = computed(() => {
 });
 const sensorLayoutItems = computed(() => layout.value.items.filter((item) => getItemType(item.type).value === "sensor"));
 const ventLayoutItems = computed(() => layout.value.items.filter((item) => getItemType(item.type).value === "vent"));
+const equipmentLayoutItems = computed(() => layout.value.items.filter((item) => getItemType(item.type).value === "equipment"));
 const boardGridLines = computed<BoardGridLine[]>(() => {
   const step = getBoardGridStep();
   const majorStep = step * 2;
@@ -1589,7 +1590,7 @@ function createVentStreamlinePath(
 function getMapSamples(layer: RoomMapLayer): MapSample[] {
   if (layer === "off" || layer === "device_speed") return [];
 
-  return sensorLayoutItems.value
+  const sensorSamples = sensorLayoutItems.value
     .map((item) => {
       const parameter = getSensorParameter(getSensorForItem(item), layer);
       if (!parameter || parameter.value === null || parameter.value === undefined || Number.isNaN(Number(parameter.value))) {
@@ -1604,6 +1605,44 @@ function getMapSamples(layer: RoomMapLayer): MapSample[] {
       };
     })
     .filter((sample): sample is MapSample => sample !== null);
+
+  if (layer !== "temperature") return sensorSamples;
+
+  return [
+    ...sensorSamples,
+    ...getEquipmentHeatSamples(sensorSamples),
+  ];
+}
+
+function getEquipmentHeatSamples(sensorSamples: MapSample[]): MapSample[] {
+  const baseTemperature = sensorSamples.length
+    ? average(sensorSamples.map((sample) => sample.value))
+    : 22;
+
+  return equipmentLayoutItems.value
+    .map((item) => {
+      const heatLoad = getEquipmentHeatLoad(item);
+      if (heatLoad <= 0) return null;
+
+      return {
+        id: `equipment-heat-${item.id}`,
+        item,
+        point: getItemCenter(item),
+        value: round(clamp(baseTemperature + 0.85 + Math.sqrt(heatLoad) * 0.78, baseTemperature + 0.65, 42)),
+      };
+    })
+    .filter((sample): sample is MapSample => sample !== null);
+}
+
+function getEquipmentHeatLoad(item: RoomLayoutItem) {
+  const direct = Number(item.heat_load_kw);
+  if (Number.isFinite(direct) && direct > 0) return clamp(direct, 0, 80);
+
+  const profile = `${item.thermal_load ?? ""}`.toLowerCase();
+  if (profile === "high") return 24;
+  if (profile === "medium") return 12;
+  if (profile === "low") return 5;
+  return 0;
 }
 
 function getSensorFieldValue(point: FieldPoint, layer: RoomMapLayer, samples: MapSample[]): FieldValue | null {
