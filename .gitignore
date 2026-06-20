@@ -19,6 +19,7 @@ TestResults/
 **/node_modules/
 **/dist/
 **/build/
+**/.output/
 **/.next/
 **/.nuxt/
 **/.vite/
