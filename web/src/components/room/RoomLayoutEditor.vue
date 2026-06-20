@@ -852,6 +852,12 @@ type MapSample = {
   item: RoomLayoutItem;
   point: FieldPoint;
   value: number;
+  source: "sensor" | "equipment";
+  confidence: number;
+};
+type SensorAnchor = {
+  value: number;
+  influence: number;
 };
 type MapProbe = {
   x: number;
@@ -1654,6 +1660,8 @@ function getMapSamples(layer: RoomMapLayer): MapSample[] {
         item,
         point: getItemCenter(item),
         value: Number(parameter.value),
+        source: "sensor",
+        confidence: 1,
       };
     })
     .filter((sample): sample is MapSample => sample !== null);
@@ -1667,23 +1675,60 @@ function getMapSamples(layer: RoomMapLayer): MapSample[] {
 }
 
 function getEquipmentHeatSamples(sensorSamples: MapSample[]): MapSample[] {
-  const baseTemperature = sensorSamples.length
-    ? average(sensorSamples.map((sample) => sample.value))
-    : 22;
+  if (!sensorSamples.length) return [];
+
+  const sensorValues = sensorSamples.map((sample) => sample.value);
+  const meanTemperature = average(sensorValues);
+  const maxTemperature = Math.max(...sensorValues);
+  const observedSpread = Math.max(0, maxTemperature - Math.min(...sensorValues));
 
   return equipmentLayoutItems.value
     .map((item) => {
       const heatLoad = getEquipmentHeatLoad(item);
       if (heatLoad <= 0) return null;
+      const point = getItemCenter(item);
+      const baseline = interpolateSensorFieldBase(point, "temperature", sensorSamples, getAirflowAtPoint(point))?.value ?? meanTemperature;
+      const nearestSensor = getNearestSensorSample(point, sensorSamples);
+      const nearestDistance = nearestSensor ? Math.hypot(point.x - nearestSensor.point.x, point.y - nearestSensor.point.y) : getRoomDiagonal();
+      const heatPotential = getEquipmentHeatPotential(heatLoad);
+      const airflowCooling = clamp(getAirflowAtPoint(point).intensity * 0.55, 0, 0.62);
+      const sensorRangeCap = maxTemperature + clamp(observedSpread * 1.2 + 0.35, 0.45, 2.2);
+      const nearestSensorCap = nearestSensor
+        ? nearestSensor.value + clamp(nearestDistance * 0.32, 0.22, 1.25)
+        : sensorRangeCap;
+      const upperBound = Math.max(baseline + 0.12, Math.min(sensorRangeCap, nearestSensorCap));
+      const value = clamp(baseline + heatPotential * (1 - airflowCooling), baseline + 0.12, upperBound);
 
       return {
         id: `equipment-heat-${item.id}`,
         item,
-        point: getItemCenter(item),
-        value: round(clamp(baseTemperature + 0.85 + Math.sqrt(heatLoad) * 0.78, baseTemperature + 0.65, 42)),
+        point,
+        value: round(value),
+        source: "equipment",
+        confidence: clamp(0.34 + heatPotential * 0.13 + observedSpread * 0.12, 0.36, 0.72),
       };
     })
     .filter((sample): sample is MapSample => sample !== null);
+}
+
+function getNearestSensorSample(point: FieldPoint, samples: MapSample[]): MapSample | null {
+  let nearest: MapSample | null = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+
+  for (const sample of samples) {
+    if (sample.source !== "sensor") continue;
+    const distance = Math.hypot(point.x - sample.point.x, point.y - sample.point.y);
+    if (distance >= nearestDistance) continue;
+
+    nearest = sample;
+    nearestDistance = distance;
+  }
+
+  return nearest;
+}
+
+function getEquipmentHeatPotential(heatLoad: number) {
+  return clamp(Math.sqrt(heatLoad) * 0.28 + heatLoad * 0.014, 0.25, 2.35);
 }
 
 function getEquipmentHeatLoad(item: RoomLayoutItem) {
@@ -1702,17 +1747,53 @@ function getSensorFieldValue(point: FieldPoint, layer: RoomMapLayer, samples: Ma
   const baseField = interpolateSensorFieldBase(point, layer, samples, airflow);
   if (!baseField) return null;
 
-  const values = samples.map((sample) => sample.value);
+  const sensorValues = getSensorSampleValues(samples);
+  const values = sensorValues.length ? sensorValues : samples.map((sample) => sample.value);
   const spatialValue = applySpatialUncertainty(layer, baseField.value, values, baseField.confidence);
   const advectedValue = applyAirflowAdvection(point, layer, spatialValue, samples, airflow);
   const conditionedField = applyVentConditioning(point, layer, advectedValue, values);
   const eddy = getAirflowEddy(layer, point, airflow, values);
+  const anchor = getSensorAnchorAtPoint(point, samples);
+  const rawValue = conditionedField.value + eddy;
+  const anchoredValue = anchor
+    ? rawValue + (anchor.value - rawValue) * anchor.influence
+    : rawValue;
 
   return {
-    value: conditionedField.value + eddy,
-    confidence: clamp(Math.max(baseField.confidence, conditionedField.confidence), 0.03, 1),
+    value: anchoredValue,
+    confidence: clamp(Math.max(baseField.confidence, conditionedField.confidence, anchor?.influence ?? 0), 0.03, 1),
     airflow: Math.max(airflow.intensity, conditionedField.intensity),
   };
+}
+
+function getSensorAnchorAtPoint(point: FieldPoint, samples: MapSample[]): SensorAnchor | null {
+  const nearest = getNearestSensorSample(point, samples);
+  if (!nearest) return null;
+  const nearestDistance = Math.hypot(point.x - nearest.point.x, point.y - nearest.point.y);
+
+  const sensorSize = Math.max(nearest.item.width, nearest.item.height);
+  const exactRadius = clamp(sensorSize * 0.72, 0.18, 0.42);
+  const fadeRadius = clamp(sensorSize * 2.15, exactRadius + 0.18, Math.min(layout.value.width, layout.value.height) * 0.16);
+  if (nearestDistance >= fadeRadius) return null;
+
+  if (nearestDistance <= exactRadius) {
+    return {
+      value: nearest.value,
+      influence: 1,
+    };
+  }
+
+  const fade = 1 - (nearestDistance - exactRadius) / Math.max(fadeRadius - exactRadius, 0.001);
+  return {
+    value: nearest.value,
+    influence: clamp(fade * fade, 0, 1),
+  };
+}
+
+function getSensorSampleValues(samples: MapSample[]) {
+  return samples
+    .filter((sample) => sample.source === "sensor")
+    .map((sample) => sample.value);
 }
 
 function getMapFieldAtPoint(point: FieldPoint, layer: RoomMapLayer) {
@@ -1790,11 +1871,12 @@ function interpolateSensorFieldBase(
   for (const sample of samples) {
     const distance = Math.hypot(point.x - sample.point.x, point.y - sample.point.y);
     const baseWeight = 1 / (distance ** 2.25 + 0.08);
+    const sampleWeight = sample.confidence * (sample.source === "equipment" ? 0.58 : 1);
     const alignment = getFlowAlignment(sample.point, point, airflow);
     const obstruction = getObstructionFactor(sample.point, point);
     const downwindBoost = Math.max(0, alignment) * airflow.intensity * 1.15;
     const upwindPenalty = Math.max(0, -alignment) * airflow.intensity * 0.55;
-    const weight = baseWeight * obstruction * (1 + downwindBoost) * (1 - upwindPenalty);
+    const weight = baseWeight * sampleWeight * obstruction * (1 + downwindBoost) * (1 - upwindPenalty);
 
     weightedValue += sample.value * weight;
     weightSum += weight;
@@ -3384,6 +3466,7 @@ async function loadTelemetry(options: { silent?: boolean } = {}) {
     sensors.value = extractPaginatedData(sensorResponse as PaginatedData<Sensor>);
     devices.value = extractPaginatedData(deviceResponse as PaginatedData<Device>);
     hasTelemetryLoaded.value = true;
+    telemetryError.value = "";
     syncRequiredRoomAssets();
   } catch (error) {
     console.error("Failed to load layout telemetry:", error);

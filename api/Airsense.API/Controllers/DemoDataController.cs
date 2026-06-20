@@ -1166,6 +1166,7 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
                            WHEN jsonb_typeof(rp.layout -> 'items') = 'array' THEN rp.layout -> 'items'
                            ELSE '[]'::jsonb
                        END AS items
+                FROM room_profiles rp
             ),
             current_items AS (
                 SELECT dr.room_id,

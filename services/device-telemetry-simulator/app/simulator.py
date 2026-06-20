@@ -340,7 +340,7 @@ def local_heat_at(state: RoomState, x: float, y: float, now: datetime) -> float:
     heat = 0.0
     for source in state.heat_sources:
         distance = math.hypot(x - source.x, y - source.y)
-        heat += heat_source_load(state, source, now) * 0.105 * gaussian(distance, 2.8)
+        heat += heat_source_load(state, source, now) * 0.14 * gaussian(distance, 2.35)
     return heat
 
 
@@ -464,7 +464,7 @@ def update_state(
     state.co2 += co2_generation - co2_removal - outdoor_recovery + critical_boost + rng.normal(0, 7.0)
     state.co2 = clamp(state.co2, 410.0, 3200.0)
 
-    heat_gain = (state.occupancy * 0.018 + active_heat_load_kw * 0.0012) * minutes
+    heat_gain = (state.occupancy * 0.018 + active_heat_load_kw * 0.00145) * minutes
     ventilation_cooling = (supply_power * 0.0064 + exhaust_power * 0.0028) * minutes
     night_cooling = 0.025 * minutes if scenario == "night_mode" else 0.0
     state.temperature += heat_gain - ventilation_cooling - night_cooling + rng.normal(0, 0.035)
