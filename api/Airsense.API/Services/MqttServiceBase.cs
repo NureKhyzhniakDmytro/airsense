@@ -131,7 +131,18 @@ public abstract class MqttServiceBase(
         return Task.CompletedTask;
     } 
 
-    protected T? Deserialize<T>(string data) => JsonSerializer.Deserialize<T>(data, jsonOptions.Value.JsonSerializerOptions);
+    protected T? Deserialize<T>(string data)
+    {
+        try
+        {
+            return JsonSerializer.Deserialize<T>(data, jsonOptions.Value.JsonSerializerOptions);
+        }
+        catch (JsonException ex)
+        {
+            logger.LogWarning(ex, "Failed to deserialize MQTT payload as {PayloadType}", typeof(T).Name);
+            return default;
+        }
+    }
 
     protected IServiceProvider GetServiceProvider() => serviceProvider;
 

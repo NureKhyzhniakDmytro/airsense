@@ -1,3 +1,4 @@
+using System.Text;
 using Airsense.API.Repository;
 using Airsense.API.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -12,18 +13,32 @@ public class DeviceController(
 {
     [HttpGet]
     public async Task<IActionResult> GetRoomId(
-        [FromHeader(Name = "Authorization")] string authorization,
-        [FromHeader(Name = "Client-Id")] string clientId
+        [FromHeader(Name = "Authorization")] string? authorization,
+        [FromHeader(Name = "Client-Id")] string? clientId
     )
     {
-        var data = Convert.FromBase64String(authorization.Split("Basic ")[1]);
-        var decodedString = System.Text.Encoding.UTF8.GetString(data);
-        
-        var parts = decodedString.Split(':');
-        if (parts.Length != 2) 
+        if (string.IsNullOrWhiteSpace(authorization) ||
+            !authorization.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(clientId))
             return Unauthorized();
-        var username = parts[0];
-        var password = parts[1];
+
+        string decodedString;
+        try
+        {
+            var data = Convert.FromBase64String(authorization["Basic ".Length..]);
+            decodedString = Encoding.UTF8.GetString(data);
+        }
+        catch (FormatException)
+        {
+            return Unauthorized();
+        }
+
+        var separatorIndex = decodedString.IndexOf(':');
+        if (separatorIndex <= 0 || separatorIndex == decodedString.Length - 1)
+            return Unauthorized();
+
+        var username = decodedString[..separatorIndex];
+        var password = decodedString[(separatorIndex + 1)..];
 
         var result = await authService.AuthenticateAsync(new()
         {

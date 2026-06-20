@@ -18,7 +18,10 @@ public class TelemetryIngestionMqttService : MqttServiceBase
 
     private async Task OnSensorDataReceivedAsync(MqttApplicationMessageReceivedEventArgs e)
     {
-        var topic = e.ApplicationMessage.Topic.Split("/").ToList();
+        var topic = e.ApplicationMessage.Topic.Split('/');
+        if (topic.Length != 2 || string.IsNullOrWhiteSpace(topic[1]))
+            return;
+
         var parameter = topic[1];
         var payload = Deserialize<SensorDataDto>(Encoding.UTF8.GetString(e.ApplicationMessage.Payload));
         if (payload is null) return;

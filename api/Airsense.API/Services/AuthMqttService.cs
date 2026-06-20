@@ -23,20 +23,26 @@ public class AuthMqttService : IAuthMqttService
 
     public async Task<string> AuthenticateAsync(MqttAuthRequestDto request)
     {
+        if (string.IsNullOrWhiteSpace(request.ClientId) || string.IsNullOrWhiteSpace(request.Username))
+            return "ignore";
+
         var targetSecret = string.Empty;
-        if (request.ClientId.StartsWith("s-")) targetSecret = await GetSensorSecretAsync(request.Username);
-        else if (request.ClientId.StartsWith("d-")) targetSecret = await GetDeviceSecretAsync(request.Username);
-        else if (request.ClientId.StartsWith("api")) targetSecret = _apiSecret;
+        if (request.ClientId.StartsWith("s-", StringComparison.Ordinal)) targetSecret = await GetSensorSecretAsync(request.Username);
+        else if (request.ClientId.StartsWith("d-", StringComparison.Ordinal)) targetSecret = await GetDeviceSecretAsync(request.Username);
+        else if (request.ClientId.StartsWith("api", StringComparison.Ordinal)) targetSecret = _apiSecret;
         if (string.IsNullOrEmpty(targetSecret)) return "ignore";
         return targetSecret.Equals(ComputeMd5Hash(request.Password + request.Username)) ? "allow" : "deny";
     }
 
     public async Task<string> AuthorizeAsync(MqttAclRequestDto request)
     {
+        if (string.IsNullOrWhiteSpace(request.ClientId) || string.IsNullOrWhiteSpace(request.Topic))
+            return "ignore";
+
         var result = "ignore";
-        if (request.ClientId.StartsWith("s-")) result = await AuthorizeSensorAsync(request);
-        else if (request.ClientId.StartsWith("d-")) result = await AuthorizeDeviceAsync(request);
-        else if (request.ClientId.StartsWith("api")) result = await AuthorizeApiServerAsync(request);
+        if (request.ClientId.StartsWith("s-", StringComparison.Ordinal)) result = await AuthorizeSensorAsync(request);
+        else if (request.ClientId.StartsWith("d-", StringComparison.Ordinal)) result = await AuthorizeDeviceAsync(request);
+        else if (request.ClientId.StartsWith("api", StringComparison.Ordinal)) result = await AuthorizeApiServerAsync(request);
         return result;
     }
 
@@ -69,10 +75,15 @@ public class AuthMqttService : IAuthMqttService
     {
         var device = await _deviceRepository.GetBySerialNumberAsync(request.Username);
         if (device is null) return "ignore";
-        if (request.Action.Equals("publish")) return "deny";
-        var topic = request.Topic.Split("/");
-        if (topic[0].Equals("room") && topic[1].Equals(device.RoomId?.ToString())) return "allow";
-        if (topic[0].Equals("device") && topic[1].Equals(device.Id.ToString())) return "allow";
+        if (string.Equals(request.Action, "publish", StringComparison.OrdinalIgnoreCase)) return "deny";
+        var topic = request.Topic.Split('/');
+        if (topic.Length < 2) return "deny";
+        if (string.Equals(topic[0], "room", StringComparison.Ordinal) &&
+            string.Equals(topic[1], device.RoomId?.ToString(), StringComparison.Ordinal))
+            return "allow";
+        if (string.Equals(topic[0], "device", StringComparison.Ordinal) &&
+            string.Equals(topic[1], device.Id.ToString(), StringComparison.Ordinal))
+            return "allow";
         return "deny";
     }
 
@@ -80,12 +91,13 @@ public class AuthMqttService : IAuthMqttService
     {
         var sensor = await _sensorRepository.GetBySerialNumberAsync(request.Username);
         if (sensor is null) return "ignore";
-        if (request.Action.Equals("subscribe")) return "deny";
-        var topic = request.Topic.Split("/");
-        if (topic[0].Equals("sensor"))
+        if (string.Equals(request.Action, "subscribe", StringComparison.OrdinalIgnoreCase)) return "deny";
+        var topic = request.Topic.Split('/');
+        if (topic.Length < 2) return "deny";
+        if (string.Equals(topic[0], "sensor", StringComparison.Ordinal))
         {
             var types = await _sensorRepository.GetTypesAsync(sensor.Id);
-            if (types.Any(t => topic[1].Equals(t))) return "allow";
+            if (types.Any(t => string.Equals(topic[1], t, StringComparison.Ordinal))) return "allow";
         }
         return "deny";
     }
