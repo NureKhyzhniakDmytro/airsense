@@ -24,10 +24,19 @@ public class RoomLayoutItemDto
     [Length(0, 120)]
     public string? SerialNumber { get; set; }
 
-    [Range(0, 1000)]
-    public double X { get; set; }
+    [RegularExpression("^(supply|exhaust)$")]
+    public string? AirflowRole { get; set; }
 
     [Range(0, 1000)]
+    public double? HeatLoadKw { get; set; }
+
+    [RegularExpression("^(low|medium|high)$")]
+    public string? ThermalLoad { get; set; }
+
+    [Range(-1000, 1000)]
+    public double X { get; set; }
+
+    [Range(-1000, 1000)]
     public double Y { get; set; }
 
     [Range(0.1, 1000)]

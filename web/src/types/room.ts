@@ -30,6 +30,7 @@ export type RoomLayoutItemType =
   | "door"
   | "window"
   | "desk"
+  | "furniture"
   | "equipment"
   | "zone"
   | "obstacle";
@@ -39,6 +40,10 @@ export type RoomLayoutGeometryType =
   | "l_shape"
   | "t_shape"
   | "custom";
+
+export type RoomVentAirflowRole =
+  | "supply"
+  | "exhaust";
 
 export interface RoomLayoutPoint {
   x: number;
@@ -57,6 +62,7 @@ export interface RoomLayoutItem {
   sensor_id?: number | null;
   device_id?: number | null;
   serial_number?: string | null;
+  airflow_role?: RoomVentAirflowRole | string | null;
   heat_load_kw?: number | null;
   thermal_load?: string | null;
   x: number;

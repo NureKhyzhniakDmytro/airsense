@@ -25,7 +25,7 @@
           />
         </div>
         <Tag v-if="isReadOnly" severity="secondary" value="Read only" />
-        <Tag v-if="mode === 'edit' || isDirty" :severity="isDirty ? 'warn' : 'success'" :value="isDirty ? 'Unsaved' : 'Saved'" />
+        <Tag v-if="!isReadOnly && (mode === 'edit' || isDirty)" :severity="isDirty ? 'warn' : 'success'" :value="isDirty ? 'Unsaved' : 'Saved'" />
         <Button v-if="mode === 'view'" label="Refresh data" icon="pi pi-refresh" severity="secondary" variant="text" :loading="isTelemetryLoading" @click="() => loadTelemetry()" />
         <Button v-if="mode === 'edit'" label="Reload" icon="pi pi-refresh" severity="secondary" variant="text" :disabled="isSaving" @click="reloadLayout" />
         <Button v-if="mode === 'edit'" label="Save" icon="pi pi-save" :loading="isSaving" :disabled="!isDirty || hasPlacementErrors" @click="saveLayout" />
@@ -201,6 +201,8 @@
                 }"
                 :style="boardStyle"
                 @pointerdown="clearSelection"
+                @pointermove="updateMapProbe"
+                @pointerleave="clearMapProbe"
               >
                 <svg
                   class="layout-board__grid"
@@ -353,6 +355,7 @@
                   class="layout-item"
                   :class="[
                     `layout-item--${getItemType(item.type).tone}`,
+                    getItemRoleClass(item),
                     {
                       'layout-item--selected': mode === 'edit' && item.id === selectedId,
                       'layout-item--editable': mode === 'edit',
@@ -369,7 +372,7 @@
                   @pointerdown.stop="onItemPointerDown($event, item)"
                 >
                   <span class="layout-item__content">
-                    <span class="material-symbols-outlined">{{ getItemType(item.type).symbol }}</span>
+                    <span class="material-symbols-outlined">{{ getItemSymbol(item) }}</span>
                     <span class="layout-item__label">{{ getItemMapLabel(item) }}</span>
                   </span>
                   <span v-if="mode === 'edit' && isDirectionalItem(item.type)" class="layout-item__direction" aria-hidden="true">
@@ -458,6 +461,18 @@
                     </g>
                   </g>
                 </svg>
+                <div
+                  v-if="mapProbe"
+                  class="layout-board__map-probe"
+                  :style="getMapProbeStyle(mapProbe)"
+                  aria-hidden="true"
+                >
+                  <span class="material-symbols-outlined">{{ mapProbe.icon }}</span>
+                  <span>
+                    <strong>{{ mapProbe.value }}</strong>
+                    <small>{{ mapProbe.label }}</small>
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -579,14 +594,42 @@
               </Select>
             </label>
 
+            <label v-if="getItemType(selectedItem.type).value === 'vent'">
+              <span>Airflow role</span>
+              <Select
+                :model-value="getVentAirflowRole(selectedItem)"
+                :options="airflowRoleOptions"
+                option-label="label"
+                option-value="value"
+                fluid
+                @update:model-value="setSelectedAirflowRole($event)"
+              >
+                <template #value="{ value }">
+                  <div class="layout-select-value">
+                    <span class="material-symbols-outlined">{{ getAirflowRoleOption(value).icon }}</span>
+                    <span>{{ getAirflowRoleOption(value).label }}</span>
+                  </div>
+                </template>
+                <template #option="{ option }">
+                  <div class="layout-select-option">
+                    <span class="material-symbols-outlined">{{ option.icon }}</span>
+                    <span>
+                      <strong>{{ option.label }}</strong>
+                      <small>{{ option.description }}</small>
+                    </span>
+                  </div>
+                </template>
+              </Select>
+            </label>
+
             <div class="layout-inspector-grid">
               <label>
                 <span>X</span>
-                <InputNumber :model-value="selectedItem.x" :min="0" :max="layout.width" :max-fraction-digits="2" fluid @update:model-value="setSelectedNumber('x', $event)" />
+                <InputNumber :model-value="selectedItem.x" :min="getItemCoordinateMin(selectedItem, 'x')" :max="getItemCoordinateMax(selectedItem, 'x')" :max-fraction-digits="2" fluid @update:model-value="setSelectedNumber('x', $event)" />
               </label>
               <label>
                 <span>Y</span>
-                <InputNumber :model-value="selectedItem.y" :min="0" :max="layout.height" :max-fraction-digits="2" fluid @update:model-value="setSelectedNumber('y', $event)" />
+                <InputNumber :model-value="selectedItem.y" :min="getItemCoordinateMin(selectedItem, 'y')" :max="getItemCoordinateMax(selectedItem, 'y')" :max-fraction-digits="2" fluid @update:model-value="setSelectedNumber('y', $event)" />
               </label>
               <label>
                 <span>W</span>
@@ -651,6 +694,7 @@ import type {
   RoomLayoutItem,
   RoomLayoutItemType,
   RoomLayoutPoint,
+  RoomVentAirflowRole,
 } from "@/types/room";
 import {
   PARAMETER_ICONS,
@@ -663,6 +707,7 @@ import {
 type EditorMode = "view" | "edit";
 type ResizeHandle = "nw" | "ne" | "sw" | "se";
 type RoomAssetKind = "sensor" | "vent";
+type AirflowRole = RoomVentAirflowRole;
 type TelemetryTone = "cool" | "normal" | "warm" | "hot" | "humid" | "co2" | "vent";
 type RoomMapLayer = "off" | "temperature" | "humidity" | "co2" | "device_speed";
 type LayoutItemOption = {
@@ -680,6 +725,12 @@ type GeometryOption = {
   label: string;
   description: string;
   symbol: string;
+};
+type AirflowRoleOption = {
+  value: AirflowRole;
+  label: string;
+  description: string;
+  icon: string;
 };
 type MapLayerOption = {
   value: RoomMapLayer;
@@ -790,15 +841,24 @@ type FieldPoint = {
   x: number;
   y: number;
 };
-type BoundaryProjection = {
-  point: FieldPoint;
-  distance: number;
+type WallSegment = {
+  start: RoomLayoutPoint;
+  end: RoomLayoutPoint;
+  length: number;
+  direction: FieldPoint;
 };
 type MapSample = {
   id: string;
   item: RoomLayoutItem;
   point: FieldPoint;
   value: number;
+};
+type MapProbe = {
+  x: number;
+  y: number;
+  label: string;
+  value: string;
+  icon: string;
 };
 type FieldValue = {
   value: number;
@@ -835,6 +895,10 @@ const geometryOptions: GeometryOption[] = [
   { value: "t_shape", label: "T-shape", description: "Cross-zone or combined working area", symbol: "join_inner" },
   { value: "custom", label: "Custom polygon", description: "Manual contour by editable vertices", symbol: "conversion_path" },
 ];
+const airflowRoleOptions: AirflowRoleOption[] = [
+  { value: "supply", label: "Supply", description: "Fresh or conditioned air enters the room", icon: "air" },
+  { value: "exhaust", label: "Exhaust", description: "Room air is pulled out through this device", icon: "output" },
+];
 const mapLayerOptions: MapLayerOption[] = [
   { value: "temperature", label: "Heat", description: "Temperature field from room sensors", icon: PARAMETER_ICONS.temperature, source: "sensor" },
   { value: "humidity", label: "Humidity", description: "Humidity field from room sensors", icon: PARAMETER_ICONS.humidity, source: "sensor" },
@@ -852,6 +916,7 @@ const layoutLoadTimeoutMs = 5000;
 const telemetryRefreshMs = 30000;
 const mapGridColumns = 96;
 const mapGradientColumns = 24;
+const wallMountTolerance = 0.04;
 const roomClipId = `layout-room-clip-${roomId}`;
 const gridClipId = `layout-room-grid-clip-${roomId}`;
 const airflowCueMarkerId = `layout-airflow-cue-marker-${roomId}`;
@@ -871,6 +936,7 @@ const hasTelemetryLoaded = ref(false);
 const errorMessage = ref("");
 const telemetryError = ref("");
 const activeMapLayer = ref<RoomMapLayer>("temperature");
+const mapProbe = ref<MapProbe | null>(null);
 const injectedReadOnly = inject<ComputedRef<boolean>>("roomReadOnly", computed(() => false));
 const isReadOnly = computed(() => injectedReadOnly.value);
 let telemetryInterval: ReturnType<typeof setInterval> | undefined;
@@ -906,7 +972,6 @@ const selectedBoundAsset = computed(() => (selectedItem.value ? getBoundAssetSum
 const isSelectedRequiredAsset = computed(() => Boolean(selectedBoundAsset.value));
 const isDirty = computed(() => JSON.stringify(layout.value) !== JSON.stringify(savedLayout.value));
 const geometryPoints = computed(() => layout.value.geometry.points);
-const roomCentroid = computed<FieldPoint>(() => calculateRoomCentroid(geometryPoints.value));
 const geometrySvgPoints = computed(() => geometryPoints.value.map((point) => `${point.x},${point.y}`).join(" "));
 const canEditCustomGeometry = computed(() => mode.value === "edit" && layout.value.geometry.type === "custom");
 const vertexRadius = computed(() => Math.max(0.07, Math.min(layout.value.width, layout.value.height) * 0.018));
@@ -1102,17 +1167,18 @@ const ventInfluenceOverlays = computed<VentInfluenceOverlay[]>(() => {
 
       const speedRatio = getVentSimulationSpeedRatio(speed);
       const outlet = getVentOutletPoint(item);
-      const direction = getVentAirflowDirection(item);
+      const direction = getVentInfluenceDirection(item);
       const reach = getVentVisualReach(speed);
       const baseHalfWidth = clamp(Math.min(item.width, item.height) * 0.3, 0.08, 0.24);
       const endHalfWidth = clamp(0.34 + speedRatio * 0.5, 0.34, Math.min(layout.value.width, layout.value.height) * 0.32);
+      const role = getVentAirflowRole(item);
 
       return {
         id: `vent-impact-${layer}-${item.id}`,
         path: createVentPlumePath(outlet, direction, reach, baseHalfWidth, endHalfWidth),
-        color: getVentInfluenceColor(layer),
-        fillOpacity: String(round(0.16 + speedRatio * 0.18)),
-        opacity: String(round(0.44 + speedRatio * 0.28)),
+        color: getVentInfluenceColor(layer, role),
+        fillOpacity: String(round((role === "supply" ? 0.15 : 0.1) + speedRatio * 0.16)),
+        opacity: String(round((role === "supply" ? 0.44 : 0.34) + speedRatio * 0.24)),
         strokeOpacity: String(round(0.08 + speedRatio * 0.08)),
       };
     })
@@ -1132,7 +1198,8 @@ const airflowStreamlines = computed<AirflowStreamline[]>(() => {
 
     const speedRatio = getVentSimulationSpeedRatio(speed);
     const outlet = getVentOutletPoint(item);
-    const direction = getVentAirflowDirection(item);
+    const direction = getVentInfluenceDirection(item);
+    const role = getVentAirflowRole(item);
     const reach = getVentVisualReach(speed) * (0.58 + speedRatio * 0.12);
     const count = speedRatio > 0.72 ? 6 : 5;
     const spread = clamp(Math.min(item.width, item.height) * (0.16 + speedRatio * 0.16), 0.08, 0.34);
@@ -1155,12 +1222,13 @@ const airflowStreamlines = computed<AirflowStreamline[]>(() => {
         lateralStart,
         lateralEnd,
         curve,
+        role,
       );
 
       streams.push({
         id: `airflow-stream-${item.id}-${index}`,
         path,
-        opacity: String(round(0.42 + speedRatio * 0.2 - Math.abs(ratio) * 0.07)),
+        opacity: String(round((role === "supply" ? 0.4 : 0.34) + speedRatio * 0.2 - Math.abs(ratio) * 0.07)),
         delay: `${round(index * -0.24)}s`,
         duration: `${round(1.15 - speedRatio * 0.18 + index * 0.06)}s`,
         dashArray: `${round(0.72 + speedRatio * 0.08)} ${round(0.26 + Math.abs(ratio) * 0.12)}`,
@@ -1190,11 +1258,16 @@ const ventDirectionCues = computed<VentDirectionCue[]>(() => {
       const speed = clamp(Number(device.fan_speed), 0, 100);
       if (speed <= 0) return null;
 
-      const direction = getVentAirflowDirection(item);
+      const role = getVentAirflowRole(item);
+      const direction = getVentInfluenceDirection(item);
       const outlet = getVentOutletPoint(item);
       const cueSize = Math.min(item.width, item.height);
-      const start = offsetPoint(outlet, direction, cueSize * 0.08);
-      const end = offsetPoint(outlet, direction, cueSize * 0.7);
+      const start = role === "exhaust"
+        ? offsetPoint(outlet, direction, cueSize * 0.7)
+        : offsetPoint(outlet, direction, cueSize * 0.08);
+      const end = role === "exhaust"
+        ? offsetPoint(outlet, direction, cueSize * 0.08)
+        : offsetPoint(outlet, direction, cueSize * 0.7);
 
       return {
         id: `vent-direction-${item.id}`,
@@ -1215,6 +1288,8 @@ const boardMetrics = computed<LayoutMetric[]>(() => {
   const fanSpeeds = devices.value
     .map((device) => device.fan_speed)
     .filter((value): value is number => value !== null && value !== undefined && !Number.isNaN(Number(value)));
+  const supplyFanSpeeds = getVentFanSpeedsByRole("supply");
+  const exhaustFanSpeeds = getVentFanSpeedsByRole("exhaust");
 
   if (temperatures.length) {
     const value = average(temperatures);
@@ -1231,22 +1306,27 @@ const boardMetrics = computed<LayoutMetric[]>(() => {
     metrics.push(createMetric("humidity", "Avg humidity", value, "%", PARAMETER_ICONS.humidity, "humid"));
   }
 
-  if (fanSpeeds.length) {
+  if (supplyFanSpeeds.length && exhaustFanSpeeds.length) {
+    const supply = average(supplyFanSpeeds);
+    const exhaust = average(exhaustFanSpeeds);
+    metrics.push(createMetric("device_speed", "Supply fan", supply, "%", getAirflowRoleOption("supply").icon, "vent"));
+    metrics.push(createMetric("device_speed", "Exhaust fan", exhaust, "%", getAirflowRoleOption("exhaust").icon, "vent"));
+  } else if (fanSpeeds.length) {
     const value = average(fanSpeeds);
     metrics.push(createMetric("device_speed", "Avg fan", value, "%", "mode_fan", "vent"));
   }
 
   return metrics;
 });
-const roomBoundPlacementErrors = computed(() => getLayoutPlacementErrors(layout.value).map((item) => getItemDisplayName(item)));
-const hasPlacementErrors = computed(() => roomBoundPlacementErrors.value.length > 0);
+const placementErrors = computed(() => getLayoutPlacementErrors(layout.value).map((item) => getItemDisplayName(item)));
+const hasPlacementErrors = computed(() => placementErrors.value.length > 0);
 const placementWarning = computed(() => {
   if (!hasPlacementErrors.value) return "";
-  return `Sensors and ventilation must stay inside the room contour: ${roomBoundPlacementErrors.value.join(", ")}.`;
+  return `Sensors and ventilation must stay inside the room contour; doors and windows must be mounted on walls: ${placementErrors.value.join(", ")}.`;
 });
 const selectedItemPlacementError = computed(() => {
   if (!selectedItem.value || !hasItemPlacementError(selectedItem.value)) return "";
-  return `${getItemDisplayName(selectedItem.value)} must be fully inside the room contour.`;
+  return getItemPlacementErrorMessage(selectedItem.value);
 });
 
 watch(
@@ -1320,8 +1400,78 @@ function getMapLayerOption(value: string | null | undefined): MapLayerOption {
   return mapLayerOptions.find((option) => option.value === value) ?? mapLayerOptions[0];
 }
 
+function normalizeAirflowRole(value: unknown): AirflowRole | null {
+  const role = `${value ?? ""}`.trim().toLowerCase();
+  return role === "supply" || role === "exhaust" ? role : null;
+}
+
+function getAirflowRoleOption(value: string | null | undefined): AirflowRoleOption {
+  const role = normalizeAirflowRole(value) ?? "supply";
+  return airflowRoleOptions.find((option) => option.value === role) ?? airflowRoleOptions[0];
+}
+
 function setActiveMapLayer(value: string) {
   activeMapLayer.value = getMapLayerOption(value).value;
+  clearMapProbe();
+}
+
+function inferAirflowRoleFromText(item: RoomLayoutItem): AirflowRole | null {
+  const text = `${item.id} ${item.label || ""} ${item.serial_number || ""}`.toLowerCase();
+  if (/(extract|exhaust|outlet|return|вытяж|выдув|удален|забор)/i.test(text)) return "exhaust";
+  if (/(supply|inlet|intake|fresh|приток|вдув|подач)/i.test(text)) return "supply";
+  return null;
+}
+
+function getDeviceDefaultAirflowRole(device: Device | null): AirflowRole {
+  if (!device) return "supply";
+  const sorted = getSortedEntities(devices.value);
+  const index = sorted.findIndex((candidate) => candidate.id === device.id);
+  return index > 0 && index % 2 === 1 ? "exhaust" : "supply";
+}
+
+function getVentAirflowRole(item: RoomLayoutItem): AirflowRole {
+  return normalizeAirflowRole(item.airflow_role)
+    ?? inferAirflowRoleFromText(item)
+    ?? getDeviceDefaultAirflowRole(getDeviceForItem(item));
+}
+
+function ensureVentAirflowRoles(items: RoomLayoutItem[] = layout.value.items) {
+  const vents = items
+    .filter((item) => getItemType(item.type).value === "vent")
+    .sort((first, second) => {
+      const firstDeviceId = getBoundEntityId(first, "vent") ?? Number.MAX_SAFE_INTEGER;
+      const secondDeviceId = getBoundEntityId(second, "vent") ?? Number.MAX_SAFE_INTEGER;
+      return firstDeviceId - secondDeviceId || first.id.localeCompare(second.id);
+    });
+
+  vents.forEach((item) => {
+    item.airflow_role = normalizeAirflowRole(item.airflow_role)
+      ?? inferAirflowRoleFromText(item)
+      ?? "supply";
+  });
+
+  if (vents.length < 2) return;
+
+  const hasSupply = vents.some((item) => normalizeAirflowRole(item.airflow_role) === "supply");
+  const hasExhaust = vents.some((item) => normalizeAirflowRole(item.airflow_role) === "exhaust");
+
+  if (!hasSupply) {
+    vents[0].airflow_role = "supply";
+  }
+
+  if (!hasExhaust) {
+    vents[1].airflow_role = "exhaust";
+  }
+}
+
+function getItemRoleClass(item: RoomLayoutItem) {
+  if (getItemType(item.type).value !== "vent") return "";
+  return `layout-item--vent-${getVentAirflowRole(item)}`;
+}
+
+function getItemSymbol(item: RoomLayoutItem) {
+  if (getItemType(item.type).value !== "vent") return getItemType(item.type).symbol;
+  return getAirflowRoleOption(getVentAirflowRole(item)).icon;
 }
 
 function getItemCenter(item: RoomLayoutItem): FieldPoint {
@@ -1339,65 +1489,27 @@ function getItemDirection(item: RoomLayoutItem) {
   };
 }
 
+function getVentInfluenceDirection(item: RoomLayoutItem): FieldPoint {
+  return normalizeVector(getItemDirection(item));
+}
+
 function getVentAirflowDirection(item: RoomLayoutItem): FieldPoint {
-  const targetDirection = getVentRoomFacingDirection(item);
-  return getAlignedItemSideDirection(item, targetDirection) ?? getItemDirection(item);
+  const direction = getVentInfluenceDirection(item);
+  if (getVentAirflowRole(item) === "exhaust") {
+    return { x: -direction.x, y: -direction.y };
+  }
+
+  return direction;
 }
 
 function getVentOutletPoint(item: RoomLayoutItem): FieldPoint {
   const center = getItemCenter(item);
-  const direction = getVentAirflowDirection(item);
+  const direction = getVentInfluenceDirection(item);
   const halfExtent = getItemHalfExtentAlongDirection(item, direction);
   return {
     x: center.x + direction.x * halfExtent,
     y: center.y + direction.y * halfExtent,
   };
-}
-
-function getVentRoomFacingDirection(item: RoomLayoutItem): FieldPoint {
-  const center = getItemCenter(item);
-  const boundary = getClosestRoomBoundaryPoint(center);
-  const centroidDirection = normalizeVector({
-    x: roomCentroid.value.x - center.x,
-    y: roomCentroid.value.y - center.y,
-  });
-
-  if (boundary) {
-    const roomScale = Math.min(layout.value.width, layout.value.height);
-    const wallInfluenceDistance = Math.max(roomScale * 0.34, Math.max(item.width, item.height) * 1.8);
-    const awayFromWall = normalizeVector({
-      x: center.x - boundary.point.x,
-      y: center.y - boundary.point.y,
-    });
-
-    if (boundary.distance <= wallInfluenceDistance && !isZeroVector(awayFromWall)) {
-      return awayFromWall;
-    }
-  }
-
-  return isZeroVector(centroidDirection) ? getItemDirection(item) : centroidDirection;
-}
-
-function getAlignedItemSideDirection(item: RoomLayoutItem, targetDirection: FieldPoint): FieldPoint | null {
-  const sides = getItemSideDirections(item);
-  if (!sides.length || isZeroVector(targetDirection)) return null;
-
-  return sides.reduce((best, side) => {
-    const score = side.x * targetDirection.x + side.y * targetDirection.y;
-    return score > best.score ? { direction: side, score } : best;
-  }, { direction: sides[0], score: Number.NEGATIVE_INFINITY }).direction;
-}
-
-function getItemSideDirections(item: RoomLayoutItem): FieldPoint[] {
-  const xAxis = normalizeVector(getItemDirection(item));
-  const yAxis = normalizeVector(getNormal(xAxis));
-
-  return [
-    xAxis,
-    { x: -xAxis.x, y: -xAxis.y },
-    yAxis,
-    { x: -yAxis.x, y: -yAxis.y },
-  ];
 }
 
 function getItemHalfExtentAlongDirection(item: RoomLayoutItem, direction: FieldPoint) {
@@ -1406,37 +1518,6 @@ function getItemHalfExtentAlongDirection(item: RoomLayoutItem, direction: FieldP
   const projectedWidth = Math.abs(direction.x * xAxis.x + direction.y * xAxis.y) * (item.width / 2);
   const projectedHeight = Math.abs(direction.x * yAxis.x + direction.y * yAxis.y) * (item.height / 2);
   return projectedWidth + projectedHeight;
-}
-
-function getClosestRoomBoundaryPoint(point: FieldPoint): BoundaryProjection | null {
-  const points = geometryPoints.value;
-  if (points.length < 2) return null;
-
-  let closest: BoundaryProjection | null = null;
-  for (let index = 0; index < points.length; index += 1) {
-    const start = points[index];
-    const end = points[(index + 1) % points.length];
-    const projected = getClosestPointOnSegment(point, start, end);
-    const distance = Math.hypot(point.x - projected.x, point.y - projected.y);
-    if (!closest || distance < closest.distance) {
-      closest = { point: projected, distance };
-    }
-  }
-
-  return closest;
-}
-
-function getClosestPointOnSegment(point: FieldPoint, start: FieldPoint, end: FieldPoint): FieldPoint {
-  const deltaX = end.x - start.x;
-  const deltaY = end.y - start.y;
-  const lengthSquared = deltaX ** 2 + deltaY ** 2;
-  if (lengthSquared <= 0.0001) return { x: start.x, y: start.y };
-
-  const ratio = clamp(((point.x - start.x) * deltaX + (point.y - start.y) * deltaY) / lengthSquared, 0, 1);
-  return {
-    x: start.x + deltaX * ratio,
-    y: start.y + deltaY * ratio,
-  };
 }
 
 function normalizeVector(vector: FieldPoint): FieldPoint {
@@ -1453,40 +1534,6 @@ function normalizeVector(vector: FieldPoint): FieldPoint {
 
 function isZeroVector(vector: FieldPoint) {
   return Math.abs(vector.x) <= 0.0001 && Math.abs(vector.y) <= 0.0001;
-}
-
-function calculateRoomCentroid(points: RoomLayoutPoint[]): FieldPoint {
-  if (points.length < 3) {
-    return {
-      x: layout.value.width / 2,
-      y: layout.value.height / 2,
-    };
-  }
-
-  let doubleArea = 0;
-  let centroidX = 0;
-  let centroidY = 0;
-
-  for (let index = 0; index < points.length; index += 1) {
-    const current = points[index];
-    const next = points[(index + 1) % points.length];
-    const cross = current.x * next.y - next.x * current.y;
-    doubleArea += cross;
-    centroidX += (current.x + next.x) * cross;
-    centroidY += (current.y + next.y) * cross;
-  }
-
-  if (Math.abs(doubleArea) <= 0.0001) {
-    return {
-      x: layout.value.width / 2,
-      y: layout.value.height / 2,
-    };
-  }
-
-  return {
-    x: centroidX / (3 * doubleArea),
-    y: centroidY / (3 * doubleArea),
-  };
 }
 
 function getRoomDiagonal() {
@@ -1573,11 +1620,16 @@ function createVentStreamlinePath(
   startOffset: number,
   endOffset: number,
   curveOffset: number,
+  role: AirflowRole,
 ) {
   const normal = getNormal(direction);
   const endDistance = startDistance + segmentLength;
-  const start = offsetPoint(offsetPoint(outlet, direction, startDistance), normal, startOffset);
-  const end = offsetPoint(offsetPoint(outlet, direction, endDistance), normal, endOffset);
+  const start = role === "exhaust"
+    ? offsetPoint(offsetPoint(outlet, direction, endDistance), normal, startOffset)
+    : offsetPoint(offsetPoint(outlet, direction, startDistance), normal, startOffset);
+  const end = role === "exhaust"
+    ? offsetPoint(offsetPoint(outlet, direction, startDistance), normal, endOffset)
+    : offsetPoint(offsetPoint(outlet, direction, endDistance), normal, endOffset);
   const control = offsetPoint(
     offsetPoint(outlet, direction, startDistance + segmentLength * 0.52),
     normal,
@@ -1660,6 +1712,69 @@ function getSensorFieldValue(point: FieldPoint, layer: RoomMapLayer, samples: Ma
     value: conditionedField.value + eddy,
     confidence: clamp(Math.max(baseField.confidence, conditionedField.confidence), 0.03, 1),
     airflow: Math.max(airflow.intensity, conditionedField.intensity),
+  };
+}
+
+function getMapFieldAtPoint(point: FieldPoint, layer: RoomMapLayer) {
+  if (layer === "off") return null;
+  if (layer === "device_speed") return getVentilationFieldValue(point);
+  return getSensorFieldValue(point, layer, getMapSamples(layer));
+}
+
+function getMapLayerUnit(layer: RoomMapLayer) {
+  if (layer === "temperature") return "°C";
+  if (layer === "humidity" || layer === "device_speed") return "%";
+  if (layer === "co2") return "ppm";
+  return "";
+}
+
+function getMapProbeLabel(layer: RoomMapLayer) {
+  if (layer === "device_speed") return "Airflow";
+  return getMapLayerOption(layer).label;
+}
+
+function updateMapProbe(event: PointerEvent) {
+  const layer = activeMapLayer.value;
+  if (mode.value !== "view" || layer === "off") {
+    clearMapProbe();
+    return;
+  }
+
+  const point = boardPointToUnits(event);
+  if (!isPointInsidePolygon(point, geometryPoints.value)) {
+    clearMapProbe();
+    return;
+  }
+
+  const field = getMapFieldAtPoint(point, layer);
+  if (!field) {
+    clearMapProbe();
+    return;
+  }
+
+  mapProbe.value = {
+    x: point.x,
+    y: point.y,
+    label: getMapProbeLabel(layer),
+    value: formatMetricValue(field.value, getMapLayerUnit(layer), layer),
+    icon: getMapLayerOption(layer).icon,
+  };
+}
+
+function clearMapProbe() {
+  mapProbe.value = null;
+}
+
+function getMapProbeStyle(probe: MapProbe) {
+  const isNearRight = probe.x / layout.value.width > 0.72;
+  const isNearTop = probe.y / layout.value.height < 0.22;
+  const xShift = isNearRight ? "calc(-100% - 10px)" : "10px";
+  const yShift = isNearTop ? "10px" : "calc(-100% - 10px)";
+
+  return {
+    left: `${clamp((probe.x / layout.value.width) * 100, 0, 100)}%`,
+    top: `${clamp((probe.y / layout.value.height) * 100, 0, 100)}%`,
+    "--layout-map-probe-transform": `translate(${xShift}, ${yShift})`,
   };
 }
 
@@ -1767,10 +1882,11 @@ function getVentConditioningAtPoint(point: FieldPoint, layer: RoomMapLayer, valu
     const contribution = getVentAirflowContribution(point, item, speed);
     if (contribution < 0.012) continue;
 
-    const supplyValue = getVentSupplyValue(layer, values, speed);
+    const role = getVentAirflowRole(item);
+    const conditionedValue = getVentConditionedValue(layer, values, speed, role);
     const speedRatio = getVentSimulationSpeedRatio(speed);
-    const weight = contribution * (0.72 + speedRatio * 0.48);
-    weightedValue += supplyValue * weight;
+    const weight = contribution * (role === "supply" ? 0.72 + speedRatio * 0.48 : 0.48 + speedRatio * 0.34);
+    weightedValue += conditionedValue * weight;
     weightSum += weight;
   }
 
@@ -1781,6 +1897,12 @@ function getVentConditioningAtPoint(point: FieldPoint, layer: RoomMapLayer, valu
     intensity: clamp(weightSum, 0, 1),
     confidence: clamp(weightSum / (weightSum + 0.42), 0.04, 1),
   };
+}
+
+function getVentConditionedValue(layer: RoomMapLayer, values: number[], speed: number, role: AirflowRole) {
+  return role === "exhaust"
+    ? getVentExhaustValue(layer, values, speed)
+    : getVentSupplyValue(layer, values, speed);
 }
 
 function getVentSupplyValue(layer: RoomMapLayer, values: number[], speed: number) {
@@ -1802,6 +1924,27 @@ function getVentSupplyValue(layer: RoomMapLayer, values: number[], speed: number
   if (layer === "humidity") {
     const comfortHumidity = 42;
     return clamp(mean + (comfortHumidity - mean) * (0.42 + speedRatio * 0.22) - speedRatio * 5.2, 28, 62);
+  }
+
+  return mean;
+}
+
+function getVentExhaustValue(layer: RoomMapLayer, values: number[], speed: number) {
+  const mean = average(values);
+  const speedRatio = getVentSimulationSpeedRatio(speed);
+
+  if (layer === "temperature") {
+    return clamp(mean - (0.45 + speedRatio * 1.55), 16, Math.max(17, mean));
+  }
+
+  if (layer === "co2") {
+    const excessCo2 = Math.max(0, mean - 420);
+    return clamp(mean - Math.max(35, excessCo2 * (0.11 + speedRatio * 0.18)), 400, Math.max(430, mean));
+  }
+
+  if (layer === "humidity") {
+    const comfortHumidity = 45;
+    return clamp(mean + (comfortHumidity - mean) * (0.22 + speedRatio * 0.16) - speedRatio * 1.8, 25, 85);
   }
 
   return mean;
@@ -1862,7 +2005,7 @@ function getAirflowAtPoint(point: FieldPoint) {
     if (speed <= 0) continue;
 
     const contribution = getVentAirflowContribution(point, item, speed);
-    const direction = getVentAirflowDirection(item);
+    const direction = getVentAirflowVectorAtPoint(point, item);
     intensity += contribution;
     vectorX += direction.x * contribution;
     vectorY += direction.y * contribution;
@@ -1876,24 +2019,39 @@ function getAirflowAtPoint(point: FieldPoint) {
   };
 }
 
+function getVentAirflowVectorAtPoint(point: FieldPoint, item: RoomLayoutItem): FieldPoint {
+  if (getVentAirflowRole(item) === "supply") {
+    return getVentAirflowDirection(item);
+  }
+
+  const intake = getVentOutletPoint(item);
+  const vector = normalizeVector({
+    x: intake.x - point.x,
+    y: intake.y - point.y,
+  });
+
+  return isZeroVector(vector) ? getVentAirflowDirection(item) : vector;
+}
+
 function getVentAirflowContribution(point: FieldPoint, item: RoomLayoutItem, speed: number) {
   const speedRatio = getVentSimulationSpeedRatio(speed);
   const source = getVentOutletPoint(item);
-  const direction = getVentAirflowDirection(item);
+  const direction = getVentInfluenceDirection(item);
   const deltaX = point.x - source.x;
   const deltaY = point.y - source.y;
   const forward = deltaX * direction.x + deltaY * direction.y;
   const lateral = Math.abs(deltaX * -direction.y + deltaY * direction.x);
   const distance = Math.hypot(deltaX, deltaY);
   const reach = getVentReach(speed);
-  const localRecirculation = Math.exp(-((distance / (0.38 + speedRatio * 0.34)) ** 2)) * 0.34;
+  const role = getVentAirflowRole(item);
+  const localRecirculation = Math.exp(-((distance / (0.38 + speedRatio * 0.34)) ** 2)) * (role === "supply" ? 0.34 : 0.22);
   let plume = 0;
 
   if (forward > -0.08) {
     const downstream = Math.max(0, forward);
-    const spread = 0.34 + downstream * 0.38 + speedRatio * 0.3;
-    const longitudinalDecay = Math.exp(-((downstream / reach) ** 2) * 0.82);
-    const lateralDecay = Math.exp(-((lateral / spread) ** 2) * 1.08);
+    const spread = (role === "supply" ? 0.34 : 0.5) + downstream * (role === "supply" ? 0.38 : 0.48) + speedRatio * 0.3;
+    const longitudinalDecay = Math.exp(-((downstream / reach) ** 2) * (role === "supply" ? 0.82 : 0.62));
+    const lateralDecay = Math.exp(-((lateral / spread) ** 2) * (role === "supply" ? 1.08 : 0.82));
     plume = longitudinalDecay * lateralDecay;
   }
 
@@ -2141,7 +2299,14 @@ function getMapCellOpacity(layer: RoomMapLayer, field: FieldValue) {
   return clamp(0.14 + field.confidence * 0.16 + getMapSeverity(layer, field.value) * 0.12 + field.airflow * 0.06, 0.14, 0.48);
 }
 
-function getVentInfluenceColor(layer: RoomMapLayer) {
+function getVentInfluenceColor(layer: RoomMapLayer, role: AirflowRole = "supply") {
+  if (role === "exhaust") {
+    if (layer === "temperature") return "rgb(59, 130, 246)";
+    if (layer === "co2") return "rgb(79, 70, 229)";
+    if (layer === "humidity") return "rgb(99, 102, 241)";
+    return "rgb(37, 99, 235)";
+  }
+
   if (layer === "temperature") return "rgb(14, 165, 233)";
   if (layer === "co2") return "rgb(20, 184, 166)";
   if (layer === "humidity") return "rgb(37, 99, 235)";
@@ -2167,7 +2332,8 @@ function getItemDisplayName(item: RoomLayoutItem) {
   if (type === "vent") {
     const device = getDeviceForItem(item);
     const deviceId = device?.id ?? getBoundEntityId(item, "vent");
-    return deviceId ? `Vent #${deviceId}` : item.label || "Ventilation";
+    const roleLabel = getAirflowRoleOption(getVentAirflowRole(item)).label;
+    return deviceId ? `${roleLabel} vent #${deviceId}` : item.label || `${roleLabel} ventilation`;
   }
 
   return item.label || getItemType(item.type).label;
@@ -2182,7 +2348,8 @@ function getItemMapLabel(item: RoomLayoutItem) {
 
   if (type === "vent") {
     const deviceId = getDeviceForItem(item)?.id ?? getBoundEntityId(item, "vent");
-    return deviceId ? `V#${deviceId}` : "Vent";
+    const prefix = getVentAirflowRole(item) === "exhaust" ? "E" : "S";
+    return deviceId ? `${prefix}#${deviceId}` : prefix;
   }
 
   return item.label || getItemType(item.type).label;
@@ -2192,7 +2359,9 @@ function getItemAriaLabel(item: RoomLayoutItem) {
   const name = getItemDisplayName(item);
   const type = getItemType(item.type).label;
   const rotation = normalizeAngle(Number(item.rotation) || 0);
-  const direction = isDirectionalItem(item.type) ? ", airflow follows the room-facing side" : "";
+  const direction = getItemType(item.type).value === "vent"
+    ? `, ${getAirflowRoleOption(getVentAirflowRole(item)).label.toLowerCase()} airflow follows rotation ${rotation} degrees`
+    : "";
   const position = `x ${round(item.x)} ${layout.value.unit}, y ${round(item.y)} ${layout.value.unit}`;
   const telemetry = getItemTelemetrySummary(item);
   const telemetryText = telemetry ? `, ${telemetry}` : "";
@@ -2230,15 +2399,26 @@ function isRoomBoundItem(type: string) {
   return type === "sensor" || type === "vent";
 }
 
+function isWallMountedItem(type: string) {
+  return type === "door" || type === "window";
+}
+
 function isDirectionalItem(type: string) {
   return getItemType(type).value === "vent";
+}
+
+function getItemPlacementErrorMessage(item: RoomLayoutItem) {
+  const name = getItemDisplayName(item);
+  const type = getItemType(item.type).value;
+  if (isWallMountedItem(type)) return `${name} must be mounted on a room wall.`;
+  return `${name} must be fully inside the room contour.`;
 }
 
 function getItemPlacementTitle(item: RoomLayoutItem) {
   const telemetry = getItemTelemetrySummary(item);
   const suffix = telemetry ? `\n${telemetry}` : "";
   if (!hasItemPlacementError(item)) return `${getItemDisplayName(item)}${suffix}`;
-  return `${getItemDisplayName(item)} must be fully inside the room contour.${suffix}`;
+  return `${getItemPlacementErrorMessage(item)}${suffix}`;
 }
 
 function getSortedEntities<T extends TelemetryEntity>(entities: T[]) {
@@ -2312,7 +2492,7 @@ function getBoundAssetSummary(item: RoomLayoutItem): RoomAssetSummary | null {
     if (!deviceId) return null;
 
     return {
-      label: `Vent #${deviceId}`,
+      label: `${getAirflowRoleOption(getVentAirflowRole(item)).label} vent #${deviceId}`,
       detail: device?.serial_number ? `Serial ${device.serial_number}` : "Ventilation device",
     };
   }
@@ -2335,6 +2515,14 @@ function getParameterValues(name: string) {
     .filter((parameter) => parameter.name === name && parameter.value !== null && parameter.value !== undefined)
     .map((parameter) => Number(parameter.value))
     .filter((value) => !Number.isNaN(value));
+}
+
+function getVentFanSpeedsByRole(role: AirflowRole) {
+  return ventLayoutItems.value
+    .filter((item) => getVentAirflowRole(item) === role)
+    .map((item) => getDeviceForItem(item)?.fan_speed)
+    .filter((value): value is number => value !== null && value !== undefined && !Number.isNaN(Number(value)))
+    .map(Number);
 }
 
 function average(values: number[]) {
@@ -2475,22 +2663,29 @@ function getItemTelemetryStyle(item: RoomLayoutItem) {
 }
 
 function hasItemPlacementError(item: RoomLayoutItem) {
-  return isRoomBoundItem(getItemType(item.type).value) && !isItemInsideRoom(item, layout.value);
+  return hasItemPlacementErrorInLayout(item, layout.value);
+}
+
+function hasItemPlacementErrorInLayout(item: RoomLayoutItem, value: RoomLayout) {
+  const type = getItemType(item.type).value;
+  if (isRoomBoundItem(type)) return !isItemInsideRoom(item, value);
+  if (isWallMountedItem(type)) return !isWallMountedItemOnWall(item, value) || !isItemInsideRoom(item, value);
+  return false;
 }
 
 function getLayoutPlacementErrors(value: RoomLayout) {
-  return value.items.filter((item) => isRoomBoundItem(getItemType(item.type).value) && !isItemInsideRoom(item, value));
+  return value.items.filter((item) => hasItemPlacementErrorInLayout(item, value));
 }
 
-function isPointOnSegment(point: RoomLayoutPoint, start: RoomLayoutPoint, end: RoomLayoutPoint) {
+function isPointOnSegment(point: RoomLayoutPoint, start: RoomLayoutPoint, end: RoomLayoutPoint, tolerance = 0.000001) {
+  const segmentLength = Math.hypot(end.x - start.x, end.y - start.y);
   const cross = (point.y - start.y) * (end.x - start.x) - (point.x - start.x) * (end.y - start.y);
-  if (Math.abs(cross) > 0.000001) return false;
+  if (Math.abs(cross) > tolerance * Math.max(segmentLength, 1)) return false;
 
   const dot = (point.x - start.x) * (end.x - start.x) + (point.y - start.y) * (end.y - start.y);
-  if (dot < -0.000001) return false;
+  if (dot < -tolerance) return false;
 
-  const squaredLength = (end.x - start.x) ** 2 + (end.y - start.y) ** 2;
-  return dot <= squaredLength + 0.000001;
+  return dot <= segmentLength ** 2 + tolerance;
 }
 
 function isPointInsidePolygon(point: RoomLayoutPoint, polygon: RoomLayoutPoint[]) {
@@ -2545,6 +2740,34 @@ function getItemProbePoints(item: RoomLayoutItem): RoomLayoutPoint[] {
   });
 }
 
+function getItemCorners(item: RoomLayoutItem): RoomLayoutPoint[] {
+  const left = item.x;
+  const right = item.x + item.width;
+  const top = item.y;
+  const bottom = item.y + item.height;
+  const center = { x: (left + right) / 2, y: (top + bottom) / 2 };
+  const corners = [
+    { x: left, y: top },
+    { x: right, y: top },
+    { x: right, y: bottom },
+    { x: left, y: bottom },
+  ];
+
+  const rotation = ((Number(item.rotation) || 0) * Math.PI) / 180;
+  if (Math.abs(rotation) < 0.000001) return corners;
+
+  const cos = Math.cos(rotation);
+  const sin = Math.sin(rotation);
+  return corners.map((point) => {
+    const x = point.x - center.x;
+    const y = point.y - center.y;
+    return {
+      x: center.x + x * cos - y * sin,
+      y: center.y + x * sin + y * cos,
+    };
+  });
+}
+
 function isItemInsideRoom(item: RoomLayoutItem, value: RoomLayout) {
   const polygon = value.geometry.points;
   if (polygon.length < 3) return false;
@@ -2556,6 +2779,116 @@ function isItemInsideRoom(item: RoomLayoutItem, value: RoomLayout) {
     && point.y <= value.height + 0.000001
     && isPointInsidePolygon(point, polygon)
   ));
+}
+
+function isWallMountedItemOnWall(item: RoomLayoutItem, value: RoomLayout) {
+  if (!isWallMountedItem(getItemType(item.type).value)) return true;
+
+  const corners = getItemCorners(item);
+  const segments = getWallSegments(value);
+  if (!segments.length) return false;
+
+  return corners.some((corner, index) => {
+    if (index !== 0 && index !== 2) return false;
+
+    const next = corners[(index + 1) % corners.length];
+    if (Math.hypot(next.x - corner.x, next.y - corner.y) <= 0.000001) return false;
+
+    return segments.some((segment) => (
+      isPointOnSegment(corner, segment.start, segment.end, wallMountTolerance)
+      && isPointOnSegment(next, segment.start, segment.end, wallMountTolerance)
+    ));
+  });
+}
+
+function getWallSegments(value: RoomLayout): WallSegment[] {
+  const points = value.geometry.points;
+  if (points.length < 2) return [];
+
+  return points
+    .map((start, index) => {
+      const end = points[(index + 1) % points.length];
+      const length = Math.hypot(end.x - start.x, end.y - start.y);
+      if (length <= 0.000001) return null;
+
+      return {
+        start,
+        end,
+        length,
+        direction: {
+          x: (end.x - start.x) / length,
+          y: (end.y - start.y) / length,
+        },
+      };
+    })
+    .filter((segment): segment is WallSegment => segment !== null);
+}
+
+function getPolygonCenter(value: RoomLayout): FieldPoint {
+  if (!value.geometry.points.length) {
+    return { x: value.width / 2, y: value.height / 2 };
+  }
+
+  return {
+    x: value.geometry.points.reduce((sum, point) => sum + point.x, 0) / value.geometry.points.length,
+    y: value.geometry.points.reduce((sum, point) => sum + point.y, 0) / value.geometry.points.length,
+  };
+}
+
+function getInwardWallNormal(segment: WallSegment, value: RoomLayout): FieldPoint {
+  const normal = getNormal(segment.direction);
+  const midpoint = {
+    x: (segment.start.x + segment.end.x) / 2,
+    y: (segment.start.y + segment.end.y) / 2,
+  };
+  const probeDistance = clamp(Math.min(value.width, value.height) * 0.01, 0.03, 0.12);
+  const forwardProbe = offsetPoint(midpoint, normal, probeDistance);
+  if (isPointInsidePolygon(forwardProbe, value.geometry.points)) return normal;
+
+  const backwardProbe = offsetPoint(midpoint, normal, -probeDistance);
+  if (isPointInsidePolygon(backwardProbe, value.geometry.points)) {
+    return { x: -normal.x, y: -normal.y };
+  }
+
+  const centerVector = normalizeVector({
+    x: getPolygonCenter(value).x - midpoint.x,
+    y: getPolygonCenter(value).y - midpoint.y,
+  });
+  return centerVector.x * normal.x + centerVector.y * normal.y >= 0
+    ? normal
+    : { x: -normal.x, y: -normal.y };
+}
+
+function createRotatedWallMountedCandidate(
+  item: RoomLayoutItem,
+  value: RoomLayout,
+  segment: WallSegment,
+  normal: FieldPoint,
+  along: number,
+) {
+  const width = round(clamp(Math.max(item.width, item.height), 0.1, Math.max(0.1, segment.length)));
+  const height = round(clamp(Math.min(item.width, item.height), 0.1, Math.max(0.1, Math.min(value.width, value.height))));
+  const halfWidth = width / 2;
+  const clampedAlong = clamp(along, halfWidth, Math.max(halfWidth, segment.length - halfWidth));
+  const wallPoint = {
+    x: segment.start.x + segment.direction.x * clampedAlong,
+    y: segment.start.y + segment.direction.y * clampedAlong,
+  };
+  const center = offsetPoint(wallPoint, normal, height / 2);
+
+  return {
+    ...item,
+    x: round(center.x - width / 2),
+    y: round(center.y - height / 2),
+    width,
+    height,
+    rotation: normalizeAngle((Math.atan2(segment.direction.y, segment.direction.x) * 180) / Math.PI),
+  };
+}
+
+function createWallMountedCandidate(item: RoomLayoutItem, value: RoomLayout, segment: WallSegment, along: number) {
+  const normal = getInwardWallNormal(segment, value);
+  return createRotatedWallMountedCandidate(item, value, segment, normal, along);
 }
 
 function doItemsOverlap(first: RoomLayoutItem, second: RoomLayoutItem) {
@@ -2573,6 +2906,8 @@ function hasLayoutCollision(item: RoomLayoutItem, existingItems = layout.value.i
 function findOpenPlacement(item: RoomLayoutItem) {
   const normalized = normalizeItem(item);
   const type = getItemType(normalized.type).value;
+  if (isWallMountedItem(type)) return findOpenWallMountedPlacement(normalized);
+
   const maxX = Math.max(0, layout.value.width - normalized.width);
   const maxY = Math.max(0, layout.value.height - normalized.height);
   const stepsX = Math.max(1, Math.min(32, Math.ceil(layout.value.width * 4)));
@@ -2594,7 +2929,22 @@ function findOpenPlacement(item: RoomLayoutItem) {
     }
   }
 
-  return keepRoomBoundItemInsideRoom(normalized);
+  return keepItemInValidPlacement(normalized);
+}
+
+function findOpenWallMountedPlacement(item: RoomLayoutItem) {
+  const normalized = normalizeItem(item);
+  const segments = getWallSegments(layout.value);
+  const ratios = [0.18, 0.34, 0.5, 0.66, 0.82];
+
+  for (const segment of segments) {
+    for (const ratio of ratios) {
+      const candidate = createWallMountedCandidate(normalized, layout.value, segment, segment.length * ratio);
+      if (isWallMountedItemOnWall(candidate, layout.value) && isItemInsideRoom(candidate, layout.value) && !hasLayoutCollision(candidate)) return candidate;
+    }
+  }
+
+  return findNearestWallMountedPlacement(normalized, layout.value);
 }
 
 function findNearestValidPlacement(item: RoomLayoutItem, value: RoomLayout) {
@@ -2625,13 +2975,44 @@ function findNearestValidPlacement(item: RoomLayoutItem, value: RoomLayout) {
   return best ?? item;
 }
 
-function keepRoomBoundItemInsideRoom(item: RoomLayoutItem, value: RoomLayout = layout.value) {
+function findNearestWallMountedPlacement(item: RoomLayoutItem, value: RoomLayout) {
   const normalized = normalizeItem(item, value.width, value.height);
-  return findNearestValidPlacement(normalized, value);
+  if (!isWallMountedItem(getItemType(normalized.type).value) || (isWallMountedItemOnWall(normalized, value) && isItemInsideRoom(normalized, value))) {
+    return normalized;
+  }
+
+  const center = getItemCenter(normalized);
+  let best: RoomLayoutItem | null = null;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (const segment of getWallSegments(value)) {
+    const rawAlong = (center.x - segment.start.x) * segment.direction.x + (center.y - segment.start.y) * segment.direction.y;
+    const candidate = createWallMountedCandidate(normalized, value, segment, rawAlong);
+    if (!isWallMountedItemOnWall(candidate, value) || !isItemInsideRoom(candidate, value)) continue;
+
+    const candidateCenter = getItemCenter(candidate);
+    const score = (candidateCenter.x - center.x) ** 2 + (candidateCenter.y - center.y) ** 2;
+    if (score < bestScore) {
+      best = candidate;
+      bestScore = score;
+    }
+  }
+
+  return best ?? normalized;
 }
 
-function keepRoomBoundItemsInsideRoom() {
-  layout.value.items = layout.value.items.map((item) => keepRoomBoundItemInsideRoom(item));
+function keepItemInValidPlacement(item: RoomLayoutItem, value: RoomLayout = layout.value) {
+  const normalized = normalizeItem(item, value.width, value.height);
+  const type = getItemType(normalized.type).value;
+
+  if (isWallMountedItem(type)) return findNearestWallMountedPlacement(normalized, value);
+  if (isRoomBoundItem(type)) return findNearestValidPlacement(normalized, value);
+  return normalized;
+}
+
+function keepLayoutItemsInValidPlacement() {
+  layout.value.items = layout.value.items.map((item) => keepItemInValidPlacement(item));
+  ensureVentAirflowRoles();
 }
 
 function createItemId(prefix: string) {
@@ -2717,7 +3098,8 @@ function normalizeLayout(value: RoomLayout): RoomLayout {
     items: (value.items || []).map((item) => normalizeItem(item, width, height)),
   };
 
-  normalized.items = normalized.items.map((item) => keepRoomBoundItemInsideRoom(item, normalized));
+  normalized.items = normalized.items.map((item) => keepItemInValidPlacement(item, normalized));
+  ensureVentAirflowRoles(normalized.items);
   return normalized;
 }
 
@@ -2725,12 +3107,16 @@ function normalizeItem(item: RoomLayoutItem, roomWidth = layout.value.width, roo
   const type = getItemType(item.type).value;
   const itemWidth = clamp(Number(item.width) || getItemType(type).width, 0.1, roomWidth);
   const itemHeight = clamp(Number(item.height) || getItemType(type).height, 0.1, roomHeight);
+  const allowsWallCoordinatePad = isWallMountedItem(type);
+  const coordinatePad = allowsWallCoordinatePad ? Math.max(roomWidth, roomHeight, itemWidth, itemHeight) : 0;
+  const maxX = allowsWallCoordinatePad ? roomWidth : Math.max(0, roomWidth - itemWidth);
+  const maxY = allowsWallCoordinatePad ? roomHeight : Math.max(0, roomHeight - itemHeight);
   const normalized: RoomLayoutItem = {
     id: item.id || createItemId(type),
     type,
     label: item.label?.trim() || null,
-    x: round(clamp(Number(item.x) || 0, 0, Math.max(0, roomWidth - itemWidth))),
-    y: round(clamp(Number(item.y) || 0, 0, Math.max(0, roomHeight - itemHeight))),
+    x: round(clamp(Number(item.x) || 0, -coordinatePad, maxX)),
+    y: round(clamp(Number(item.y) || 0, -coordinatePad, maxY)),
     width: round(itemWidth),
     height: round(itemHeight),
     rotation: round(clamp(Number(item.rotation) || 0, -360, 360)),
@@ -2744,6 +3130,21 @@ function normalizeItem(item: RoomLayoutItem, roomWidth = layout.value.width, roo
   if (type === "vent") {
     normalized.device_id = toPositiveInteger(item.device_id);
     normalized.serial_number = item.serial_number?.trim() || null;
+    normalized.airflow_role = normalizeAirflowRole(item.airflow_role)
+      ?? inferAirflowRoleFromText(item)
+      ?? "supply";
+  }
+
+  if (type === "equipment") {
+    const heatLoad = Number(item.heat_load_kw);
+    if (Number.isFinite(heatLoad) && heatLoad > 0) {
+      normalized.heat_load_kw = round(clamp(heatLoad, 0, 1000));
+    }
+
+    const thermalLoad = `${item.thermal_load ?? ""}`.trim().toLowerCase();
+    if (["low", "medium", "high"].includes(thermalLoad)) {
+      normalized.thermal_load = thermalLoad;
+    }
   }
 
   return normalized;
@@ -2769,7 +3170,7 @@ function extractPaginatedData<T>(value: PaginatedData<T> | T[] | null | undefine
 
 function normalizeCurrentLayout() {
   layout.value.geometry = normalizeGeometry(layout.value.geometry, layout.value.width, layout.value.height);
-  keepRoomBoundItemsInsideRoom();
+  keepLayoutItemsInValidPlacement();
 }
 
 function isRequiredAssetItem(item: RoomLayoutItem) {
@@ -2794,6 +3195,7 @@ function bindItemToSensor(item: RoomLayoutItem, sensor: Sensor) {
   item.sensor_id = sensor.id;
   item.serial_number = sensor.serial_number || null;
   delete item.device_id;
+  delete item.airflow_role;
 
   if (shouldReplaceGenericAssetLabel(item.label, "sensor")) {
     item.label = `Sensor #${sensor.id}`;
@@ -2806,6 +3208,9 @@ function bindItemToDevice(item: RoomLayoutItem, device: Device) {
   item.type = "vent";
   item.device_id = device.id;
   item.serial_number = device.serial_number || null;
+  item.airflow_role = normalizeAirflowRole(item.airflow_role)
+    ?? inferAirflowRoleFromText(item)
+    ?? getDeviceDefaultAirflowRole(device);
   delete item.sensor_id;
 
   if (shouldReplaceGenericAssetLabel(item.label, "vent")) {
@@ -2853,7 +3258,8 @@ function createBoundDeviceItem(device: Device): RoomLayoutItem {
     y: round(clamp(0.45 + index * 0.2, 0, Math.max(0, layout.value.height - height))),
     width,
     height,
-    rotation: 0,
+    rotation: 180,
+    airflow_role: getDeviceDefaultAirflowRole(device),
   }), device);
 }
 
@@ -2896,7 +3302,7 @@ function syncRequiredRoomAssets() {
 
     if (item) {
       bindItemToSensor(item, sensor);
-      Object.assign(item, keepRoomBoundItemInsideRoom(item));
+      Object.assign(item, keepItemInValidPlacement(item));
       usedItemIds.add(item.id);
       continue;
     }
@@ -2911,7 +3317,7 @@ function syncRequiredRoomAssets() {
 
     if (item) {
       bindItemToDevice(item, device);
-      Object.assign(item, keepRoomBoundItemInsideRoom(item));
+      Object.assign(item, keepItemInValidPlacement(item));
       usedItemIds.add(item.id);
       continue;
     }
@@ -2936,9 +3342,13 @@ function syncRequiredRoomAssets() {
     return true;
   });
 
+  layout.value.items = layout.value.items.map((item) => keepItemInValidPlacement(item));
+
   if (selectedId.value && !layout.value.items.some((item) => item.id === selectedId.value)) {
     selectedId.value = layout.value.items[0]?.id ?? null;
   }
+
+  ensureVentAirflowRoles();
 }
 
 function getFirstUnplacedSensor(excludeItemId?: string) {
@@ -3036,7 +3446,7 @@ async function saveLayout() {
   }
 
   if (hasPlacementErrors.value) {
-    errorMessage.value = "Sensors and ventilation must be fully inside the room contour.";
+    errorMessage.value = "Sensors and ventilation must be inside the room contour; doors and windows must be mounted on walls.";
     return;
   }
 
@@ -3071,7 +3481,7 @@ function setLayoutNumber(key: "width" | "height", value: number | null) {
 function setGeometryType(type: RoomLayoutGeometryType) {
   const currentPoints = layout.value.geometry.points;
   layout.value.geometry = createGeometry(type, layout.value.width, layout.value.height, currentPoints);
-  keepRoomBoundItemsInsideRoom();
+  keepLayoutItemsInValidPlacement();
 }
 
 function setGeometryPoint(index: number, key: "x" | "y", value: number | null) {
@@ -3080,7 +3490,7 @@ function setGeometryPoint(index: number, key: "x" | "y", value: number | null) {
   if (!point) return;
 
   point[key] = round(clamp(Number(value) || 0, 0, key === "x" ? layout.value.width : layout.value.height));
-  keepRoomBoundItemsInsideRoom();
+  keepLayoutItemsInValidPlacement();
 }
 
 function addGeometryPoint() {
@@ -3094,18 +3504,24 @@ function addGeometryPoint() {
     x: round((last.x + first.x) / 2),
     y: round((last.y + first.y) / 2),
   });
-  keepRoomBoundItemsInsideRoom();
+  keepLayoutItemsInValidPlacement();
 }
 
 function removeGeometryPoint() {
   if (!canEditCustomGeometry.value || layout.value.geometry.points.length <= 3) return;
   layout.value.geometry.points.pop();
-  keepRoomBoundItemsInsideRoom();
+  keepLayoutItemsInValidPlacement();
 }
 
 function setSelectedText(value: string | undefined) {
   if (!selectedItem.value) return;
   selectedItem.value.label = value?.trim() || null;
+}
+
+function setSelectedAirflowRole(value: string | undefined) {
+  if (!selectedItem.value || getItemType(selectedItem.value.type).value !== "vent") return;
+  selectedItem.value.airflow_role = getAirflowRoleOption(value).value;
+  ensureVentAirflowRoles();
 }
 
 function setSelectedType(value: RoomLayoutItemType) {
@@ -3125,7 +3541,7 @@ function setSelectedType(value: RoomLayoutItemType) {
     selectedItem.value.height = Math.min(option.height, layout.value.height);
     bindItemToSensor(selectedItem.value, sensor);
     selectedItem.value.label = `Sensor #${sensor.id}`;
-    Object.assign(selectedItem.value, keepRoomBoundItemInsideRoom(selectedItem.value));
+    Object.assign(selectedItem.value, keepItemInValidPlacement(selectedItem.value));
     return;
   }
 
@@ -3140,7 +3556,9 @@ function setSelectedType(value: RoomLayoutItemType) {
     selectedItem.value.height = Math.min(option.height, layout.value.height);
     bindItemToDevice(selectedItem.value, device);
     selectedItem.value.label = `Vent #${device.id}`;
-    Object.assign(selectedItem.value, keepRoomBoundItemInsideRoom(selectedItem.value));
+    selectedItem.value.airflow_role = getDeviceDefaultAirflowRole(device);
+    Object.assign(selectedItem.value, keepItemInValidPlacement(selectedItem.value));
+    ensureVentAirflowRoles();
     return;
   }
 
@@ -3148,9 +3566,31 @@ function setSelectedType(value: RoomLayoutItemType) {
   delete selectedItem.value.sensor_id;
   delete selectedItem.value.device_id;
   delete selectedItem.value.serial_number;
+  delete selectedItem.value.airflow_role;
   selectedItem.value.width = Math.min(selectedItem.value.width, layout.value.width) || option.width;
   selectedItem.value.height = Math.min(selectedItem.value.height, layout.value.height) || option.height;
-  Object.assign(selectedItem.value, keepRoomBoundItemInsideRoom(selectedItem.value));
+  Object.assign(selectedItem.value, keepItemInValidPlacement(selectedItem.value));
+  ensureVentAirflowRoles();
+}
+
+function getItemCoordinatePadding(item: RoomLayoutItem) {
+  return isWallMountedItem(getItemType(item.type).value)
+    ? Math.max(layout.value.width, layout.value.height, item.width, item.height)
+    : 0;
+}
+
+function getItemCoordinateMin(item: RoomLayoutItem, _key: "x" | "y") {
+  return isWallMountedItem(getItemType(item.type).value) ? -getItemCoordinatePadding(item) : 0;
+}
+
+function getItemCoordinateMax(item: RoomLayoutItem, key: "x" | "y") {
+  if (isWallMountedItem(getItemType(item.type).value)) {
+    return key === "x" ? layout.value.width : layout.value.height;
+  }
+
+  return key === "x"
+    ? Math.max(0, layout.value.width - item.width)
+    : Math.max(0, layout.value.height - item.height);
 }
 
 function setSelectedNumber(key: "x" | "y" | "width" | "height" | "rotation", value: number | null) {
@@ -3161,40 +3601,39 @@ function setSelectedNumber(key: "x" | "y" | "width" | "height" | "rotation", val
 
   if (key === "width") {
     item.width = round(clamp(numeric, 0.1, layout.value.width));
-    item.x = round(clamp(item.x, 0, Math.max(0, layout.value.width - item.width)));
-    Object.assign(item, keepRoomBoundItemInsideRoom(item));
+    item.x = round(clamp(item.x, getItemCoordinateMin(item, "x"), getItemCoordinateMax(item, "x")));
+    Object.assign(item, keepItemInValidPlacement(item));
     return;
   }
 
   if (key === "height") {
     item.height = round(clamp(numeric, 0.1, layout.value.height));
-    item.y = round(clamp(item.y, 0, Math.max(0, layout.value.height - item.height)));
-    Object.assign(item, keepRoomBoundItemInsideRoom(item));
+    item.y = round(clamp(item.y, getItemCoordinateMin(item, "y"), getItemCoordinateMax(item, "y")));
+    Object.assign(item, keepItemInValidPlacement(item));
     return;
   }
 
   if (key === "x") {
-    item.x = round(clamp(numeric, 0, Math.max(0, layout.value.width - item.width)));
-    Object.assign(item, keepRoomBoundItemInsideRoom(item));
+    item.x = round(clamp(numeric, getItemCoordinateMin(item, "x"), getItemCoordinateMax(item, "x")));
+    Object.assign(item, keepItemInValidPlacement(item));
     return;
   }
 
   if (key === "y") {
-    item.y = round(clamp(numeric, 0, Math.max(0, layout.value.height - item.height)));
-    Object.assign(item, keepRoomBoundItemInsideRoom(item));
+    item.y = round(clamp(numeric, getItemCoordinateMin(item, "y"), getItemCoordinateMax(item, "y")));
+    Object.assign(item, keepItemInValidPlacement(item));
     return;
   }
 
   item.rotation = round(clamp(numeric, -360, 360));
-  Object.assign(item, keepRoomBoundItemInsideRoom(item));
+  Object.assign(item, keepItemInValidPlacement(item));
 }
 
 function applyTransformedItem(item: RoomLayoutItem, candidate: RoomLayoutItem) {
   const normalized = normalizeItem(candidate);
-  const type = getItemType(normalized.type).value;
-  const next = isRoomBoundItem(type) ? keepRoomBoundItemInsideRoom(normalized) : normalized;
+  const next = keepItemInValidPlacement(normalized);
 
-  if (isRoomBoundItem(type) && !isItemInsideRoom(next, layout.value)) return false;
+  if (hasItemPlacementErrorInLayout(next, layout.value)) return false;
 
   Object.assign(item, next);
   return true;
@@ -3424,7 +3863,7 @@ function onPointerMove(event: PointerEvent) {
     const next = boardPointToUnits(event);
     point.x = round(next.x);
     point.y = round(next.y);
-    keepRoomBoundItemsInsideRoom();
+    keepLayoutItemsInValidPlacement();
     return;
   }
 
@@ -3451,14 +3890,11 @@ function onPointerMove(event: PointerEvent) {
   const point = boardPointToUnits(event);
   const candidate = {
     ...item,
-    x: round(clamp(point.x - activeDrag.value.offsetX, 0, Math.max(0, layout.value.width - item.width))),
-    y: round(clamp(point.y - activeDrag.value.offsetY, 0, Math.max(0, layout.value.height - item.height))),
+    x: round(clamp(point.x - activeDrag.value.offsetX, getItemCoordinateMin(item, "x"), getItemCoordinateMax(item, "x"))),
+    y: round(clamp(point.y - activeDrag.value.offsetY, getItemCoordinateMin(item, "y"), getItemCoordinateMax(item, "y"))),
   };
 
-  if (isRoomBoundItem(getItemType(item.type).value) && !isItemInsideRoom(candidate, layout.value)) return;
-
-  item.x = candidate.x;
-  item.y = candidate.y;
+  applyTransformedItem(item, candidate);
 }
 
 function onPointerUp() {
@@ -3946,6 +4382,46 @@ function removePointerListeners() {
   stroke: none;
 }
 
+.layout-board__map-probe {
+  align-items: center;
+  background: rgb(15 23 42 / 0.9);
+  border: 1px solid rgb(255 255 255 / 0.22);
+  border-radius: 6px;
+  box-shadow: 0 10px 26px rgb(15 23 42 / 0.24);
+  color: #fff;
+  display: flex;
+  gap: 7px;
+  min-width: 104px;
+  padding: 7px 9px;
+  pointer-events: none;
+  position: absolute;
+  transform: var(--layout-map-probe-transform, translate(10px, calc(-100% - 10px)));
+  z-index: 8;
+}
+
+.layout-board__map-probe .material-symbols-outlined {
+  color: rgb(204 251 241);
+  font-size: 1rem;
+}
+
+.layout-board__map-probe strong,
+.layout-board__map-probe small {
+  display: block;
+  line-height: 1rem;
+}
+
+.layout-board__map-probe strong {
+  font-family: var(--app-mono);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.layout-board__map-probe small {
+  color: rgb(226 232 240 / 0.86);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
 .layout-board__sensor-influence,
 .layout-board__vent-influence {
   mix-blend-mode: normal;
@@ -4327,6 +4803,23 @@ function removePointerListeners() {
   background: var(--app-tone-vent-bg);
   color: var(--app-tone-vent-text);
   overflow: visible;
+}
+
+.layout-item--vent-supply {
+  border-color: color-mix(in srgb, #0f766e 42%, var(--app-border-strong));
+}
+
+.layout-item--vent-exhaust {
+  background: color-mix(in srgb, #dbeafe 72%, var(--app-item-surface));
+  border-color: color-mix(in srgb, #4f46e5 42%, var(--app-border-strong));
+  color: #3730a3;
+}
+
+.layout-item--vent-exhaust .layout-item__direction-head {
+  border-left: 0;
+  border-right: 9px solid currentColor;
+  left: 0;
+  right: auto;
 }
 
 .layout-item--access {

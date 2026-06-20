@@ -5,6 +5,7 @@ namespace Airsense.API.Services;
 public static class RoomLayoutValidator
 {
     private const double Epsilon = 0.000001;
+    private const double WallMountTolerance = 0.04;
 
     public static IReadOnlyCollection<string> Validate(RoomLayoutDto layout)
     {
@@ -36,6 +37,14 @@ public static class RoomLayoutValidator
             errors.Add($"{GetRoomBoundItemTypeName(item.Type)} \"{itemName}\" must be fully inside the room contour.");
         }
 
+        foreach (var item in (layout.Items ?? Enumerable.Empty<RoomLayoutItemDto>()).Where(item => IsWallMountedItem(item.Type)))
+        {
+            if (IsItemMountedOnWall(item, polygon) && IsItemInsideRoom(item, layout, polygon))
+                continue;
+
+            errors.Add($"{GetWallMountedItemTypeName(item.Type)} \"{GetItemName(item)}\" must be embedded in a room wall.");
+        }
+
         return errors;
     }
 
@@ -57,9 +66,20 @@ public static class RoomLayoutValidator
                || string.Equals(type, "vent", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool IsWallMountedItem(string type)
+    {
+        return string.Equals(type, "door", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(type, "window", StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string GetRoomBoundItemTypeName(string type)
     {
         return string.Equals(type, "vent", StringComparison.OrdinalIgnoreCase) ? "Ventilation" : "Sensor";
+    }
+
+    private static string GetWallMountedItemTypeName(string type)
+    {
+        return string.Equals(type, "window", StringComparison.OrdinalIgnoreCase) ? "Window" : "Door";
     }
 
     private static string? GetRoomBoundItemBindingError(RoomLayoutItemDto item)
@@ -70,6 +90,8 @@ public static class RoomLayoutValidator
                 return $"Sensor layout item \"{GetItemName(item)}\" must reference sensor_id.";
             if (item.DeviceId is not null)
                 return $"Sensor layout item \"{GetItemName(item)}\" cannot reference device_id.";
+            if (!string.IsNullOrWhiteSpace(item.AirflowRole))
+                return $"Sensor layout item \"{GetItemName(item)}\" cannot define airflow_role.";
         }
 
         if (string.Equals(item.Type, "vent", StringComparison.OrdinalIgnoreCase))
@@ -78,6 +100,8 @@ public static class RoomLayoutValidator
                 return $"Ventilation layout item \"{GetItemName(item)}\" must reference device_id.";
             if (item.SensorId is not null)
                 return $"Ventilation layout item \"{GetItemName(item)}\" cannot reference sensor_id.";
+            if (string.IsNullOrWhiteSpace(item.AirflowRole))
+                return $"Ventilation layout item \"{GetItemName(item)}\" must define airflow_role.";
         }
 
         return null;
@@ -137,6 +161,68 @@ public static class RoomLayoutValidator
         });
     }
 
+    private static IReadOnlyList<Point> GetItemCorners(RoomLayoutItemDto item)
+    {
+        var left = item.X;
+        var right = item.X + item.Width;
+        var top = item.Y;
+        var bottom = item.Y + item.Height;
+        var center = new Point((left + right) / 2, (top + bottom) / 2);
+        var corners = new[]
+        {
+            new Point(left, top),
+            new Point(right, top),
+            new Point(right, bottom),
+            new Point(left, bottom)
+        };
+
+        var rotation = item.Rotation * Math.PI / 180;
+        if (Math.Abs(rotation) < Epsilon)
+            return corners;
+
+        var cos = Math.Cos(rotation);
+        var sin = Math.Sin(rotation);
+
+        return corners.Select(point =>
+        {
+            var x = point.X - center.X;
+            var y = point.Y - center.Y;
+            return new Point(
+                center.X + x * cos - y * sin,
+                center.Y + x * sin + y * cos
+            );
+        }).ToList();
+    }
+
+    private static bool IsItemMountedOnWall(RoomLayoutItemDto item, IReadOnlyList<Point> polygon)
+    {
+        if (polygon.Count < 3)
+            return false;
+
+        var corners = GetItemCorners(item);
+        var itemEdges = corners
+            .Select((corner, index) => (Start: corner, End: corners[(index + 1) % corners.Count], Index: index))
+            .Where(edge => edge.Index is 0 or 2)
+            .Where(edge => Distance(edge.Start, edge.End) > Epsilon);
+
+        foreach (var itemEdge in itemEdges)
+        {
+            for (var index = 0; index < polygon.Count; index++)
+            {
+                var wallStart = polygon[index];
+                var wallEnd = polygon[(index + 1) % polygon.Count];
+                if (Distance(wallStart, wallEnd) <= Epsilon)
+                    continue;
+
+                if (IsPointOnSegment(itemEdge.Start, wallStart, wallEnd, WallMountTolerance)
+                    && IsPointOnSegment(itemEdge.End, wallStart, wallEnd, WallMountTolerance))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
     private static bool IsPointInsidePolygon(Point point, IReadOnlyList<Point> polygon)
     {
         var inside = false;
@@ -159,23 +245,29 @@ public static class RoomLayoutValidator
         return inside;
     }
 
-    private static bool IsPointOnSegment(Point point, Point start, Point end)
+    private static bool IsPointOnSegment(Point point, Point start, Point end, double tolerance = Epsilon)
     {
         var cross = (point.Y - start.Y) * (end.X - start.X) - (point.X - start.X) * (end.Y - start.Y);
-        if (Math.Abs(cross) > Epsilon)
+        var segmentLength = Distance(start, end);
+        if (Math.Abs(cross) > tolerance * Math.Max(segmentLength, 1))
             return false;
 
         var dot = (point.X - start.X) * (end.X - start.X) + (point.Y - start.Y) * (end.Y - start.Y);
-        if (dot < -Epsilon)
+        if (dot < -tolerance)
             return false;
 
-        var squaredLength = Math.Pow(end.X - start.X, 2) + Math.Pow(end.Y - start.Y, 2);
-        return dot <= squaredLength + Epsilon;
+        var squaredLength = Math.Pow(segmentLength, 2);
+        return dot <= squaredLength + tolerance;
     }
 
     private static bool AreSamePoint(Point first, Point second)
     {
         return Math.Abs(first.X - second.X) < Epsilon && Math.Abs(first.Y - second.Y) < Epsilon;
+    }
+
+    private static double Distance(Point first, Point second)
+    {
+        return Math.Sqrt(Math.Pow(second.X - first.X, 2) + Math.Pow(second.Y - first.Y, 2));
     }
 
     private readonly record struct Point(double X, double Y);
