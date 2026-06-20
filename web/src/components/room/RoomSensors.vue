@@ -4,7 +4,7 @@
       title="Sensors"
       description="Connected sensor modules and latest parameter values."
     >
-      <template v-if="hasSensors" #actions>
+      <template v-if="hasSensors && !isReadOnly" #actions>
         <Button
           icon="pi pi-plus"
           label="Add Sensor"
@@ -53,6 +53,7 @@
           </span>
 
           <Button
+            v-if="!isReadOnly"
             icon="pi pi-trash"
             severity="danger"
             variant="text"
@@ -78,14 +79,15 @@
       v-else
       class="section-empty empty-state--fill empty-state--centered"
       title="No sensors"
-      description="Add a sensor to collect room telemetry and feed automation decisions."
+      :description="isReadOnly ? 'Sensors connected to this room and their latest telemetry.' : 'Add a sensor to collect room telemetry and feed automation decisions.'"
       icon="pi pi-bullseye"
-      action-label="Add Sensor"
+      :action-label="isReadOnly ? undefined : 'Add Sensor'"
       action-icon="pi pi-plus"
-      @action="addSensorDialog = true"
+      @action="openAddSensorDialog"
     />
 
     <AddSensorDialog
+        v-if="!isReadOnly"
         v-model="addSensorDialog"
         :roomId="roomId"
         @added="refresh"
@@ -94,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from "vue";
+import { computed, inject, ref, onMounted, type ComputedRef } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { getRoomSensors, removeSensor as deleteSensorApi } from "@/services/apiService";
 import type { Sensor } from "@/types/sensor";
@@ -121,6 +123,8 @@ const pagination = ref<PaginationState>({ total: 0, skip: 0, count: 8 });
 const confirm = useConfirm();
 const toast = useToast();
 const hasSensors = computed(() => sensors.value.length !== 0);
+const injectedReadOnly = inject<ComputedRef<boolean>>("roomReadOnly", computed(() => false));
+const isReadOnly = computed(() => injectedReadOnly.value);
 
 const { data: initialSensorsData } = await useAsyncData(
   `room-${roomId}-sensors-page-0`,
@@ -165,7 +169,14 @@ const loadSensors = async () => {
   }
 };
 
+const openAddSensorDialog = () => {
+  if (isReadOnly.value) return;
+  addSensorDialog.value = true;
+};
+
 const deleteSensor = async (sensorId: number) => {
+  if (isReadOnly.value) return;
+
   confirm.require({
         message: 'Are you sure you want to delete this sensor?',
         header: 'Confirmation',

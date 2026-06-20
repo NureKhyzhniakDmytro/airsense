@@ -239,6 +239,19 @@ public class RoomRepository(IDbConnection connection) : IRoomRepository
         const string sql = "DELETE FROM rooms WHERE id = @roomId";
         await connection.ExecuteAsync(sql, new { roomId });
     }
+
+    public async Task<bool> IsMemberAsync(int userId, int roomId)
+    {
+        const string sql = """
+                           SELECT 1
+                           FROM rooms r
+                           JOIN environments e ON r.environment_id = e.id
+                           JOIN environment_members em ON e.id = em.environment_id
+                           WHERE r.id = @roomId AND em.member_id = @userId
+                           """;
+        var result = await connection.QueryAsync(sql, new { userId, roomId });
+        return result.SingleOrDefault() != null;
+    }
     
     public async Task<bool> IsHasAccessAsync(int userId, int roomId)
     {

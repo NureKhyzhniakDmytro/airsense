@@ -132,6 +132,43 @@ public class EnvironmentRepository(IDbConnection connection) : IEnvironmentRepos
         const string sql = "INSERT INTO environment_members (environment_id, member_id, role) VALUES (@envId, @userId, 'user')";
         await connection.ExecuteAsync(sql, new { envId, userId });
     }
+
+    public async Task AddMemberByEnvironmentNameIfMissingAsync(string environmentName, int userId, string role)
+    {
+        const string sql = """
+                           WITH target_environment AS (
+                               SELECT id
+                               FROM environments
+                               WHERE name = @environmentName
+                               ORDER BY id
+                               LIMIT 1
+                           )
+                           INSERT INTO environment_members (member_id, environment_id, role)
+                           SELECT @userId, id, @role
+                           FROM target_environment
+                           ON CONFLICT (member_id, environment_id) DO NOTHING
+                           """;
+        await connection.ExecuteAsync(sql, new { environmentName, userId, role });
+    }
+
+    public async Task UpsertMemberByEnvironmentNameAsync(string environmentName, int userId, string role)
+    {
+        const string sql = """
+                           WITH target_environment AS (
+                               SELECT id
+                               FROM environments
+                               WHERE name = @environmentName
+                               ORDER BY id
+                               LIMIT 1
+                           )
+                           INSERT INTO environment_members (member_id, environment_id, role)
+                           SELECT @userId, id, @role
+                           FROM target_environment
+                           ON CONFLICT (member_id, environment_id) DO UPDATE SET
+                               role = EXCLUDED.role
+                           """;
+        await connection.ExecuteAsync(sql, new { environmentName, userId, role });
+    }
     
     public async Task RemoveMemberAsync(int envId, int userId)
     {

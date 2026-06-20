@@ -4,7 +4,7 @@
       title="Devices"
       description="Connected actuators and latest operating state."
     >
-      <template v-if="hasDevices" #actions>
+      <template v-if="hasDevices && !isReadOnly" #actions>
         <Button
           icon="pi pi-plus"
           label="Add Device"
@@ -50,6 +50,7 @@
           </span>
 
           <Button
+            v-if="!isReadOnly"
             icon="pi pi-trash"
             severity="danger"
             variant="text"
@@ -75,14 +76,15 @@
       v-else
       class="section-empty empty-state--fill empty-state--centered"
       title="No devices"
-      description="Add a controllable device to automate ventilation and view fan history."
+      :description="isReadOnly ? 'Ventilation devices connected to this room and their latest state.' : 'Add a controllable device to automate ventilation and view fan history.'"
       icon="pi pi-slack"
-      action-label="Add Device"
+      :action-label="isReadOnly ? undefined : 'Add Device'"
       action-icon="pi pi-plus"
-      @action="showAddDialog = true"
+      @action="openAddDeviceDialog"
     />
 
     <AddDeviceDialog
+        v-if="!isReadOnly"
         v-model="showAddDialog"
         :roomId="roomId"
         @added="refresh"
@@ -91,7 +93,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from "vue";
+import { computed, inject, ref, onMounted, type ComputedRef } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { getRoomDevices, removeDevice as deleteDeviceApi } from "@/services/apiService";
 import type { Device } from "@/types/sensor";
@@ -117,6 +119,8 @@ const pagination = ref<PaginationState>({ total: 0, skip: 0, count: 8 });
 const confirm = useConfirm();
 const toast = useToast();
 const hasDevices = computed(() => devices.value.length !== 0);
+const injectedReadOnly = inject<ComputedRef<boolean>>("roomReadOnly", computed(() => false));
+const isReadOnly = computed(() => injectedReadOnly.value);
 
 const { data: initialDevicesData } = await useAsyncData(
   `room-${roomId}-devices-page-0`,
@@ -157,7 +161,14 @@ const loadDevices = async () => {
   }
 };
 
+const openAddDeviceDialog = () => {
+  if (isReadOnly.value) return;
+  showAddDialog.value = true;
+};
+
 const deleteDevice = async (deviceId: number) => {
+  if (isReadOnly.value) return;
+
   confirm.require({
         message: 'Are you sure you want to delete this device?',
         header: 'Confirmation',

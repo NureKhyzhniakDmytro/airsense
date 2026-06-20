@@ -25,8 +25,18 @@ This keeps the deployment model service-oriented while avoiding separate build a
 
 - EMQX is the MQTT broker for device messages and internal service events.
 - PostgreSQL stores domain data, users, rooms, sensors, devices, settings, and telemetry history.
-- Redis is deployed as prepared infrastructure for caching/latest telemetry or queue-related use cases.
+- Redis is deployed as prepared infrastructure for future caching or queue-related use cases. Current telemetry and command history are persisted in PostgreSQL.
 - Firebase Cloud Messaging remains optional in local Kubernetes. When Firebase credentials are not mounted, no-op auth/notification services allow the local stack to start.
+
+Sensor telemetry enters through MQTT topics in the form `sensor/{parameter}` with the sensor serial number in the `serial-number` MQTT user property. Room commands are published to `room/{roomId}` and are also recorded in `device_data`, so polling devices and MQTT subscribers see the same command intent.
+
+## Access Model
+
+Environment membership is split into read and manage capabilities:
+
+- `user` is read-only and can view rooms, layouts, assets, telemetry history, AI forecasts, and members.
+- `admin` and `owner` can manage rooms, sensors, devices, automation curves, layouts, and AI recommendation actions.
+- `owner` remains required for destructive environment-level actions and role updates.
 
 ## Web Client
 
@@ -39,6 +49,8 @@ The local Kubernetes deployment is described by the Helm chart in `charts/airsen
 The chart includes:
 
 - Deployments for API, telemetry ingestion, automation, notification, EMQX, and Redis.
+- Deployments for the AI prediction service and demo telemetry simulator.
+- CronJob for AI model training.
 - StatefulSet for PostgreSQL.
 - ClusterIP services for API, EMQX, PostgreSQL, and Redis.
 - ConfigMaps for EMQX configuration and PostgreSQL initialization scripts.
@@ -65,6 +77,8 @@ Local credentials are not committed as a standalone Kubernetes Secret manifest. 
 `MqttServiceBase` now keeps background services alive when EMQX or Kubernetes DNS is not immediately available. It uses a reconnect loop with exponential backoff and logs connection failures instead of allowing `BackgroundService` exceptions to stop the ASP.NET host. This avoids CrashLoopBackOff during normal Kubernetes startup ordering.
 
 The reconnect behavior was verified by scaling the EMQX deployment to zero. API and worker pods remained `Running`, logged retry attempts, and reconnected after EMQX was restored.
+
+MQTT and device HTTP inputs are hardened against malformed topics, malformed JSON payloads, and invalid Basic authentication headers. Invalid external messages are ignored or rejected without crashing background services.
 
 ## Local Incus/Minikube Requirements
 

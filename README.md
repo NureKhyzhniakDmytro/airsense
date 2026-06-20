@@ -7,11 +7,19 @@ AirSense is a smart indoor air-quality monitoring and automation system. The rep
 - `api/` - ASP.NET Core backend, REST API, MQTT integration, service-role workers, PostgreSQL schema.
 - `web/` - Nuxt 3 web client application.
 - `mobile/` - mobile client application.
+- `services/ai-prediction-service/` - FastAPI prediction, simulation, recommendation, and training code.
+- `services/device-telemetry-simulator/` - demo telemetry generator that imitates normal sensors/devices.
 - `charts/airsense/` - Helm chart for local Kubernetes/Minikube deployment.
 - `scripts/` - project automation scripts.
 - `docs/` - architecture and infrastructure notes.
 
 The IoT firmware code is intentionally not included in this monorepo. In the diploma scope it is treated as an external device-side component that communicates with the platform through MQTT.
+
+## Access Contract
+
+Environment role `user` is read-only. It can view environments, rooms, room layouts, sensors, devices, telemetry history, AI forecasts, and member lists. It cannot create, update, delete, invite, configure automation curves, edit room layouts, generate AI recommendations, or apply AI recommendations.
+
+Environment owners and administrators can manage rooms, assets, automation curves, layouts, and AI recommendation actions.
 
 ## Web Client
 
@@ -41,3 +49,19 @@ curl http://localhost:8080/healthz
 ```
 
 More details are documented in `docs/infrastructure.md` and `k8s/README.md`.
+
+## Tests
+
+Backend tests are in `api/Airsense.API.Tests` and are included in `api/airsense.sln`.
+
+```bash
+dotnet test api/airsense.sln
+```
+
+Frontend tests use Vitest:
+
+```bash
+cd web
+npm install
+npm test
+```

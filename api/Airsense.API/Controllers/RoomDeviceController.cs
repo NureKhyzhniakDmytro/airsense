@@ -31,7 +31,7 @@ public class RoomDeviceController(
         if (room is null)
             return NotFound(new { message = "Room not found" });
         
-        if (!await roomRepository.IsHasAccessAsync(userId, roomId))
+        if (!await roomRepository.IsMemberAsync(userId, roomId))
             return Forbid();
         
         var devices = await deviceRepository.GetAsync(roomId, count, skip);

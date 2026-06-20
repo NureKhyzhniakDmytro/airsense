@@ -9,7 +9,7 @@
           @click="inviteMemberDialog = true"
           label="Invite"
           icon="pi pi-plus"
-          :disabled="environment?.role === 'user'"
+          v-if="!isEnvironmentReadOnly"
       />
       </template>
     </AppSectionHeader>
@@ -89,6 +89,7 @@ import type { ContextMenuMethods } from 'primevue/contextmenu';
 import { useToast } from 'primevue/usetoast';
 import EditMemberDialog from "@/components/environment/EditMemberDialog.vue";
 import type { User } from "@/types/user";
+import { isReadOnlyRole } from "@/utils/roomAccess";
 
 const route = useRoute();
 const authStore = useAuthStore();
@@ -107,6 +108,7 @@ const toast = useToast();
 const selectedMember = ref<User | null>(null);
 
 const currentUserEmail = computed(() => authStore.currentUserEmail);
+const isEnvironmentReadOnly = computed(() => !environment.value || isReadOnlyRole(environment.value.role));
 
 const items = ref([
   {
@@ -166,7 +168,7 @@ function onMenuButtonClick(event: Event, rowData: User) {
   contextMenu.value?.show(event);
 }
 
-const canModify = (user: User) => user.role !== "owner" && user.email !== currentUserEmail.value;
+const canModify = (user: User) => !isEnvironmentReadOnly.value && user.role !== "owner" && user.email !== currentUserEmail.value;
 
 const deleteUser = async (user: User) => {
   try {

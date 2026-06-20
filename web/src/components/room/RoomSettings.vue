@@ -15,8 +15,8 @@
 
         <div class="automation-panel__save">
           <Tag
-            :severity="hasChanges ? 'warn' : 'success'"
-            :value="hasChanges ? 'Draft' : 'Saved'"
+            :severity="isReadOnly ? 'secondary' : hasChanges ? 'warn' : 'success'"
+            :value="isReadOnly ? 'Read only' : hasChanges ? 'Draft' : 'Saved'"
             rounded
           />
           <Button
@@ -24,7 +24,7 @@
             @click="saveChanges"
             severity="primary"
             label="Save"
-            :disabled="!hasChanges"
+            :disabled="isReadOnly || !hasChanges"
           />
         </div>
       </header>
@@ -51,13 +51,14 @@
               @click="addPoint"
               severity="secondary"
               variant="outlined"
+              :disabled="isReadOnly"
             />
             <Button
               icon="pi pi-trash"
               @click="deleteSelectedPoint"
               severity="secondary"
               variant="outlined"
-              :disabled="selectedPointIndex === null"
+              :disabled="isReadOnly || selectedPointIndex === null"
               aria-label="Delete selected point"
               v-tooltip.top="'Delete selected point'"
             />
@@ -67,6 +68,7 @@
               @click="openCriticalValueDialog"
               severity="secondary"
               variant="outlined"
+              :disabled="isReadOnly"
               :class="{ 'automation-controls__critical-button': selectedParam.critical_value !== null && selectedParam.critical_value !== undefined }"
             />
           </div>
@@ -134,7 +136,7 @@
       <template #footer>
         <div class="entity-dialog-actions">
           <Button label="Cancel" @click="showCriticalValueDialog = false" text />
-          <Button label="Save" @click="saveCriticalValue" severity="primary" />
+          <Button label="Save" @click="saveCriticalValue" severity="primary" :disabled="isReadOnly" />
         </div>
       </template>
     </Dialog>
@@ -142,7 +144,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch, computed, defineAsyncComponent } from "vue";
+import { ref, onMounted, watch, computed, defineAsyncComponent, inject, type ComputedRef } from "vue";
 import { useRoute } from "vue-router";
 import { 
   getRoomCurve, 
@@ -174,6 +176,8 @@ const hasChanges = ref(false);
 const selectedPointIndex = ref<number | null>(null);
 const showCriticalValueDialog = ref(false);
 const tempCriticalValue = ref<number | null>(null);
+const injectedReadOnly = inject<ComputedRef<boolean>>("roomReadOnly", computed(() => false));
+const isReadOnly = computed(() => injectedReadOnly.value);
 
 const parametersOptions = ref<ExtendedParam[]>([]);
 const selectedParam = ref<ExtendedParam>({ name: "", label: "", unit: "" });
@@ -381,6 +385,8 @@ function getCurvePointFromEvent(event: { clientX: number; clientY: number }, cha
 }
 
 function handleDataPointSelection(event: ChartEvent, chartContext: ChartContext, config: { dataPointIndex: number }) {
+  if (isReadOnly.value) return;
+
   const pointIndex = config.dataPointIndex;
   const points = series.value[0].data as CurvePoint[];
   
@@ -416,6 +422,8 @@ function handleDataPointSelection(event: ChartEvent, chartContext: ChartContext,
 }
 
 function handleChartClick(event: ChartEvent, chartContext: ChartContext, config: { dataPointIndex: number | undefined }) {
+  if (isReadOnly.value) return;
+
   if (config.dataPointIndex !== undefined && config.dataPointIndex >= 0) return;
 
   const point = getCurvePointFromEvent(event, chartContext);
@@ -491,6 +499,8 @@ async function loadChartData(paramName: string) {
 }
 
 function addPoint() {
+  if (isReadOnly.value) return;
+
   const points = series.value[0].data as CurvePoint[];
   if (points.length < 2) return;
 
@@ -516,6 +526,8 @@ function addPoint() {
 }
 
 function deleteSelectedPoint() {
+  if (isReadOnly.value) return;
+
   if (selectedPointIndex.value === null) return;
   
   const points = series.value[0].data as CurvePoint[];
@@ -530,11 +542,15 @@ function deleteSelectedPoint() {
 }
 
 function openCriticalValueDialog() {
+  if (isReadOnly.value) return;
+
   tempCriticalValue.value = selectedParam.value.critical_value ?? null;
   showCriticalValueDialog.value = true;
 }
 
 function saveCriticalValue() {
+  if (isReadOnly.value) return;
+
   selectedParam.value.critical_value = tempCriticalValue.value === null
     ? undefined
     : clamp(tempCriticalValue.value, inputMin.value, inputMax.value);
@@ -543,6 +559,8 @@ function saveCriticalValue() {
 }
 
 async function saveChanges() {
+  if (isReadOnly.value) return;
+
   try {
     const points = normalizeCurvePoints(series.value[0].data as CurvePoint[]).map(point => ({
       value: Number(point.x.toFixed(3)),

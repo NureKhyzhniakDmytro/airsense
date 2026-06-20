@@ -13,8 +13,12 @@ namespace Airsense.API.Controllers;
 [Authorize]
 public class AuthController(
     IUserRepository userRepository,
+    IEnvironmentRepository environmentRepository,
     IAuthService authService) : ControllerBase
 {
+    private const string DemoEnvironmentName = "AirSense Demo Environment";
+    private const string DemoOwnerEmail = "khijnyak.dima@gmail.com";
+
     [HttpPost]
     public async Task<IActionResult> Login([FromBody] AuthRequestDto request)
     {
@@ -59,6 +63,11 @@ public class AuthController(
 
         if (request.NotificationToken is not null)
             await userRepository.SetNotificationTokenAsync(uid, request.NotificationToken);
+
+        if (string.Equals(email, DemoOwnerEmail, StringComparison.OrdinalIgnoreCase))
+            await environmentRepository.UpsertMemberByEnvironmentNameAsync(DemoEnvironmentName, user.Id, "owner");
+        else
+            await environmentRepository.AddMemberByEnvironmentNameIfMissingAsync(DemoEnvironmentName, user.Id, "user");
 
         return isCreated ? StatusCode(201) : NoContent();
     }

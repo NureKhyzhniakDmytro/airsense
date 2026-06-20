@@ -1,20 +1,6 @@
 <template>
-  <div class="flex min-w-0 w-full flex-col flex-grow"
-    :class="{ 'place-content-center': environment?.role === 'user' }"
-  >
-    <div
-      v-if="environment?.role === 'user'"
-      class="flex flex-col flex-grow justify-center items-center max-w-lg self-center"
-    >
-      <EmptyState
-        class="empty-state--centered"
-        title="Room access is restricted"
-        description="Please contact your administrator if you believe this is an error."
-        icon="pi pi-lock"
-      />
-    </div>
-
-    <div v-else class="room-page">
+  <div class="flex min-w-0 w-full flex-col flex-grow">
+    <div class="room-page">
       <section class="room-panel">
         <header class="room-panel__header">
           <div class="room-panel__title">
@@ -27,7 +13,7 @@
 
           <div class="room-panel__actions">
             <Skeleton v-if="isLoading" width="8rem" height="2rem" />
-            <template v-else>
+            <template v-else-if="!isReadOnly">
               <Button label="Edit" icon="pi pi-pencil" severity="secondary" variant="text" @click="editRoomDialog = true" />
               <Button label="Delete" icon="pi pi-trash" severity="danger" variant="text" @click="deleteRoom" />
             </template>
@@ -40,14 +26,14 @@
       </section>
     </div>
 
-    <edit-room-dialog v-model="editRoomDialog" :envId="envId" :roomId="roomId" @refresh="refreshRoom" />
+    <edit-room-dialog v-if="!isReadOnly" v-model="editRoomDialog" :envId="envId" :roomId="roomId" @refresh="refreshRoom" />
   </div>
 </template>
 
 <script setup lang="ts">
 definePageMeta({ name: 'room', layout: 'dashboard', requiresAuth: true })
 
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, provide, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useEnvironmentStore } from "@/store/environmentStore";
 import { getRoom, removeRoom as deleteRoomApi } from "@/services/apiService";
@@ -56,10 +42,10 @@ import type { Room } from "@/types/room";
 import Button from 'primevue/button';
 import Skeleton from 'primevue/skeleton';
 import EditRoomDialog from "@/components/room/EditRoomDialog.vue";
-import EmptyState from "@/components/common/EmptyState.vue";
 import PlaceIcon from "@/components/common/PlaceIcon.vue";
 import { useConfirm } from "primevue/useconfirm";
 import { useToast } from "primevue/usetoast";
+import { isReadOnlyRole } from "@/utils/roomAccess";
 
 const route = useRoute();
 const router = useRouter();
@@ -84,6 +70,9 @@ if (route.name === "room") {
 const environment = computed(() => environmentData.value ?? null);
 const room = computed(() => roomData.value ?? null);
 const isLoading = computed(() => environmentPending.value || roomPending.value || isRefreshing.value);
+const isReadOnly = computed(() => !environment.value || isReadOnlyRole(environment.value.role));
+
+provide("roomReadOnly", isReadOnly);
 
 const withTimeout = async <T,>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -115,11 +104,6 @@ const loadEnvironment = async (forceRefresh = false) => {
 const loadRoom = async () => {
   roomPending.value = true;
   try {
-    if (environment.value?.role === "user") {
-      roomData.value = null;
-      return;
-    }
-
     roomData.value = await withTimeout(getRoom(envId, roomId), dataLoadTimeoutMs);
   } catch {
     roomData.value = null;
@@ -144,6 +128,8 @@ onMounted(async () => {
 });
 
 const deleteRoom = async () => {
+  if (isReadOnly.value) return;
+
   confirm.require({
         message: 'Are you sure you want to delete this room?',
         header: 'Confirmation',

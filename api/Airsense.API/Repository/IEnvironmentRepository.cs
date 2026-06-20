@@ -28,6 +28,10 @@ public interface IEnvironmentRepository
     public Task UpdateAsync(int envId, string name, string icon);
     
     public Task AddMemberAsync(int envId, int userId);
+
+    public Task AddMemberByEnvironmentNameIfMissingAsync(string environmentName, int userId, string role);
+
+    public Task UpsertMemberByEnvironmentNameAsync(string environmentName, int userId, string role);
     
     public Task RemoveMemberAsync(int envId, int userId);
     

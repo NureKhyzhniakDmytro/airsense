@@ -26,7 +26,7 @@ public class RoomController(
         if (room is null)
             return NotFound(new { message = "Room not found" });
         
-        if (!await roomRepository.IsHasAccessAsync(userId, roomId))
+        if (!await roomRepository.IsMemberAsync(userId, roomId))
             return Forbid();
         
         var types = await roomRepository.GetAvailableTypesAsync(roomId);
@@ -43,7 +43,7 @@ public class RoomController(
         if (room is null)
             return NotFound(new { message = "Room not found" });
         
-        if (!await roomRepository.IsHasAccessAsync(userId, roomId))
+        if (!await roomRepository.IsMemberAsync(userId, roomId))
             return Forbid();
 
         var types = await roomRepository.GetAvailableTypesAsync(roomId);
@@ -63,7 +63,6 @@ public class RoomController(
                     new() { Value = type.MaxValue, FanSpeed = 100 }
                 }
             };
-            await settingsRepository.UpdateCurveAsync(roomId, parameter, curve);
         }
 
         return Ok(curve);
@@ -105,7 +104,7 @@ public class RoomController(
         if (room is null)
             return NotFound(new { message = "Room not found" });
         
-        if (!await roomRepository.IsHasAccessAsync(userId, roomId))
+        if (!await roomRepository.IsMemberAsync(userId, roomId))
             return Forbid();
 
         var fromDate = from is null ? DateTime.UtcNow.AddDays(-3) : DateTime.UnixEpoch.AddMilliseconds(from.Value);
@@ -140,7 +139,7 @@ public class RoomController(
         if (room is null)
             return NotFound(new { message = "Room not found" });
         
-        if (!await roomRepository.IsHasAccessAsync(userId, roomId))
+        if (!await roomRepository.IsMemberAsync(userId, roomId))
             return Forbid();
         
         var device = await deviceRepository.GetByIdAsync(deviceId);
@@ -182,7 +181,7 @@ public class RoomController(
         if (room is null)
             return NotFound(new { message = "Room not found" });
         
-        if (!await roomRepository.IsHasAccessAsync(userId, roomId))
+        if (!await roomRepository.IsMemberAsync(userId, roomId))
             return Forbid();
         
         var types = await roomRepository.GetAvailableTypesAsync(roomId);
@@ -200,7 +199,7 @@ public class RoomController(
             {
                 From = new DateTimeOffset(fromDate).ToUnixTimeMilliseconds(),
                 To = new DateTimeOffset(toDate).ToUnixTimeMilliseconds(),
-                Interval = HistoryDto.HistoryInterval.Hour
+                Interval = interval
             }
         });
     }
@@ -222,7 +221,7 @@ public class RoomController(
         if (room is null)
             return NotFound(new { message = "Room not found" });
         
-        if (!await roomRepository.IsHasAccessAsync(userId, roomId))
+        if (!await roomRepository.IsMemberAsync(userId, roomId))
             return Forbid();
         
         var types = await roomRepository.GetAvailableTypesAsync(roomId);
@@ -251,7 +250,7 @@ public class RoomController(
             {
                 From = new DateTimeOffset(fromDate).ToUnixTimeMilliseconds(),
                 To = new DateTimeOffset(toDate).ToUnixTimeMilliseconds(),
-                Interval = HistoryDto.HistoryInterval.Hour
+                Interval = interval
             }
         });
     }

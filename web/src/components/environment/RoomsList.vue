@@ -9,7 +9,7 @@
           @click="createRoomDialog = true"
           label="New Room"
           icon="pi pi-plus"
-          :disabled="environment?.role === 'user'"
+          v-if="!isEnvironmentReadOnly"
         />
       </template>
     </AppSectionHeader>
@@ -48,19 +48,21 @@
               <span class="room-row__copy">
                 <span class="room-row__title">{{ item.name }}</span>
                 <span class="room-row__meta">
-                  <Tag
+                  <span
                     v-if="item.device_speed !== null && item.device_speed !== undefined"
-                    severity="info"
-                    :value="`Fan ${formatValue(item.device_speed)}%`"
-                    rounded
-                  />
-                  <Tag
+                    class="room-row__metric-chip room-row__metric-chip--device"
+                  >
+                    <span class="material-symbols-outlined">mode_fan</span>
+                    <span>Fan {{ formatValue(item.device_speed) }}%</span>
+                  </span>
+                  <span
                     v-for="param in item.parameters || []"
                     :key="param.name"
-                    severity="secondary"
-                    :value="`${getParameterLabel(param.name)} ${formatValue(param.value)}${param.unit}`"
-                    rounded
-                  />
+                    class="room-row__metric-chip"
+                  >
+                    <span class="material-symbols-outlined">{{ getParameterIcon(param.name) }}</span>
+                    <span>{{ getParameterLabel(param.name) }} {{ formatValue(param.value) }}{{ param.unit }}</span>
+                  </span>
                   <span v-if="!item.parameters?.length && item.device_speed == null" class="room-row__muted">
                     Waiting for telemetry
                   </span>
@@ -83,7 +85,7 @@
       icon="pi pi-home"
       action-label="New Room"
       action-icon="pi pi-plus"
-      :disabled="environment?.role === 'user'"
+      :disabled="isEnvironmentReadOnly"
       @action="createRoomDialog = true"
     />
 
@@ -92,13 +94,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { computed, ref, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useEnvironmentStore } from "@/store/environmentStore";
 import { getRooms } from "@/services/apiService";
 import type { Environment } from "@/types/environment";
 import type { Room } from "@/types/room";
-import { PARAMETER_LABELS } from "@/types/sensor";
+import { PARAMETER_ICONS, PARAMETER_LABELS } from "@/types/sensor";
 import CreateRoomDialog from "@/components/environment/CreateRoomDialog.vue";
 import AppSectionHeader from "@/components/common/AppSectionHeader.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
@@ -106,7 +108,7 @@ import PlaceIcon from "@/components/common/PlaceIcon.vue";
 import Button from "primevue/button";
 import DataView, { type DataViewPageEvent } from "primevue/dataview";
 import Skeleton from "primevue/skeleton";
-import Tag from "primevue/tag";
+import { isReadOnlyRole } from "@/utils/roomAccess";
 
 const router = useRouter();
 const route = useRoute();
@@ -118,10 +120,15 @@ const isLoading = ref(true);
 const environment = ref<Environment | null>(null);
 let refreshInterval: ReturnType<typeof setInterval> | null = null;
 const createRoomDialog = ref(false);
+const isEnvironmentReadOnly = computed(() => !environment.value || isReadOnlyRole(environment.value.role));
 let currentPage = 0;
 
 const getParameterLabel = (name: string) => {
   return PARAMETER_LABELS[name] || name;
+};
+
+const getParameterIcon = (name: string) => {
+  return PARAMETER_ICONS[name] || "monitoring";
 };
 
 const formatValue = (value: number | null | undefined) => {
@@ -159,9 +166,6 @@ const stopAutoRefresh = () => {
 };
 
 const goToRoom = (roomId: number) => {
-  if (environment.value?.role === 'user') {
-    return;
-  }
   router.push({
     name: 'room',
     params: {
@@ -299,6 +303,39 @@ onUnmounted(stopAutoRefresh);
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.room-row__metric-chip {
+  align-items: center;
+  background: var(--app-surface-soft);
+  border: 1px solid var(--app-border);
+  border-radius: 999px;
+  color: var(--app-text-strong);
+  display: inline-flex;
+  gap: 5px;
+  min-height: 25px;
+  max-width: 100%;
+  padding: 3px 8px;
+}
+
+.room-row__metric-chip .material-symbols-outlined {
+  color: var(--app-muted);
+  flex: 0 0 auto;
+  font-size: 0.95rem;
+}
+
+.room-row__metric-chip span:last-child {
+  font-size: 0.78rem;
+  font-weight: 680;
+  line-height: 1rem;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-row__metric-chip--device .material-symbols-outlined {
+  color: var(--app-primary);
 }
 
 .room-row__muted {
