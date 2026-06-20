@@ -906,7 +906,7 @@ const airflowRoleOptions: AirflowRoleOption[] = [
   { value: "exhaust", label: "Exhaust", description: "Room air is pulled out through this device", icon: "output" },
 ];
 const mapLayerOptions: MapLayerOption[] = [
-  { value: "temperature", label: "Heat", description: "Temperature field from room sensors", icon: PARAMETER_ICONS.temperature, source: "sensor" },
+  { value: "temperature", label: "Heat", description: "Heat field from equipment, airflow and calibrated sensors", icon: PARAMETER_ICONS.temperature, source: "sensor" },
   { value: "humidity", label: "Humidity", description: "Humidity field from room sensors", icon: PARAMETER_ICONS.humidity, source: "sensor" },
   { value: "co2", label: "CO₂", description: "CO₂ concentration field from room sensors", icon: PARAMETER_ICONS.co2, source: "sensor" },
   { value: "device_speed", label: "Ventilation", description: "Fan speed field from ventilation devices", icon: "mode_fan", source: "vent" },
@@ -921,7 +921,7 @@ const roomId = Number(route.params.roomId);
 const layoutLoadTimeoutMs = 5000;
 const telemetryRefreshMs = 30000;
 const mapGridColumns = 96;
-const mapGradientColumns = 24;
+const mapGradientColumns = 30;
 const wallMountTolerance = 0.04;
 const roomClipId = `layout-room-clip-${roomId}`;
 const gridClipId = `layout-room-grid-clip-${roomId}`;
@@ -1095,7 +1095,7 @@ const mapGradientFieldDrafts = computed<MapGradientDraft[]>(() => {
 
       if (!isPointInsidePolygon(point, geometryPoints.value)) continue;
 
-      const field = getSensorFieldValue(point, layer, samples);
+      const field = getLayerFieldValue(point, layer, samples);
       if (!field) continue;
 
       drafts.push({
@@ -1675,37 +1675,26 @@ function getMapSamples(layer: RoomMapLayer): MapSample[] {
 }
 
 function getEquipmentHeatSamples(sensorSamples: MapSample[]): MapSample[] {
-  if (!sensorSamples.length) return [];
-
+  const baseline = getTemperatureAmbientFallback(sensorSamples);
   const sensorValues = sensorSamples.map((sample) => sample.value);
-  const meanTemperature = average(sensorValues);
-  const maxTemperature = Math.max(...sensorValues);
-  const observedSpread = Math.max(0, maxTemperature - Math.min(...sensorValues));
+  const observedSpread = sensorValues.length
+    ? Math.max(0, Math.max(...sensorValues) - Math.min(...sensorValues))
+    : 0;
 
   return equipmentLayoutItems.value
     .map((item) => {
       const heatLoad = getEquipmentHeatLoad(item);
       if (heatLoad <= 0) return null;
       const point = getItemCenter(item);
-      const baseline = interpolateSensorFieldBase(point, "temperature", sensorSamples, getAirflowAtPoint(point))?.value ?? meanTemperature;
-      const nearestSensor = getNearestSensorSample(point, sensorSamples);
-      const nearestDistance = nearestSensor ? Math.hypot(point.x - nearestSensor.point.x, point.y - nearestSensor.point.y) : getRoomDiagonal();
       const heatPotential = getEquipmentHeatPotential(heatLoad);
-      const airflowCooling = clamp(getAirflowAtPoint(point).intensity * 0.55, 0, 0.62);
-      const sensorRangeCap = maxTemperature + clamp(observedSpread * 1.2 + 0.35, 0.45, 2.2);
-      const nearestSensorCap = nearestSensor
-        ? nearestSensor.value + clamp(nearestDistance * 0.32, 0.22, 1.25)
-        : sensorRangeCap;
-      const upperBound = Math.max(baseline + 0.12, Math.min(sensorRangeCap, nearestSensorCap));
-      const value = clamp(baseline + heatPotential * (1 - airflowCooling), baseline + 0.12, upperBound);
 
       return {
         id: `equipment-heat-${item.id}`,
         item,
         point,
-        value: round(value),
+        value: round(baseline + heatPotential),
         source: "equipment",
-        confidence: clamp(0.34 + heatPotential * 0.13 + observedSpread * 0.12, 0.36, 0.72),
+        confidence: clamp(0.58 + heatPotential * 0.08 + observedSpread * 0.04, 0.52, 0.86),
       };
     })
     .filter((sample): sample is MapSample => sample !== null);
@@ -1728,7 +1717,7 @@ function getNearestSensorSample(point: FieldPoint, samples: MapSample[]): MapSam
 }
 
 function getEquipmentHeatPotential(heatLoad: number) {
-  return clamp(Math.sqrt(heatLoad) * 0.28 + heatLoad * 0.014, 0.25, 2.35);
+  return clamp(Math.sqrt(heatLoad) * 0.34 + heatLoad * 0.02, 0.32, 3.9);
 }
 
 function getEquipmentHeatLoad(item: RoomLayoutItem) {
@@ -1796,10 +1785,175 @@ function getSensorSampleValues(samples: MapSample[]) {
     .map((sample) => sample.value);
 }
 
+function getLayerFieldValue(point: FieldPoint, layer: RoomMapLayer, samples: MapSample[]): FieldValue | null {
+  if (layer === "temperature") return getTemperatureFieldValue(point, samples);
+  return getSensorFieldValue(point, layer, samples);
+}
+
+function getTemperatureFieldValue(point: FieldPoint, samples: MapSample[]): FieldValue | null {
+  const sensorSamples = samples.filter((sample) => sample.source === "sensor");
+  const heatSamples = samples.filter((sample) => sample.source === "equipment");
+
+  if (!heatSamples.length) return getSensorFieldValue(point, "temperature", sensorSamples);
+
+  const airflow = getAirflowAtPoint(point);
+  const heatScale = getTemperatureHeatScale(sensorSamples, heatSamples);
+  const ambient = getTemperatureAmbientValue(sensorSamples, heatSamples, heatScale);
+  const sourceField = getTemperatureHeatSourceField(point, heatSamples, heatScale);
+  const advectedValue = applyTemperatureHeatAdvection(point, ambient + sourceField.delta, ambient, heatSamples, airflow, heatScale);
+  const referenceValues = getTemperatureReferenceValues(sensorSamples, heatSamples, ambient, heatScale);
+  const conditionedField = applyVentConditioning(point, "temperature", advectedValue, referenceValues);
+  const eddy = getAirflowEddy("temperature", point, airflow, referenceValues);
+  const anchor = getTemperatureSensorAnchorAtPoint(point, sensorSamples, heatSamples);
+  const rawValue = conditionedField.value + eddy;
+  const calibratedValue = anchor
+    ? rawValue + (anchor.value - rawValue) * anchor.influence
+    : rawValue;
+
+  return {
+    value: calibratedValue,
+    confidence: clamp(Math.max(sourceField.confidence, conditionedField.confidence, anchor?.influence ?? 0) + 0.08, 0.12, 1),
+    airflow: Math.max(airflow.intensity, conditionedField.intensity),
+  };
+}
+
+function getTemperatureAmbientFallback(sensorSamples: MapSample[]) {
+  const values = sensorSamples.map((sample) => sample.value);
+  if (!values.length) return 21.5;
+
+  const mean = average(values);
+  const minimum = Math.min(...values);
+  const spread = Math.max(...values) - minimum;
+  return clamp(mean - 0.28 - spread * 0.18, minimum - 0.6, mean);
+}
+
+function getTemperatureAmbientValue(sensorSamples: MapSample[], heatSamples: MapSample[], heatScale = 1) {
+  const fallback = getTemperatureAmbientFallback(sensorSamples);
+  if (!sensorSamples.length || !heatSamples.length) return fallback;
+
+  const sensorValues = sensorSamples.map((sample) => sample.value);
+  const calibratedAmbientValues = sensorSamples.map((sample) => (
+    sample.value - getTemperatureHeatSourceField(sample.point, heatSamples, heatScale).delta
+  ));
+  const ambient = average(calibratedAmbientValues);
+  const minimum = Math.min(...sensorValues);
+  const mean = average(sensorValues);
+  const comfortCeiling = 23.2 + clamp(Math.max(0, mean - 23.2) * 0.42, 0, 2.8);
+
+  return clamp(Math.min(ambient, comfortCeiling), minimum - 4.2, mean + 0.25);
+}
+
+function getTemperatureReferenceValues(sensorSamples: MapSample[], heatSamples: MapSample[], ambient: number, heatScale = 1) {
+  const sensorValues = sensorSamples.map((sample) => sample.value);
+  const sharedHeat = getTemperatureSharedHeatDelta(heatSamples, heatScale);
+  const sourceValues = heatSamples.map((sample) => ambient + sharedHeat + getEquipmentHeatPotential(getEquipmentHeatLoad(sample.item)) * heatScale);
+  return sensorValues.length
+    ? [...sensorValues, ambient, ...sourceValues]
+    : [ambient, ...sourceValues];
+}
+
+function getTemperatureHeatScale(sensorSamples: MapSample[], heatSamples: MapSample[]) {
+  const sensorValues = sensorSamples.map((sample) => sample.value);
+  if (!sensorValues.length || !heatSamples.length) return 1;
+
+  const observedExcess = Math.max(0, average(sensorValues) - 23);
+  if (observedExcess <= 0) return 1;
+
+  const totalPotential = heatSamples.reduce((sum, sample) => (
+    sum + getEquipmentHeatPotential(getEquipmentHeatLoad(sample.item))
+  ), 0);
+
+  return clamp(1 + observedExcess / Math.max(totalPotential * 0.42 + 0.35, 0.35), 1, 6.8);
+}
+
+function getTemperatureHeatSourceField(point: FieldPoint, heatSamples: MapSample[], heatScale = 1) {
+  const airflow = getAirflowAtPoint(point);
+  let delta = getTemperatureSharedHeatDelta(heatSamples, heatScale);
+  let confidence = heatSamples.length ? 0.16 : 0;
+
+  for (const sample of heatSamples) {
+    const heatLoad = getEquipmentHeatLoad(sample.item);
+    if (heatLoad <= 0) continue;
+
+    const potential = getEquipmentHeatPotential(heatLoad) * heatScale;
+    const distance = getDistanceToItemBounds(point, sample.item);
+    const diffusionRadius = getEquipmentHeatDiffusionRadius(sample.item, heatLoad);
+    const alignment = getFlowAlignment(sample.point, point, airflow);
+    const downwind = Math.max(0, alignment);
+    const upwind = Math.max(0, -alignment);
+    const effectiveDistance = distance / (1 + downwind * airflow.intensity * 0.86);
+    const direct = Math.exp(-((effectiveDistance / diffusionRadius) ** 1.58));
+    const tail = Math.exp(-(effectiveDistance / Math.max(diffusionRadius * 1.85, 0.01))) * 0.22;
+    const obstruction = getObstructionFactor(sample.point, point, sample.item.id);
+    const ventilationRelief = clamp(getAirflowAtPoint(sample.point).intensity * 0.18, 0, 0.22);
+    const upwindPenalty = 1 - upwind * airflow.intensity * 0.32;
+    const contribution = potential * (direct * 0.78 + tail) * obstruction * upwindPenalty * (1 - ventilationRelief);
+
+    delta += contribution;
+    confidence += clamp((direct + tail) * 0.42 + potential * 0.035, 0, 0.36);
+  }
+
+  return {
+    delta: clamp(delta, 0, 9),
+    confidence: clamp(confidence, 0.08, 1),
+  };
+}
+
+function getTemperatureSharedHeatDelta(heatSamples: MapSample[], heatScale = 1) {
+  const totalPotential = heatSamples.reduce((sum, sample) => (
+    sum + getEquipmentHeatPotential(getEquipmentHeatLoad(sample.item)) * heatScale
+  ), 0);
+
+  return clamp(totalPotential * 0.07, 0, 1.35);
+}
+
+function getEquipmentHeatDiffusionRadius(item: RoomLayoutItem, heatLoad: number) {
+  const roomSize = Math.min(layout.value.width, layout.value.height);
+  const itemSize = Math.hypot(item.width, item.height);
+  return clamp(itemSize * 0.62 + roomSize * 0.2 + Math.sqrt(heatLoad) * 0.08, 0.8, getRoomDiagonal() * 0.46);
+}
+
+function getDistanceToItemBounds(point: FieldPoint, item: RoomLayoutItem) {
+  const center = getItemCenter(item);
+  const xAxis = getItemDirection(item);
+  const yAxis = getNormal(xAxis);
+  const deltaX = point.x - center.x;
+  const deltaY = point.y - center.y;
+  const localX = deltaX * xAxis.x + deltaY * xAxis.y;
+  const localY = deltaX * yAxis.x + deltaY * yAxis.y;
+  const outsideX = Math.max(Math.abs(localX) - item.width / 2, 0);
+  const outsideY = Math.max(Math.abs(localY) - item.height / 2, 0);
+  return Math.hypot(outsideX, outsideY);
+}
+
+function applyTemperatureHeatAdvection(
+  point: FieldPoint,
+  value: number,
+  ambient: number,
+  heatSamples: MapSample[],
+  airflow: { x: number; y: number; intensity: number },
+  heatScale = 1,
+) {
+  if (airflow.intensity < 0.025 || !heatSamples.length) return value;
+
+  const traceDistance = clamp(getRoomDiagonal() * airflow.intensity * 0.24, 0.1, Math.min(layout.value.width, layout.value.height) * 0.46);
+  const upstreamPoint = getBacktracedAirflowPoint(point, airflow, traceDistance);
+  const upstreamField = getTemperatureHeatSourceField(upstreamPoint, heatSamples, heatScale);
+  const upstreamValue = ambient + upstreamField.delta;
+  const mix = clamp(airflow.intensity * 0.64, 0, 0.68);
+
+  return value + (upstreamValue - value) * mix;
+}
+
+function getTemperatureSensorAnchorAtPoint(_point: FieldPoint, sensorSamples: MapSample[], heatSamples: MapSample[]): SensorAnchor | null {
+  if (!heatSamples.length) return getSensorAnchorAtPoint(point, sensorSamples);
+  return null;
+}
+
 function getMapFieldAtPoint(point: FieldPoint, layer: RoomMapLayer) {
   if (layer === "off") return null;
   if (layer === "device_speed") return getVentilationFieldValue(point);
-  return getSensorFieldValue(point, layer, getMapSamples(layer));
+  return getLayerFieldValue(point, layer, getMapSamples(layer));
 }
 
 function getMapLayerUnit(layer: RoomMapLayer) {
@@ -2179,8 +2333,9 @@ function getLayerBackgroundValue(layer: RoomMapLayer, values: number[]) {
   return minimum;
 }
 
-function getObstructionFactor(start: FieldPoint, end: FieldPoint) {
+function getObstructionFactor(start: FieldPoint, end: FieldPoint, ignoredItemId: string | null = null) {
   return layout.value.items.reduce((factor, item) => {
+    if (ignoredItemId && item.id === ignoredItemId) return factor;
     const type = getItemType(item.type).value;
     if (type !== "obstacle" && type !== "equipment") return factor;
     if (!segmentPassesThroughItem(item, start, end)) return factor;
