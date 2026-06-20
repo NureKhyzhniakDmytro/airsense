@@ -15,6 +15,8 @@ public interface IUserRepository
     public Task<User> CreateWithIdAsync(User user);
     
     public Task SetNotificationTokenAsync(string uid, string token);
+
+    public Task<ICollection<int>> GetIdsByNotificationTokensAsync(ICollection<string> tokens);
     
     public Task<User?> GetByEmailAsync(string email);
 }

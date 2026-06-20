@@ -1339,7 +1339,31 @@ def publish_sensor_value(client: mqtt.Client, serial: str, parameter: str, value
         logger.warning("Failed to publish telemetry to %s from %s: %s", topic, serial, result.rc)
 
 
-def persist_device_state(states: Iterable[RoomState]) -> None:
+def publish_device_state(
+    client: mqtt.Client,
+    state: RoomState,
+    vent: VentTarget,
+    fan_speed: float,
+    active_at: int,
+) -> None:
+    if not client.is_connected():
+        return
+
+    payload = json.dumps(
+        {
+            "room_id": state.room_id,
+            "device_id": vent.device_id,
+            "fan_speed": fan_speed,
+            "active_at": active_at,
+            "source": "device-telemetry-simulator",
+        }
+    )
+    result = client.publish("airsense/device-state", payload, qos=1)
+    if result.rc != mqtt.MQTT_ERR_SUCCESS:
+        logger.warning("Failed to publish device state for %s: %s", vent.device_id, result.rc)
+
+
+def persist_device_state(client: mqtt.Client, states: Iterable[RoomState]) -> None:
     with connect_db() as conn:
         with conn.cursor() as cur:
             for state in states:
@@ -1352,14 +1376,15 @@ def persist_device_state(states: Iterable[RoomState]) -> None:
                 for index, vent in enumerate(vent_targets):
                     base_value = exhaust_power if vent.airflow_role == "exhaust" else supply_power
                     pulse = math.sin(now.timestamp() / 37.0 + state.room_id * 0.61 + index * 1.17) * 1.35
-                    value = clamp(base_value + pulse, 0.0, 100.0)
+                    value = round(clamp(base_value + pulse, 0.0, 100.0), 2)
                     cur.execute(
                         """
                         INSERT INTO device_data(device_id, value, applied, applied_at)
                         VALUES (%s, %s, TRUE, CURRENT_TIMESTAMP)
                         """,
-                        (vent.device_id, round(value, 2)),
+                        (vent.device_id, value),
                     )
+                    publish_device_state(client, state, vent, value, int(now.timestamp()))
 
 
 def read_room_profiles() -> dict[int, RoomProfile]:
@@ -1477,7 +1502,7 @@ def publish_loop(client: mqtt.Client, states: Iterable[RoomState]) -> None:
                     )
                     sent_at_offset += 1
 
-        persist_device_state(state_list)
+        persist_device_state(client, state_list)
         tick += 1
         time.sleep(interval_seconds)
 

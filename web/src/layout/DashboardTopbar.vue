@@ -85,13 +85,7 @@
     <div class="app-sidebar__spacer" />
 
     <div class="app-sidebar__account">
-      <Button
-        icon="pi pi-bell"
-        severity="secondary"
-        variant="text"
-        aria-label="Notifications"
-        class="app-sidebar__icon-button"
-      />
+      <NotificationsPopover />
 
       <button
         type="button"
@@ -112,10 +106,10 @@
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/store/authStore";
-import Button from 'primevue/button';
 import Avatar from 'primevue/avatar';
 import Menu from 'primevue/menu';
 import type { MenuItem, MenuItemCommandEvent } from 'primevue/menuitem';
+import NotificationsPopover from "@/components/notification/NotificationsPopover.vue";
 
 const router = useRouter();
 const route = useRoute();

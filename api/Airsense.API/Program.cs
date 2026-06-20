@@ -62,6 +62,8 @@ builder.Services.AddScoped<IRoomRepository, RoomRepository>();
 builder.Services.AddScoped<ISensorRepository, SensorRepository>();
 builder.Services.AddScoped<IDeviceRepository, DeviceRepository>();
 builder.Services.AddScoped<ISettingsRepository, SettingsRepository>();
+builder.Services.AddScoped<INotificationRepository, NotificationRepository>();
+builder.Services.AddScoped<IThresholdAlertStateRepository, ThresholdAlertStateRepository>();
 builder.Services.AddHttpClient();
 
 builder.Services.AddScoped<IAuthService>(_ => isFirebaseConfigured ? new FirebaseAuthService() : new NoOpAuthService());
@@ -69,6 +71,8 @@ builder.Services.AddScoped<IAuthMqttService, AuthMqttService>();
 builder.Services.AddScoped<ISensorService, SensorService>();
 builder.Services.AddScoped<IAiPredictionService, AiPredictionService>();
 builder.Services.AddScoped<INotificationService>(_ => isFirebaseConfigured ? new FirebaseNotificationService() : new NoOpNotificationService());
+builder.Services.AddSingleton<IRoomLiveTelemetryHub, RoomLiveTelemetryHub>();
+builder.Services.AddSingleton<IUserNotificationHub, UserNotificationHub>();
 
 if (ServiceRoles.IsApi(serviceRole))
 {

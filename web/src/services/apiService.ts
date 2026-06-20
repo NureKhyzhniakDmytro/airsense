@@ -4,6 +4,7 @@ import type { Environment, EnvironmentsResponse, CreateEnvironmentPayload, Updat
 import type { CreateRoomPayload, Room, RoomLayout, RoomsResponse, UpdateRoomPayload } from '@/types/room';
 import type { Sensor, Device, HistoryEntry, Parameter, HistoryParams, CurveData } from '@/types/sensor';
 import type { AiRecommendationAudit, RoomAiInsights } from "@/types/ai";
+import type { NotificationsResponse, UnreadNotificationsResponse } from "@/types/notification";
 import type {
   DemoBackfillPayload,
   DemoBackfillResult,
@@ -19,6 +20,27 @@ import type {
 
 export const register = async (payload: RegisterPayload) => {
   const response = await apiPost("/auth", payload);
+  return response.data;
+};
+
+export const getNotifications = async (skip = 0, count = 20): Promise<NotificationsResponse> => {
+  const response = await apiGet<NotificationsResponse>("/notifications", {
+    params: { skip, count },
+  });
+  return response.data;
+};
+
+export const getUnreadNotificationsCount = async (): Promise<UnreadNotificationsResponse> => {
+  const response = await apiGet<UnreadNotificationsResponse>("/notifications/unread-count");
+  return response.data;
+};
+
+export const markNotificationRead = async (notificationId: number): Promise<void> => {
+  await apiPatch(`/notifications/${notificationId}/read`, {});
+};
+
+export const markAllNotificationsRead = async (): Promise<{ updated: number }> => {
+  const response = await apiPatch<{ updated: number }>("/notifications/read-all", {});
   return response.data;
 };
 

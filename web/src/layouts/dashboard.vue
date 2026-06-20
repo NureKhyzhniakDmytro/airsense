@@ -19,7 +19,7 @@
     </section>
 
     <ConfirmDialog />
-    <Toast />
+    <Toast class="dashboard-toast" />
   </div>
 </template>
 
@@ -78,6 +78,11 @@ const hasBreadcrumbContext = computed(() => Object.keys(route.params).length > 0
   padding: var(--app-page-padding);
 }
 
+:global(.p-toast.p-toast-top-right) {
+  right: var(--app-page-padding) !important;
+  top: 4.75rem !important;
+}
+
 @media (max-width: 560px) {
   .dashboard-shell {
     grid-template-columns: 62px minmax(0, 1fr);
@@ -95,6 +100,13 @@ const hasBreadcrumbContext = computed(() => Object.keys(route.params).length > 0
   .dashboard-contextbar {
     min-height: 38px;
     padding: 0.375rem 0.5rem;
+  }
+
+  :global(.p-toast.p-toast-top-right) {
+    left: 0.5rem !important;
+    right: 0.5rem !important;
+    top: 0.5rem !important;
+    width: auto !important;
   }
 }
 </style>

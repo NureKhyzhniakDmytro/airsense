@@ -2,6 +2,8 @@ using System.Data;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using Airsense.API.Models.Dto.Messaging;
+using Airsense.API.Services;
 using Dapper;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -11,7 +13,7 @@ namespace Airsense.API.Controllers;
 [ApiController]
 [Route("demo-data")]
 [Authorize]
-public class DemoDataController(IDbConnection connection) : ControllerBase
+public class DemoDataController(IDbConnection connection, IMqttService mqttService) : ControllerBase
 {
     private const string DemoEnvironmentName = "AirSense Demo Environment";
     private const string DemoEnvironmentIcon = "industrial";
@@ -723,12 +725,22 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
         foreach (var parameterId in context.ParameterIds)
             parameterIds.TryAdd(parameterId.Key, parameterId.Value);
 
-        var sensorIds = (await connection.QueryAsync<int>(
-            "SELECT id FROM sensors WHERE room_id = @roomId AND serial_number LIKE @sensorPattern ORDER BY id",
+        var sensors = (await connection.QueryAsync<DemoRoomAssetLiveDto>(
+            """
+            SELECT id AS Id, serial_number AS SerialNumber
+            FROM sensors
+            WHERE room_id = @roomId AND serial_number LIKE @sensorPattern
+            ORDER BY id
+            """,
             new { roomId, sensorPattern = DemoSensorLikePattern },
             transaction)).ToList();
-        var deviceIds = (await connection.QueryAsync<int>(
-            "SELECT id FROM devices WHERE room_id = @roomId AND serial_number LIKE @devicePattern ORDER BY id",
+        var devices = (await connection.QueryAsync<DemoRoomAssetLiveDto>(
+            """
+            SELECT id AS Id, serial_number AS SerialNumber
+            FROM devices
+            WHERE room_id = @roomId AND serial_number LIKE @devicePattern
+            ORDER BY id
+            """,
             new { roomId, devicePattern = DemoDeviceLikePattern },
             transaction)).ToList();
 
@@ -736,46 +748,100 @@ public class DemoDataController(IDbConnection connection) : ControllerBase
         var sensorRows = 0;
         var deviceRows = 0;
 
-        foreach (var sensorId in sensorIds)
+        foreach (var sensor in sensors)
         {
             if (request.Co2.HasValue)
             {
-                await InsertSensorValueAsync(sensorId, parameterIds["co2"], request.Co2.Value, timestamp, transaction);
+                await InsertSensorValueAsync(sensor.Id, parameterIds["co2"], request.Co2.Value, timestamp, transaction);
                 sensorRows++;
             }
             if (request.Temperature.HasValue)
             {
-                await InsertSensorValueAsync(sensorId, parameterIds["temperature"], request.Temperature.Value, timestamp, transaction);
+                await InsertSensorValueAsync(sensor.Id, parameterIds["temperature"], request.Temperature.Value, timestamp, transaction);
                 sensorRows++;
             }
             if (request.Humidity.HasValue)
             {
-                await InsertSensorValueAsync(sensorId, parameterIds["humidity"], request.Humidity.Value, timestamp, transaction);
+                await InsertSensorValueAsync(sensor.Id, parameterIds["humidity"], request.Humidity.Value, timestamp, transaction);
                 sensorRows++;
             }
         }
 
         if (request.VentilationPower.HasValue)
         {
-            foreach (var deviceId in deviceIds)
+            foreach (var device in devices)
             {
                 await connection.ExecuteAsync(
                     """
                     INSERT INTO device_data(device_id, timestamp, value, applied, applied_at)
                     VALUES (@deviceId, @timestamp, @value, TRUE, @timestamp)
                     """,
-                    new { deviceId, timestamp, value = Math.Round(request.VentilationPower.Value, 2) },
+                    new { deviceId = device.Id, timestamp, value = Math.Round(request.VentilationPower.Value, 2) },
                     transaction);
                 deviceRows++;
             }
         }
 
         transaction.Commit();
+        await PublishRoomReadingsLiveAsync(roomId, request, sensors, devices, timestamp);
         return new DemoReadingsApplyResultDto
         {
             SensorRows = sensorRows,
             DeviceRows = deviceRows
         };
+    }
+
+    private async Task PublishRoomReadingsLiveAsync(
+        int roomId,
+        DemoRoomReadingsRequest request,
+        IReadOnlyCollection<DemoRoomAssetLiveDto> sensors,
+        IReadOnlyCollection<DemoRoomAssetLiveDto> devices,
+        DateTime timestamp)
+    {
+        var sentAt = new DateTimeOffset(timestamp).ToUnixTimeSeconds();
+        var sensorReadings = new List<(string Parameter, double Value)>();
+        if (request.Co2.HasValue)
+            sensorReadings.Add(("co2", request.Co2.Value));
+        if (request.Temperature.HasValue)
+            sensorReadings.Add(("temperature", request.Temperature.Value));
+        if (request.Humidity.HasValue)
+            sensorReadings.Add(("humidity", request.Humidity.Value));
+
+        foreach (var sensor in sensors)
+        {
+            foreach (var reading in sensorReadings)
+            {
+                await mqttService.PublishAsync("airsense/sensor-state", new TelemetryEventDto
+                {
+                    RoomId = roomId,
+                    SensorId = sensor.Id,
+                    SerialNumber = sensor.SerialNumber,
+                    Parameter = reading.Parameter,
+                    Data = new()
+                    {
+                        Value = reading.Value,
+                        SentAt = sentAt
+                    }
+                });
+            }
+        }
+
+        if (!request.VentilationPower.HasValue)
+            return;
+
+        var value = Math.Round(request.VentilationPower.Value, 2);
+        foreach (var device in devices)
+        {
+            await mqttService.PublishAsync("airsense/device-state", new DeviceTelemetryEventDto
+            {
+                RoomId = roomId,
+                DeviceId = device.Id,
+                SerialNumber = device.SerialNumber,
+                FanSpeed = value,
+                ActiveAt = sentAt,
+                Source = "demo-control"
+            });
+        }
     }
 
     private static string CreateDemoAssetSerial(int demoSlot, string suffix, int index)
@@ -1674,6 +1740,12 @@ public class DemoRoomAssetIdDto
 {
     public int RoomId { get; set; }
     public int AssetId { get; set; }
+}
+
+public class DemoRoomAssetLiveDto
+{
+    public int Id { get; set; }
+    public string SerialNumber { get; set; } = "";
 }
 
 public class DemoTopologyContext

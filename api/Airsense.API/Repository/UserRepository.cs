@@ -92,6 +92,17 @@ public class UserRepository(IDbConnection connection) : IUserRepository
         const string sql = "UPDATE users SET notification_token = @token WHERE uid = @uid";
         await connection.ExecuteAsync(sql, new { uid, token });
     }
+
+    public async Task<ICollection<int>> GetIdsByNotificationTokensAsync(ICollection<string> tokens)
+    {
+        var distinctTokens = tokens.Where(token => !string.IsNullOrWhiteSpace(token)).Distinct().ToArray();
+        if (distinctTokens.Length == 0)
+            return Array.Empty<int>();
+
+        const string sql = "SELECT id FROM users WHERE notification_token = ANY(@distinctTokens)";
+        var result = await connection.QueryAsync<int>(sql, new { distinctTokens });
+        return result.ToList();
+    }
     
     public async Task<User?> GetByEmailAsync(string email)
     {

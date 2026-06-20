@@ -88,6 +88,37 @@ CREATE TABLE "ventilation_commands" (
 CREATE INDEX "idx_ventilation_commands_room_timestamp"
     ON "ventilation_commands" ("room_id", "timestamp" DESC);
 
+CREATE TABLE "user_notifications" (
+                                      "id" bigserial PRIMARY KEY,
+                                      "user_id" int NOT NULL,
+                                      "title" varchar(200) NOT NULL,
+                                      "body" text NOT NULL,
+                                      "severity" varchar(32) NOT NULL DEFAULT 'info',
+                                      "data" jsonb NOT NULL DEFAULT '{}'::jsonb,
+                                      "created_at" timestamptz NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+                                      "read_at" timestamptz
+);
+
+CREATE INDEX "idx_user_notifications_user_created"
+    ON "user_notifications" ("user_id", "created_at" DESC, "id" DESC);
+
+CREATE INDEX "idx_user_notifications_user_unread"
+    ON "user_notifications" ("user_id", "created_at" DESC)
+    WHERE "read_at" IS NULL;
+
+CREATE TABLE "threshold_alert_states" (
+                                          "room_id" int NOT NULL,
+                                          "sensor_id" int NOT NULL,
+                                          "parameter_id" int NOT NULL,
+                                          "is_active" bool NOT NULL DEFAULT FALSE,
+                                          "last_value" real NOT NULL,
+                                          "critical_value" real NOT NULL,
+                                          "triggered_at" timestamptz,
+                                          "resolved_at" timestamptz,
+                                          "updated_at" timestamptz NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+                                          PRIMARY KEY ("room_id", "sensor_id", "parameter_id")
+);
+
 CREATE TABLE "ai_model_versions" (
                                      "id" bigserial PRIMARY KEY,
                                      "version" varchar(128) UNIQUE NOT NULL,
@@ -152,5 +183,13 @@ ALTER TABLE "sensor_type_parameters" ADD FOREIGN KEY ("parameter_id") REFERENCES
 ALTER TABLE "ventilation_commands" ADD FOREIGN KEY ("room_id") REFERENCES "rooms" ("id") ON DELETE CASCADE;
 
 ALTER TABLE "ventilation_commands" ADD FOREIGN KEY ("device_id") REFERENCES "devices" ("id") ON DELETE SET NULL;
+
+ALTER TABLE "user_notifications" ADD FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE CASCADE;
+
+ALTER TABLE "threshold_alert_states" ADD FOREIGN KEY ("room_id") REFERENCES "rooms" ("id") ON DELETE CASCADE;
+
+ALTER TABLE "threshold_alert_states" ADD FOREIGN KEY ("sensor_id") REFERENCES "sensors" ("id") ON DELETE CASCADE;
+
+ALTER TABLE "threshold_alert_states" ADD FOREIGN KEY ("parameter_id") REFERENCES "parameters" ("id") ON DELETE CASCADE;
 
 ALTER TABLE "demo_room_profiles" ADD FOREIGN KEY ("room_id") REFERENCES "rooms" ("id") ON DELETE CASCADE;

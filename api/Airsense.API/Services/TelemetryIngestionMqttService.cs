@@ -37,6 +37,13 @@ public class TelemetryIngestionMqttService : MqttServiceBase
         if (await sensorRepository.IsExistsBySentAt(sensor.Id, payload.SentAt)) return;
 
         await sensorRepository.AddDataAsync(sensor.Id, parameter, payload);
-        await PublishAsync("airsense/telemetry", new TelemetryEventDto { RoomId = sensor.RoomId.Value, Parameter = parameter, Data = payload });
+        await PublishAsync("airsense/telemetry", new TelemetryEventDto
+        {
+            RoomId = sensor.RoomId.Value,
+            SensorId = sensor.Id,
+            SerialNumber = serialNumber,
+            Parameter = parameter,
+            Data = payload
+        });
     }
 }

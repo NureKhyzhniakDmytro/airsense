@@ -93,11 +93,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, ref, onMounted, type ComputedRef } from "vue";
+import { computed, inject, ref, onBeforeUnmount, onMounted, type ComputedRef } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { getRoomDevices, removeDevice as deleteDeviceApi } from "@/services/apiService";
 import type { Device } from "@/types/sensor";
 import type { PaginationState, PageChangeEvent } from "@/types/pagination";
+import {
+  applyDeviceLiveEvent,
+  patchDeviceSnapshot,
+  useRoomLiveStream,
+} from "@/composables/useRoomLiveStream";
 import AppSectionHeader from "@/components/common/AppSectionHeader.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import Button from 'primevue/button';
@@ -195,7 +200,22 @@ const refresh = async () => {
   await loadDevices();
 };
 
-onMounted(loadDevices);
+const liveStream = useRoomLiveStream(roomId, {
+  snapshot: (snapshot) => patchDeviceSnapshot(devices, snapshot.devices),
+  device: (event) => applyDeviceLiveEvent(devices, event),
+  error: (error) => console.error("Device live stream error:", error),
+});
+
+onMounted(() => {
+  if (!initialDevicesData.value)
+    void loadDevices();
+
+  liveStream.start();
+});
+
+onBeforeUnmount(() => {
+  liveStream.stop();
+});
 </script>
 
 <style scoped>

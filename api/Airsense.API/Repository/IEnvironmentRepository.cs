@@ -1,4 +1,5 @@
 using Airsense.API.Models.Dto.Environment;
+using Airsense.API.Models.Dto.Notification;
 using Environment = Airsense.API.Models.Entity.Environment;
 
 namespace Airsense.API.Repository;
@@ -38,6 +39,8 @@ public interface IEnvironmentRepository
     public Task UpdateMemberAsync(int envId, int userId, string role);
     
     public Task<ICollection<string>> GetMembersNotificationTokensAsync(int envId);
+
+    public Task<ICollection<NotificationTargetDto>> GetMembersNotificationTargetsAsync(int envId);
     
     public Task<Environment?> GetByRoomIdAsync(int roomId);
 }

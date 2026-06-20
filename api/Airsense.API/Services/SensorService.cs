@@ -9,10 +9,11 @@ public class SensorService(
     IDeviceRepository deviceRepository,
     IEnvironmentRepository environmentRepository,
     ISettingsRepository settingsRepository,
+    IThresholdAlertStateRepository thresholdAlertStateRepository,
     IAiPredictionService aiPredictionService,
     IMqttService mqttService) : ISensorService
 {
-    public async Task ProcessDataAsync(int roomId, string parameter, SensorDataDto data)
+    public async Task ProcessDataAsync(int roomId, int sensorId, string parameter, SensorDataDto data)
     {
         var curve = await settingsRepository.GetCurveAsync(roomId, parameter);
 
@@ -30,24 +31,62 @@ public class SensorService(
             fanSpeed,
             timestamp = new DateTimeOffset(DateTime.UtcNow).ToUnixTimeMilliseconds(),
         });
-
-        if (data.Value >= curve.CriticalValue)
+        await mqttService.PublishAsync("airsense/device-state", new DeviceTelemetryEventDto
         {
-            var environment = await environmentRepository.GetByRoomIdAsync(roomId);
-            if (environment is null)
-                return;
+            RoomId = roomId,
+            FanSpeed = fanSpeed.Value,
+            ActiveAt = new DateTimeOffset(DateTime.UtcNow).ToUnixTimeSeconds(),
+            Source = "automation"
+        });
 
-            var membersTokens = await environmentRepository.GetMembersNotificationTokensAsync(environment.Id);
-            if (membersTokens.Count == 0)
-                return;
+        if (!curve.CriticalValue.HasValue)
+            return;
 
-            await mqttService.PublishAsync("airsense/notifications", new NotificationEventDto
+        var transition = await thresholdAlertStateRepository.UpdateAsync(
+            roomId,
+            sensorId,
+            parameter,
+            data.Value,
+            curve.CriticalValue.Value);
+
+        if (transition == ThresholdAlertTransition.None)
+            return;
+
+        var environment = await environmentRepository.GetByRoomIdAsync(roomId);
+        if (environment is null)
+            return;
+
+        var members = await environmentRepository.GetMembersNotificationTargetsAsync(environment.Id);
+        if (members.Count == 0)
+            return;
+
+        var isResolved = transition == ThresholdAlertTransition.Resolved;
+        await mqttService.PublishAsync("airsense/notifications", new NotificationEventDto
+        {
+            RecipientUserIds = members.Select(member => member.UserId).Distinct().ToList(),
+            DeviceTokens = members
+                .Select(member => member.NotificationToken)
+                .Where(token => !string.IsNullOrWhiteSpace(token))
+                .Distinct()
+                .Cast<string>()
+                .ToList(),
+            Title = isResolved ? "Critical value resolved" : "Critical value exceeded",
+            Body = isResolved
+                ? $"{parameter} is back below the critical line in {environment.Name}"
+                : $"{parameter} exceeded the critical line in {environment.Name}",
+            Severity = isResolved ? "success" : "critical",
+            Data = new Dictionary<string, string>
             {
-                DeviceTokens = membersTokens,
-                Title = "Critical value exceeded",
-                Body = $"Critical value exceeded for {parameter} in {environment.Name}"
-            });
-        }
+                ["type"] = isResolved ? "critical_threshold_resolved" : "critical_threshold",
+                ["status"] = isResolved ? "resolved" : "triggered",
+                ["environment_id"] = environment.Id.ToString(),
+                ["room_id"] = roomId.ToString(),
+                ["sensor_id"] = sensorId.ToString(),
+                ["parameter"] = parameter,
+                ["value"] = data.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                ["critical_value"] = curve.CriticalValue.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+            }
+        });
     }
 
     private static int? GetFanSpeedByValue(ICollection<CurvePointDto> points, double value)

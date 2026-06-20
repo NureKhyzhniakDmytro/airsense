@@ -20,6 +20,6 @@ public class AutomationMqttService : MqttServiceBase
         if (payload is null) return;
         using var scope = GetServiceProvider().CreateScope();
         var sensorService = scope.ServiceProvider.GetRequiredService<ISensorService>();
-        await sensorService.ProcessDataAsync(payload.RoomId, payload.Parameter, payload.Data);
+        await sensorService.ProcessDataAsync(payload.RoomId, payload.SensorId, payload.Parameter, payload.Data);
     }
 }

@@ -22,6 +22,37 @@ CREATE TABLE IF NOT EXISTS "ventilation_commands" (
 CREATE INDEX IF NOT EXISTS "idx_ventilation_commands_room_timestamp"
     ON "ventilation_commands" ("room_id", "timestamp" DESC);
 
+CREATE TABLE IF NOT EXISTS "user_notifications" (
+    "id" bigserial PRIMARY KEY,
+    "user_id" int NOT NULL REFERENCES "users" ("id") ON DELETE CASCADE,
+    "title" varchar(200) NOT NULL,
+    "body" text NOT NULL,
+    "severity" varchar(32) NOT NULL DEFAULT 'info',
+    "data" jsonb NOT NULL DEFAULT '{}'::jsonb,
+    "created_at" timestamptz NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    "read_at" timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS "idx_user_notifications_user_created"
+    ON "user_notifications" ("user_id", "created_at" DESC, "id" DESC);
+
+CREATE INDEX IF NOT EXISTS "idx_user_notifications_user_unread"
+    ON "user_notifications" ("user_id", "created_at" DESC)
+    WHERE "read_at" IS NULL;
+
+CREATE TABLE IF NOT EXISTS "threshold_alert_states" (
+    "room_id" int NOT NULL REFERENCES "rooms" ("id") ON DELETE CASCADE,
+    "sensor_id" int NOT NULL REFERENCES "sensors" ("id") ON DELETE CASCADE,
+    "parameter_id" int NOT NULL REFERENCES "parameters" ("id") ON DELETE CASCADE,
+    "is_active" bool NOT NULL DEFAULT FALSE,
+    "last_value" real NOT NULL,
+    "critical_value" real NOT NULL,
+    "triggered_at" timestamptz,
+    "resolved_at" timestamptz,
+    "updated_at" timestamptz NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    PRIMARY KEY ("room_id", "sensor_id", "parameter_id")
+);
+
 CREATE TABLE IF NOT EXISTS "ai_model_versions" (
     "id" bigserial PRIMARY KEY,
     "version" varchar(128) UNIQUE NOT NULL,

@@ -4,5 +4,5 @@ namespace Airsense.API.Services;
 
 public interface ISensorService
 {
-    public Task ProcessDataAsync(int roomId, string parameter, SensorDataDto data);
+    public Task ProcessDataAsync(int roomId, int sensorId, string parameter, SensorDataDto data);
 }

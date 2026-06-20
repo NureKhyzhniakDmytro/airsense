@@ -687,6 +687,11 @@ import Skeleton from "primevue/skeleton";
 import Tag from "primevue/tag";
 import { useToast } from "primevue/usetoast";
 import { getRoomDevices, getRoomLayout, getRoomSensors, updateRoomLayout } from "@/services/apiService";
+import {
+  applyDeviceLiveEvent,
+  applySensorLiveEvent,
+  useRoomLiveStream,
+} from "@/composables/useRoomLiveStream";
 import type {
   RoomLayout,
   RoomLayoutGeometry,
@@ -919,7 +924,6 @@ const toast = useToast();
 const envId = Number(route.params.envId);
 const roomId = Number(route.params.roomId);
 const layoutLoadTimeoutMs = 5000;
-const telemetryRefreshMs = 30000;
 const mapGridColumns = 96;
 const mapGradientColumns = 30;
 const wallMountTolerance = 0.04;
@@ -945,7 +949,6 @@ const activeMapLayer = ref<RoomMapLayer>("temperature");
 const mapProbe = ref<MapProbe | null>(null);
 const injectedReadOnly = inject<ComputedRef<boolean>>("roomReadOnly", computed(() => false));
 const isReadOnly = computed(() => injectedReadOnly.value);
-let telemetryInterval: ReturnType<typeof setInterval> | undefined;
 
 const activeDrag = ref<{
   id: string;
@@ -1347,14 +1350,37 @@ watch(isReadOnly, (readOnly) => {
   if (readOnly) setMode("view");
 });
 
+const liveStream = useRoomLiveStream(roomId, {
+  snapshot: (snapshot) => {
+    sensors.value = snapshot.sensors;
+    devices.value = snapshot.devices;
+    hasTelemetryLoaded.value = true;
+    telemetryError.value = "";
+    syncRequiredRoomAssets();
+  },
+  sensor: (event) => {
+    applySensorLiveEvent(sensors, event);
+    syncRequiredRoomAssets();
+  },
+  device: (event) => {
+    applyDeviceLiveEvent(devices, event);
+    syncRequiredRoomAssets();
+  },
+  error: (error) => {
+    console.error("Layout live stream error:", error);
+    if (!hasTelemetryLoaded.value)
+      telemetryError.value = "Unable to load live values for the room plan.";
+  },
+});
+
 onMounted(() => {
   void loadLayout();
   void loadTelemetry();
-  telemetryInterval = setInterval(() => void loadTelemetry({ silent: true }), telemetryRefreshMs);
+  liveStream.start();
 });
 onUnmounted(() => {
   removePointerListeners();
-  if (telemetryInterval) clearInterval(telemetryInterval);
+  liveStream.stop();
 });
 
 function createDefaultLayout(): RoomLayout {

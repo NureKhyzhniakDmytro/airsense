@@ -78,7 +78,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, shallowRef, ref, onMounted, watch } from 'vue';
+import { computed, shallowRef, ref, onBeforeUnmount, onMounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import Select from 'primevue/select';
 import Skeleton from 'primevue/skeleton';
@@ -102,6 +102,7 @@ import {
   PARAMETER_LABELS,
 } from '@/types/sensor';
 import { useChartConfig } from '@/config/chartConfig';
+import { useRoomLiveStream } from '@/composables/useRoomLiveStream';
 
 function debounce<F extends (...args: any[]) => void>(func: F, wait = 300) {
   let timeout: ReturnType<typeof setTimeout>;
@@ -138,6 +139,55 @@ const pointCount = computed(() => Object.values(series.value).reduce(
 ));
 
 const getLabel = (name: string) => PARAMETER_LABELS[name] || name;
+const maxLivePointsPerSeries = 1500;
+
+function isLivePointInCurrentRange(timestampMs: number) {
+  if (timestampMs < fromDate.value.getTime())
+    return false;
+
+  const selectedRangeEndsNearNow = toDate.value.getTime() >= Date.now() - 60 * 60 * 1000;
+  return selectedRangeEndsNearNow || timestampMs <= toDate.value.getTime();
+}
+
+function appendLivePoint(
+  sourceId: number,
+  sourceName: string,
+  sourceSerial: string,
+  value: number,
+  timestampSeconds?: number | null,
+) {
+  const timestampMs = (timestampSeconds ?? Math.floor(Date.now() / 1000)) * 1000;
+  if (!isLivePointInCurrentRange(timestampMs))
+    return;
+
+  const unit = parametersOptions.value.find((p) => p.name === selectedParam.value.name)?.unit || '';
+  const label = `${getLabel(selectedParam.value.name)} (${unit})`;
+  const nextSeries = { ...series.value };
+  const existingSeries = nextSeries[sourceId]?.[0] ?? { name: label, data: [] };
+  const nextData = [...existingSeries.data];
+  const lastIndex = nextData.length - 1;
+
+  if (lastIndex >= 0 && nextData[lastIndex].x === timestampMs) {
+    nextData.splice(lastIndex, 1, { x: timestampMs, y: value });
+  } else {
+    nextData.push({ x: timestampMs, y: value });
+    nextData.sort((a, b) => a.x - b.x);
+  }
+
+  nextSeries[sourceId] = [{
+    ...existingSeries,
+    name: label,
+    data: nextData.slice(-maxLivePointsPerSeries),
+  }];
+  series.value = nextSeries;
+  sensorNames.value = {
+    ...sensorNames.value,
+    [sourceId]: {
+      name: sourceName,
+      serial_number: sourceSerial,
+    },
+  };
+}
 
 async function loadChartData() {
   isLoading.value = true;
@@ -229,9 +279,63 @@ async function loadParams() {
   }
 }
 
+const liveStream = useRoomLiveStream(roomId, {
+  sensor: (event) => {
+    if (
+      selectedParam.value.name !== event.parameter
+      || event.sensor_id === null
+      || event.sensor_id === undefined
+      || event.value === null
+      || event.value === undefined
+    ) {
+      return;
+    }
+
+    appendLivePoint(
+      event.sensor_id,
+      sensorNames.value[event.sensor_id]?.name || `Sensor #${event.sensor_id}`,
+      event.sensor_serial_number || sensorNames.value[event.sensor_id]?.serial_number || '',
+      event.value,
+      event.sent_at,
+    );
+  },
+  device: (event) => {
+    if (selectedParam.value.name !== 'device_speed' || event.fan_speed === null || event.fan_speed === undefined)
+      return;
+
+    if (event.device_id !== null && event.device_id !== undefined) {
+      appendLivePoint(
+        event.device_id,
+        `Device #${event.device_id}`,
+        event.device_serial_number || sensorNames.value[event.device_id]?.serial_number || '',
+        event.fan_speed,
+        event.active_at,
+      );
+      return;
+    }
+
+    Object.keys(series.value).forEach((sourceId) => {
+      const id = Number(sourceId);
+      appendLivePoint(
+        id,
+        sensorNames.value[id]?.name || `Device #${id}`,
+        sensorNames.value[id]?.serial_number || '',
+        event.fan_speed!,
+        event.active_at,
+      );
+    });
+  },
+  error: (error) => console.error('Chart live stream error:', error),
+});
+
 onMounted(async () => {
   await loadParams();
   await loadChartData();
+  liveStream.start();
+});
+
+onBeforeUnmount(() => {
+  liveStream.stop();
 });
 
 watch(

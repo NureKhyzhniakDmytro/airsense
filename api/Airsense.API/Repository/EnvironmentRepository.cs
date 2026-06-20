@@ -1,5 +1,6 @@
 using System.Data;
 using Airsense.API.Models.Dto.Environment;
+using Airsense.API.Models.Dto.Notification;
 using Dapper;
 using Environment = Airsense.API.Models.Entity.Environment;
 
@@ -191,6 +192,20 @@ public class EnvironmentRepository(IDbConnection connection) : IEnvironmentRepos
                            WHERE m.environment_id = @envId
                            """;
         var result = await connection.QueryAsync<string>(sql, new { envId });
+        return result.ToList();
+    }
+
+    public async Task<ICollection<NotificationTargetDto>> GetMembersNotificationTargetsAsync(int envId)
+    {
+        const string sql = """
+                           SELECT
+                               u.id AS UserId,
+                               u.notification_token AS NotificationToken
+                           FROM environment_members m
+                           JOIN users u ON m.member_id = u.id
+                           WHERE m.environment_id = @envId
+                           """;
+        var result = await connection.QueryAsync<NotificationTargetDto>(sql, new { envId });
         return result.ToList();
     }
     

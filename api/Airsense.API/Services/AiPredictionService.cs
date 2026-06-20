@@ -2,6 +2,7 @@ using System.Data;
 using System.Text;
 using System.Text.Json;
 using Airsense.API.Models.Dto.Ai;
+using Airsense.API.Models.Dto.Messaging;
 using Dapper;
 
 namespace Airsense.API.Services;
@@ -217,6 +218,13 @@ public sealed class AiPredictionService(
                 timestamp = new DateTimeOffset(DateTime.UtcNow).ToUnixTimeMilliseconds(),
                 source = "ai-recommendation",
                 recommendationId
+            });
+            await mqttService.PublishAsync("airsense/device-state", new DeviceTelemetryEventDto
+            {
+                RoomId = roomId,
+                FanSpeed = requestedPower,
+                ActiveAt = new DateTimeOffset(DateTime.UtcNow).ToUnixTimeSeconds(),
+                Source = "ai-recommendation"
             });
 
             return MapRecommendation(updated);

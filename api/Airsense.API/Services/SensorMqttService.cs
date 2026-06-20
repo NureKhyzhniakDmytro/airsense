@@ -48,6 +48,6 @@ public class SensorMqttService : MqttServiceBase
             return;
 
         await sensorRepository.AddDataAsync(sensor.Id, parameter, payload);
-        await Task.Run(() => sensorDataProcessingService.ProcessDataAsync(sensor.RoomId.Value, parameter, payload));
+        await Task.Run(() => sensorDataProcessingService.ProcessDataAsync(sensor.RoomId.Value, sensor.Id, parameter, payload));
     }
 }

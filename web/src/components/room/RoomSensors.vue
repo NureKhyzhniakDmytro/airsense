@@ -96,12 +96,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, ref, onMounted, type ComputedRef } from "vue";
+import { computed, inject, ref, onBeforeUnmount, onMounted, type ComputedRef } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { getRoomSensors, removeSensor as deleteSensorApi } from "@/services/apiService";
 import type { Sensor } from "@/types/sensor";
 import { PARAMETER_LABELS } from "@/types/sensor";
 import type { PaginationState, PageChangeEvent } from "@/types/pagination";
+import {
+  applySensorLiveEvent,
+  patchSensorSnapshot,
+  useRoomLiveStream,
+} from "@/composables/useRoomLiveStream";
 import AppSectionHeader from "@/components/common/AppSectionHeader.vue";
 import EmptyState from "@/components/common/EmptyState.vue";
 import Button from 'primevue/button';
@@ -203,7 +208,22 @@ const refresh = async () => {
   await loadSensors();
 };
 
-onMounted(loadSensors);
+const liveStream = useRoomLiveStream(roomId, {
+  snapshot: (snapshot) => patchSensorSnapshot(sensors, snapshot.sensors),
+  sensor: (event) => applySensorLiveEvent(sensors, event),
+  error: (error) => console.error("Sensor live stream error:", error),
+});
+
+onMounted(() => {
+  if (!initialSensorsData.value)
+    void loadSensors();
+
+  liveStream.start();
+});
+
+onBeforeUnmount(() => {
+  liveStream.stop();
+});
 </script>
 
 <style scoped>
