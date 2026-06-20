@@ -2,7 +2,10 @@ using System.Data;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Airsense.API.Models.Dto.Messaging;
+using Airsense.API.Models.Dto.Room;
+using Airsense.API.Repository;
 using Airsense.API.Services;
 using Dapper;
 using Microsoft.AspNetCore.Authorization;
@@ -13,7 +16,10 @@ namespace Airsense.API.Controllers;
 [ApiController]
 [Route("demo-data")]
 [Authorize]
-public class DemoDataController(IDbConnection connection, IMqttService mqttService) : ControllerBase
+public class DemoDataController(
+    IDbConnection connection,
+    IMqttService mqttService,
+    IRoomRepository roomRepository) : ControllerBase
 {
     private const string DemoEnvironmentName = "AirSense Demo Environment";
     private const string DemoEnvironmentIcon = "industrial";
@@ -23,6 +29,11 @@ public class DemoDataController(IDbConnection connection, IMqttService mqttServi
     private const string DemoDeviceLikePattern = "demo-room-%-ventilation%";
     private const int DefaultDemoSensorCount = 3;
     private const int DefaultDemoDeviceCount = 2;
+    private static readonly JsonSerializerOptions RoomLayoutJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        DictionaryKeyPolicy = JsonNamingPolicy.SnakeCaseLower
+    };
 
     private static readonly string[] Scenarios =
     [
@@ -180,6 +191,41 @@ public class DemoDataController(IDbConnection connection, IMqttService mqttServi
         if (result.DeviceRows == 0 && request.VentilationPower.HasValue)
             return BadRequest(new { message = "Room does not have demo ventilation devices for this reading" });
 
+        return Ok(await GetStatusInternalAsync());
+    }
+
+    [HttpPatch("rooms/{roomId:int}/emitters/{emitterId}")]
+    public async Task<IActionResult> UpdateEmitter(int roomId, string emitterId, [FromBody] DemoEmitterUpdateRequest? request)
+    {
+        if (!HasRegisteredUser())
+            return BadRequest(new { message = "You are not registered" });
+
+        if (request?.HeatLoadKw is null || request.HeatLoadKw < 0 || request.HeatLoadKw > 1000)
+            return BadRequest(new { message = "Heat load must be between 0 and 1000 kW" });
+
+        await EnsureDemoControlSchemaAsync();
+        if (!await IsDemoRoomAsync(roomId))
+            return NotFound(new { message = "Demo room not found" });
+
+        var layout = await roomRepository.GetLayoutAsync(roomId);
+        var item = layout.Items.FirstOrDefault(item => (
+            string.Equals(item.Id, emitterId, StringComparison.Ordinal) &&
+            string.Equals(item.Type, "equipment", StringComparison.OrdinalIgnoreCase)
+        ));
+
+        if (item is null)
+            return NotFound(new { message = "Emitter not found" });
+
+        item.HeatLoadKw = Math.Round(request.HeatLoadKw.Value, 2);
+        item.ThermalLoad = item.HeatLoadKw switch
+        {
+            >= 15 => "high",
+            >= 5 => "medium",
+            > 0 => "low",
+            _ => item.ThermalLoad
+        };
+
+        await roomRepository.UpdateLayoutAsync(roomId, layout);
         return Ok(await GetStatusInternalAsync());
     }
 
@@ -444,13 +490,64 @@ public class DemoDataController(IDbConnection connection, IMqttService mqttServi
                 devicePattern = DemoDeviceLikePattern
             });
 
+        var roomList = rooms.ToList();
+        var emittersByRoom = await GetDemoEmittersAsync(roomList.Select(room => room.RoomId).ToArray());
+        foreach (var room in roomList)
+            room.Emitters = emittersByRoom.GetValueOrDefault(room.RoomId, []);
+
         return new DemoDataStatusDto
         {
             Environment = environment,
             Metrics = metrics,
-            Rooms = rooms.ToList(),
+            Rooms = roomList,
             Scenarios = Scenarios
         };
+    }
+
+    private async Task<Dictionary<int, List<DemoEmitterDto>>> GetDemoEmittersAsync(IReadOnlyCollection<int> roomIds)
+    {
+        if (roomIds.Count == 0)
+            return [];
+
+        var layouts = await connection.QueryAsync<(int RoomId, string LayoutJson)>(
+            "SELECT id AS RoomId, layout::text AS LayoutJson FROM rooms WHERE id = ANY(@roomIds)",
+            new { roomIds = roomIds.ToArray() });
+
+        var result = new Dictionary<int, List<DemoEmitterDto>>();
+        foreach (var layout in layouts)
+        {
+            var emitters = ExtractDemoEmitters(layout.LayoutJson);
+            if (emitters.Count > 0)
+                result[layout.RoomId] = emitters;
+        }
+
+        return result;
+    }
+
+    private static List<DemoEmitterDto> ExtractDemoEmitters(string? layoutJson)
+    {
+        if (string.IsNullOrWhiteSpace(layoutJson))
+            return [];
+
+        try
+        {
+            var layout = JsonSerializer.Deserialize<RoomLayoutDto>(layoutJson, RoomLayoutJsonOptions);
+            return layout?.Items
+                .Where(item => string.Equals(item.Type, "equipment", StringComparison.OrdinalIgnoreCase))
+                .Select(item => new DemoEmitterDto
+                {
+                    Id = item.Id,
+                    Label = string.IsNullOrWhiteSpace(item.Label) ? item.Id : item.Label,
+                    HeatLoadKw = item.HeatLoadKw,
+                    ThermalLoad = item.ThermalLoad
+                })
+                .OrderBy(item => item.Label)
+                .ToList() ?? [];
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
     }
 
     private async Task BootstrapInternalAsync(int roomCount)
@@ -1712,6 +1809,20 @@ public class DemoRoomStatusDto
     public double? Humidity { get; set; }
     public double? VentilationPower { get; set; }
     public DateTime? LastActivityAt { get; set; }
+    public List<DemoEmitterDto> Emitters { get; set; } = [];
+}
+
+public class DemoEmitterDto
+{
+    public string Id { get; set; } = "";
+    public string Label { get; set; } = "";
+    public double? HeatLoadKw { get; set; }
+    public string? ThermalLoad { get; set; }
+}
+
+public class DemoEmitterUpdateRequest
+{
+    public double? HeatLoadKw { get; set; }
 }
 
 public class DemoResetResultDto

@@ -20,9 +20,10 @@ public sealed class AiPredictionService(
     };
 
     private static readonly List<int> DefaultHorizons = [10, 20, 30];
-    private const double TargetCo2 = 900;
-    private const double MaxVentilationPower = 100;
+    private const double DefaultTargetCo2 = 900;
+    private const double DefaultMaxVentilationPower = 100;
     private const int RecommendationHorizonMinutes = 20;
+    private const int AutonomousControlCacheSeconds = 30;
 
     private string PredictionServiceUrl =>
         configuration["Ai:PredictionServiceUrl"]?.TrimEnd('/') ?? "http://ai-prediction-service:8000";
@@ -30,6 +31,7 @@ public sealed class AiPredictionService(
     public async Task<RoomAiInsightsDto> GetRoomInsightsAsync(int roomId, CancellationToken cancellationToken = default)
     {
         var sample = await LoadLatestSampleAsync(roomId);
+        var controlSettings = await GetControlSettingsAsync(roomId);
         var recentRecommendations = await LoadRecentRecommendationsAsync(roomId);
 
         if (sample is null)
@@ -38,6 +40,7 @@ public sealed class AiPredictionService(
             {
                 HasSample = false,
                 Message = "CO2, temperature, and humidity telemetry are required before AI predictions can run.",
+                ControlSettings = controlSettings,
                 RecentRecommendations = recentRecommendations
             };
         }
@@ -70,6 +73,7 @@ public sealed class AiPredictionService(
             Sample = sample,
             Prediction = prediction,
             Simulation = simulation,
+            ControlSettings = controlSettings,
             RecentRecommendations = recentRecommendations
         };
     }
@@ -82,15 +86,11 @@ public sealed class AiPredictionService(
         if (sample is null)
             throw new InvalidOperationException("CO2, temperature, and humidity telemetry are required before AI recommendations can run.");
 
-        var recommendation = await PostAsync<AiRecommendationRequestDto, AiRecommendationResponseDto>(
-            "/recommendation",
-            new AiRecommendationRequestDto
-            {
-                Sample = sample,
-                TargetCo2 = TargetCo2,
-                MaxVentilationPower = MaxVentilationPower,
-                HorizonMinutes = RecommendationHorizonMinutes
-            },
+        var controlSettings = await GetControlSettingsAsync(roomId);
+        var recommendation = await RequestRecommendationAsync(
+            sample,
+            controlSettings.TargetCo2,
+            controlSettings.MaxVentilationPower,
             cancellationToken);
 
         var payload = new AiRecommendationPayloadDto
@@ -100,9 +100,10 @@ public sealed class AiPredictionService(
             Reason = recommendation.Reason,
             Sample = sample,
             Predicted = recommendation.Predicted,
-            TargetCo2 = TargetCo2,
-            MaxVentilationPower = MaxVentilationPower,
-            HorizonMinutes = RecommendationHorizonMinutes
+            TargetCo2 = controlSettings.TargetCo2,
+            MaxVentilationPower = controlSettings.MaxVentilationPower,
+            HorizonMinutes = RecommendationHorizonMinutes,
+            ControlSettings = controlSettings
         };
 
         var inserted = await InsertRecommendationAsync(
@@ -237,6 +238,95 @@ public sealed class AiPredictionService(
         }
     }
 
+    public async Task<AiControlSettingsDto> GetControlSettingsAsync(int roomId)
+    {
+        const string ensureSql = """
+                                 INSERT INTO ai_control_settings(room_id)
+                                 SELECT @roomId
+                                 WHERE EXISTS (SELECT 1 FROM rooms WHERE id = @roomId)
+                                 ON CONFLICT (room_id) DO NOTHING
+                                 """;
+
+        await connection.ExecuteAsync(ensureSql, new { roomId });
+
+        const string selectSql = """
+                                 SELECT
+                                     room_id AS RoomId,
+                                     enabled AS Enabled,
+                                     target_co2 AS TargetCo2,
+                                     target_temperature AS TargetTemperature,
+                                     target_humidity AS TargetHumidity,
+                                     max_ventilation_power AS MaxVentilationPower,
+                                     updated_at AS UpdatedAt
+                                 FROM ai_control_settings
+                                 WHERE room_id = @roomId
+                                 """;
+
+        return await connection.QuerySingleOrDefaultAsync<AiControlSettingsDto>(selectSql, new { roomId })
+               ?? new AiControlSettingsDto { RoomId = roomId, TargetCo2 = DefaultTargetCo2, MaxVentilationPower = DefaultMaxVentilationPower };
+    }
+
+    public async Task<AiControlSettingsDto> UpdateControlSettingsAsync(
+        int roomId,
+        AiControlSettingsUpdateDto request,
+        CancellationToken cancellationToken = default)
+    {
+        const string sql = """
+                           INSERT INTO ai_control_settings(
+                               room_id,
+                               enabled,
+                               target_co2,
+                               target_temperature,
+                               target_humidity,
+                               max_ventilation_power,
+                               updated_at
+                           )
+                           VALUES (
+                               @roomId,
+                               @enabled,
+                               @targetCo2,
+                               @targetTemperature,
+                               @targetHumidity,
+                               @maxVentilationPower,
+                               CURRENT_TIMESTAMP
+                           )
+                           ON CONFLICT (room_id) DO UPDATE SET
+                               enabled = EXCLUDED.enabled,
+                               target_co2 = EXCLUDED.target_co2,
+                               target_temperature = EXCLUDED.target_temperature,
+                               target_humidity = EXCLUDED.target_humidity,
+                               max_ventilation_power = EXCLUDED.max_ventilation_power,
+                               updated_at = CURRENT_TIMESTAMP
+                           RETURNING
+                               room_id AS RoomId,
+                               enabled AS Enabled,
+                               target_co2 AS TargetCo2,
+                               target_temperature AS TargetTemperature,
+                               target_humidity AS TargetHumidity,
+                               max_ventilation_power AS MaxVentilationPower,
+                               updated_at AS UpdatedAt
+                           """;
+
+        var command = new CommandDefinition(
+            sql,
+            new
+            {
+                roomId,
+                enabled = request.Enabled,
+                targetCo2 = Math.Round(Math.Clamp(request.TargetCo2, 400, 3000), 2),
+                targetTemperature = request.TargetTemperature.HasValue
+                    ? Math.Round(Math.Clamp(request.TargetTemperature.Value, 10, 40), 2)
+                    : (double?)null,
+                targetHumidity = request.TargetHumidity.HasValue
+                    ? Math.Round(Math.Clamp(request.TargetHumidity.Value, 10, 90), 2)
+                    : (double?)null,
+                maxVentilationPower = Math.Round(Math.Clamp(request.MaxVentilationPower, 0, 100), 2)
+            },
+            cancellationToken: cancellationToken);
+
+        return await connection.QuerySingleAsync<AiControlSettingsDto>(command);
+    }
+
     public async Task<AiAutomationRecommendationDto?> ConsumeAcceptedRecommendationAsync(int roomId)
     {
         const string sql = """
@@ -261,6 +351,138 @@ public sealed class AiPredictionService(
 
         return await connection.QueryFirstOrDefaultAsync<AiAutomationRecommendationDto>(sql, new { roomId });
     }
+
+    public async Task<AiAutomationRecommendationDto?> GetAutonomousControlRecommendationAsync(
+        int roomId,
+        CancellationToken cancellationToken = default)
+    {
+        var settings = await GetControlSettingsAsync(roomId);
+        if (!settings.Enabled)
+            return null;
+
+        var cachedRecommendation = await LoadCachedAutonomousRecommendationAsync(roomId);
+        if (cachedRecommendation is not null)
+            return cachedRecommendation;
+
+        var sample = await LoadLatestSampleAsync(roomId);
+        if (sample is null)
+            return null;
+
+        AiRecommendationResponseDto recommendation;
+        try
+        {
+            recommendation = await RequestRecommendationAsync(
+                sample,
+                settings.TargetCo2,
+                settings.MaxVentilationPower,
+                cancellationToken);
+        }
+        catch (HttpRequestException)
+        {
+            return null;
+        }
+
+        var requestedPower = ApplyControlTargets(
+            recommendation.SuggestedVentilationPower,
+            sample,
+            settings);
+
+        return await InsertAutonomousRecommendationAsync(
+            roomId,
+            sample,
+            recommendation,
+            requestedPower,
+            settings);
+    }
+
+    private async Task<AiAutomationRecommendationDto?> LoadCachedAutonomousRecommendationAsync(int roomId)
+    {
+        const string sql = """
+                           SELECT
+                               id AS Id,
+                               requested_power AS RequestedPower
+                           FROM ventilation_commands
+                           WHERE room_id = @roomId
+                             AND source = 'ai-autonomous'
+                             AND command_type = 'autonomous-control'
+                             AND requested_power IS NOT NULL
+                             AND timestamp > NOW() - (@cacheSeconds * INTERVAL '1 second')
+                           ORDER BY timestamp DESC, id DESC
+                           LIMIT 1
+                           """;
+
+        return await connection.QueryFirstOrDefaultAsync<AiAutomationRecommendationDto>(
+            sql,
+            new { roomId, cacheSeconds = AutonomousControlCacheSeconds });
+    }
+
+    private async Task<AiAutomationRecommendationDto> InsertAutonomousRecommendationAsync(
+        int roomId,
+        AiTelemetrySampleDto sample,
+        AiRecommendationResponseDto recommendation,
+        double requestedPower,
+        AiControlSettingsDto settings)
+    {
+        var payload = new AiRecommendationPayloadDto
+        {
+            ModelVersion = recommendation.ModelVersion,
+            Mode = recommendation.Mode,
+            Reason = recommendation.Reason,
+            Sample = sample,
+            Predicted = recommendation.Predicted,
+            TargetCo2 = settings.TargetCo2,
+            MaxVentilationPower = settings.MaxVentilationPower,
+            HorizonMinutes = RecommendationHorizonMinutes,
+            ControlSettings = settings
+        };
+
+        const string sql = """
+                           INSERT INTO ventilation_commands(room_id, device_id, source, command_type, requested_power, payload, status)
+                           VALUES (
+                               @roomId,
+                               (
+                                   SELECT id
+                                   FROM devices
+                                   WHERE room_id = @roomId
+                                   ORDER BY id
+                                   LIMIT 1
+                               ),
+                               'ai-autonomous',
+                               'autonomous-control',
+                               @requestedPower,
+                               CAST(@payloadJson AS jsonb),
+                               'used'
+                           )
+                           RETURNING
+                               id AS Id,
+                               requested_power AS RequestedPower
+                           """;
+
+        return await connection.QuerySingleAsync<AiAutomationRecommendationDto>(
+            sql,
+            new
+            {
+                roomId,
+                requestedPower,
+                payloadJson = JsonSerializer.Serialize(payload, JsonOptions)
+            });
+    }
+
+    private Task<AiRecommendationResponseDto> RequestRecommendationAsync(
+        AiTelemetrySampleDto sample,
+        double targetCo2,
+        double maxVentilationPower,
+        CancellationToken cancellationToken) =>
+        PostAsync<AiRecommendationRequestDto, AiRecommendationResponseDto>(
+            "/recommendation",
+            new AiRecommendationRequestDto
+            {
+                Sample = sample,
+                TargetCo2 = targetCo2,
+                MaxVentilationPower = maxVentilationPower,
+                HorizonMinutes = RecommendationHorizonMinutes
+            },
+            cancellationToken);
 
     private async Task<TResponse> PostAsync<TRequest, TResponse>(
         string path,
@@ -472,6 +694,35 @@ public sealed class AiPredictionService(
             Predicted = payload?.Predicted,
             Sample = payload?.Sample
         };
+    }
+
+    private static double ApplyControlTargets(
+        double suggestedPower,
+        AiTelemetrySampleDto sample,
+        AiControlSettingsDto settings)
+    {
+        var adjustedPower = suggestedPower;
+
+        if (settings.TargetTemperature.HasValue)
+        {
+            var temperatureDelta = sample.Temperature - settings.TargetTemperature.Value;
+            if (temperatureDelta > 0.25)
+                adjustedPower += Math.Min(18, temperatureDelta * 6);
+            else if (temperatureDelta < -0.75)
+                adjustedPower -= Math.Min(12, Math.Abs(temperatureDelta) * 4);
+        }
+
+        if (settings.TargetHumidity.HasValue)
+        {
+            var humidityDelta = sample.Humidity - settings.TargetHumidity.Value;
+            if (humidityDelta > 3)
+                adjustedPower += Math.Min(14, humidityDelta * 0.8);
+            else if (humidityDelta < -6)
+                adjustedPower -= Math.Min(8, Math.Abs(humidityDelta) * 0.45);
+        }
+
+        var maxPower = Math.Clamp(settings.MaxVentilationPower, 0, 100);
+        return Math.Round(Math.Clamp(adjustedPower, 0, maxPower), 2);
     }
 
     private static List<AiVentilationScenarioDto> BuildScenarios(double currentPower)

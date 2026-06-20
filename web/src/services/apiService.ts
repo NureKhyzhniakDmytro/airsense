@@ -3,13 +3,14 @@ import type { RegisterPayload, UsersResponse } from '@/types/user';
 import type { Environment, EnvironmentsResponse, CreateEnvironmentPayload, UpdateEnvironmentPayload } from '@/types/environment';
 import type { CreateRoomPayload, Room, RoomLayout, RoomsResponse, UpdateRoomPayload } from '@/types/room';
 import type { Sensor, Device, HistoryEntry, Parameter, HistoryParams, CurveData } from '@/types/sensor';
-import type { AiRecommendationAudit, RoomAiInsights } from "@/types/ai";
+import type { AiControlSettings, AiControlSettingsPayload, AiRecommendationAudit, RoomAiInsights } from "@/types/ai";
 import type { NotificationsResponse, UnreadNotificationsResponse } from "@/types/notification";
 import type {
   DemoBackfillPayload,
   DemoBackfillResult,
   DemoBootstrapPayload,
   DemoDataStatus,
+  DemoEmitterPayload,
   DemoResetResult,
   DemoRoomAssetsPayload,
   DemoRoomCreatePayload,
@@ -93,6 +94,15 @@ export const applyDemoRoomReadings = async (
   return response.data;
 };
 
+export const updateDemoEmitter = async (
+  roomId: number,
+  emitterId: string,
+  payload: DemoEmitterPayload,
+): Promise<DemoDataStatus> => {
+  const response = await apiPatch(`/demo-data/rooms/${roomId}/emitters/${encodeURIComponent(emitterId)}`, payload);
+  return response.data;
+};
+
 export const updateDemoRoomProfile = async (
   roomId: number,
   payload: DemoRoomProfilePayload,
@@ -108,6 +118,19 @@ export const clearDemoRoomProfile = async (roomId: number): Promise<DemoDataStat
 
 export const getRoomAiInsights = async (roomId: number): Promise<RoomAiInsights> => {
   const response = await apiGet<RoomAiInsights>(`/ai/room/${roomId}`);
+  return response.data;
+};
+
+export const getRoomAiControlSettings = async (roomId: number): Promise<AiControlSettings> => {
+  const response = await apiGet<AiControlSettings>(`/ai/room/${roomId}/control`);
+  return response.data;
+};
+
+export const updateRoomAiControlSettings = async (
+  roomId: number,
+  payload: AiControlSettingsPayload,
+): Promise<AiControlSettings> => {
+  const response = await apiPatch<AiControlSettings>(`/ai/room/${roomId}/control`, payload);
   return response.data;
 };
 

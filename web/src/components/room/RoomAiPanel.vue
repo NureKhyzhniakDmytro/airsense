@@ -9,7 +9,16 @@
         <span v-if="modelLabel" class="ai-panel__model">{{ modelLabel }}</span>
         <Button
           type="button"
-          label="Refresh"
+          :label="showDetails ? 'Hide details' : 'Details'"
+          :icon="showDetails ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"
+          severity="secondary"
+          outlined
+          size="small"
+          @click="showDetails = !showDetails"
+        />
+        <Button
+          type="button"
+          aria-label="Refresh AI predictions"
           icon="pi pi-refresh"
           severity="secondary"
           outlined
@@ -68,92 +77,140 @@
         </div>
       </div>
 
-      <div class="ai-panel__grid">
-        <section class="ai-panel__table-section">
-          <header>
-            <span>Forecast</span>
-            <small>{{ insights.prediction?.mode || "unknown" }}</small>
-          </header>
-          <table class="ai-table">
-            <thead>
-              <tr>
-                <th>Horizon</th>
-                <th>CO₂</th>
-                <th>Temp</th>
-                <th>Humidity</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="point in insights.prediction?.predictions || []" :key="point.horizon_minutes">
-                <td>{{ point.horizon_minutes }}m</td>
-                <td>{{ formatNumber(point.co2) }}</td>
-                <td>{{ formatNumber(point.temperature) }}</td>
-                <td>{{ formatNumber(point.humidity) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </section>
-
-        <section class="ai-panel__table-section">
-          <header>
-            <span>Scenarios</span>
-            <small>20m CO₂</small>
-          </header>
-          <table class="ai-table">
-            <thead>
-              <tr>
-                <th>Mode</th>
-                <th>Power</th>
-                <th>CO₂</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="scenario in scenarioRows" :key="scenario.label">
-                <td>{{ scenario.label }}</td>
-                <td>{{ formatNumber(scenario.ventilation_power) }}%</td>
-                <td>{{ formatNumber(scenario.co2) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </section>
-      </div>
-
-      <section class="ai-recommendation">
+      <section class="ai-control">
         <header>
           <div>
-            <span class="ai-panel__eyebrow">Recommendation</span>
-            <h4>{{ latestRecommendation ? `${formatNumber(latestRecommendation.requested_power)}% ventilation` : "No recommendation yet" }}</h4>
+            <span class="ai-panel__eyebrow">AI control</span>
+            <h4>Autonomous ventilation</h4>
           </div>
-          <span v-if="latestRecommendation" class="ai-status" :class="`ai-status--${latestRecommendation.status}`">
-            {{ latestRecommendation.status }}
-          </span>
+          <label class="ai-control__toggle">
+            <Checkbox
+              v-model="controlDraft.enabled"
+              :input-id="`ai-control-${props.roomId}`"
+              binary
+              :disabled="isReadOnly"
+            />
+            <span>AI adjusts fan speed</span>
+          </label>
         </header>
 
-        <p v-if="latestRecommendation?.reason">{{ latestRecommendation.reason }}</p>
-        <p v-else>Generate a recommendation from the current room sample and model version.</p>
-
-        <div v-if="!isReadOnly" class="ai-recommendation__actions">
+        <div class="ai-control__grid">
+          <label class="ai-control__field">
+            <span>CO₂ target</span>
+            <InputNumber v-model="controlDraft.target_co2" :min="400" :max="3000" suffix=" ppm" :disabled="isReadOnly" fluid />
+          </label>
+          <label class="ai-control__field">
+            <span>Temp target</span>
+            <InputNumber v-model="controlDraft.target_temperature" :min="10" :max="40" suffix=" °C" :max-fraction-digits="1" :disabled="isReadOnly" placeholder="Any" fluid />
+          </label>
+          <label class="ai-control__field">
+            <span>Humidity target</span>
+            <InputNumber v-model="controlDraft.target_humidity" :min="10" :max="90" suffix="%" :disabled="isReadOnly" placeholder="Any" fluid />
+          </label>
+          <label class="ai-control__field">
+            <span>Max fan</span>
+            <InputNumber v-model="controlDraft.max_ventilation_power" :min="0" :max="100" suffix="%" :disabled="isReadOnly" fluid />
+          </label>
           <Button
+            v-if="!isReadOnly"
             type="button"
-            label="Generate"
-            icon="pi pi-sparkles"
+            label="Save AI control"
+            icon="pi pi-save"
             size="small"
-            :loading="isCreatingRecommendation"
-            @click="createRecommendation"
-          />
-          <Button
-            v-if="latestRecommendation && latestRecommendation.status === 'recommended'"
-            type="button"
-            label="Apply"
-            icon="pi pi-check"
-            severity="secondary"
-            outlined
-            size="small"
-            :loading="isAcceptingRecommendation"
-            @click="acceptRecommendation(latestRecommendation.id)"
+            :loading="isSavingControl"
+            @click="saveControlSettings"
           />
         </div>
       </section>
+
+      <div v-if="showDetails" class="ai-panel__details">
+        <div class="ai-panel__grid">
+          <section class="ai-panel__table-section">
+            <header>
+              <span>Forecast</span>
+              <small>{{ insights.prediction?.mode || "unknown" }}</small>
+            </header>
+            <table class="ai-table">
+              <thead>
+                <tr>
+                  <th>Horizon</th>
+                  <th>CO₂</th>
+                  <th>Temp</th>
+                  <th>Humidity</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="point in insights.prediction?.predictions || []" :key="point.horizon_minutes">
+                  <td>{{ point.horizon_minutes }}m</td>
+                  <td>{{ formatNumber(point.co2) }}</td>
+                  <td>{{ formatNumber(point.temperature) }}</td>
+                  <td>{{ formatNumber(point.humidity) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section class="ai-panel__table-section">
+            <header>
+              <span>Scenarios</span>
+              <small>20m CO₂</small>
+            </header>
+            <table class="ai-table">
+              <thead>
+                <tr>
+                  <th>Mode</th>
+                  <th>Power</th>
+                  <th>CO₂</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="scenario in scenarioRows" :key="scenario.label">
+                  <td>{{ scenario.label }}</td>
+                  <td>{{ formatNumber(scenario.ventilation_power) }}%</td>
+                  <td>{{ formatNumber(scenario.co2) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+        </div>
+
+        <section class="ai-recommendation">
+          <header>
+            <div>
+              <span class="ai-panel__eyebrow">Recommendation</span>
+              <h4>{{ latestRecommendation ? `${formatNumber(latestRecommendation.requested_power)}% ventilation` : "No recommendation yet" }}</h4>
+            </div>
+            <span v-if="latestRecommendation" class="ai-status" :class="`ai-status--${latestRecommendation.status}`">
+              {{ latestRecommendation.status }}
+            </span>
+          </header>
+
+          <p v-if="latestRecommendation?.reason">{{ latestRecommendation.reason }}</p>
+          <p v-else>Generate a recommendation from the current room sample and model version.</p>
+
+          <div v-if="!isReadOnly" class="ai-recommendation__actions">
+            <Button
+              type="button"
+              label="Generate"
+              icon="pi pi-sparkles"
+              size="small"
+              :loading="isCreatingRecommendation"
+              @click="createRecommendation"
+            />
+            <Button
+              v-if="latestRecommendation && latestRecommendation.status === 'recommended'"
+              type="button"
+              label="Apply"
+              icon="pi pi-check"
+              severity="secondary"
+              outlined
+              size="small"
+              :loading="isAcceptingRecommendation"
+              @click="acceptRecommendation(latestRecommendation.id)"
+            />
+          </div>
+        </section>
+      </div>
     </template>
   </section>
 </template>
@@ -161,14 +218,17 @@
 <script setup lang="ts">
 import { computed, inject, onMounted, ref, type ComputedRef } from "vue";
 import Button from "primevue/button";
+import Checkbox from "primevue/checkbox";
+import InputNumber from "primevue/inputnumber";
 import Message from "primevue/message";
 import { useToast } from "primevue/usetoast";
 import {
   acceptRoomAiRecommendation,
   createRoomAiRecommendation,
   getRoomAiInsights,
+  updateRoomAiControlSettings,
 } from "@/services/apiService";
-import type { AiRecommendationAudit, RoomAiInsights } from "@/types/ai";
+import type { AiControlSettings, AiControlSettingsPayload, AiRecommendationAudit, RoomAiInsights } from "@/types/ai";
 
 const props = defineProps<{
   roomId: number;
@@ -179,7 +239,16 @@ const insights = ref<RoomAiInsights | null>(null);
 const isLoading = ref(false);
 const isCreatingRecommendation = ref(false);
 const isAcceptingRecommendation = ref(false);
+const isSavingControl = ref(false);
 const errorMessage = ref("");
+const showDetails = ref(false);
+const controlDraft = ref<AiControlSettingsPayload>({
+  enabled: false,
+  target_co2: 900,
+  target_temperature: 22,
+  target_humidity: 45,
+  max_ventilation_power: 100,
+});
 const injectedReadOnly = inject<ComputedRef<boolean>>("roomReadOnly", computed(() => false));
 const isReadOnly = computed(() => injectedReadOnly.value);
 
@@ -206,16 +275,50 @@ const upsertRecommendation = (recommendation: AiRecommendationAudit) => {
   insights.value.recent_recommendations = [recommendation, ...existing].slice(0, 5);
 };
 
+const syncControlDraft = (settings?: AiControlSettings | null) => {
+  controlDraft.value = {
+    enabled: settings?.enabled ?? false,
+    target_co2: settings?.target_co2 ?? 900,
+    target_temperature: settings?.target_temperature ?? 22,
+    target_humidity: settings?.target_humidity ?? 45,
+    max_ventilation_power: settings?.max_ventilation_power ?? 100,
+  };
+};
+
 const loadInsights = async () => {
   isLoading.value = true;
   errorMessage.value = "";
   try {
     insights.value = await getRoomAiInsights(props.roomId);
+    syncControlDraft(insights.value.control_settings);
   } catch (error) {
     console.error("Failed to load AI predictions:", error);
     errorMessage.value = "AI predictions are unavailable right now.";
   } finally {
     isLoading.value = false;
+  }
+};
+
+const saveControlSettings = async () => {
+  if (isReadOnly.value) return;
+
+  isSavingControl.value = true;
+  errorMessage.value = "";
+  try {
+    const settings = await updateRoomAiControlSettings(props.roomId, {
+      ...controlDraft.value,
+      target_co2: controlDraft.value.target_co2 ?? 900,
+      max_ventilation_power: controlDraft.value.max_ventilation_power ?? 100,
+    });
+    if (insights.value)
+      insights.value.control_settings = settings;
+    syncControlDraft(settings);
+    toast.add({ severity: "success", summary: "AI control saved", life: 2400 });
+  } catch (error) {
+    console.error("Failed to save AI control settings:", error);
+    errorMessage.value = "Unable to save AI control settings.";
+  } finally {
+    isSavingControl.value = false;
   }
 };
 
@@ -355,7 +458,7 @@ onMounted(loadInsights);
 .ai-panel__summary {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
 }
 
 .ai-sample {
@@ -381,8 +484,16 @@ onMounted(loadInsights);
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
+.ai-panel__details {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
 .ai-panel__table-section,
-.ai-recommendation {
+.ai-recommendation,
+.ai-control {
   background: var(--app-surface-raised);
   border: 1px solid var(--app-border);
   border-radius: 6px;
@@ -391,6 +502,53 @@ onMounted(loadInsights);
   gap: 10px;
   min-width: 0;
   padding: 12px;
+}
+
+.ai-control header {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.ai-control h4 {
+  color: var(--app-text-strong);
+  font-size: 0.95rem;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.ai-control__toggle {
+  align-items: center;
+  color: var(--app-text);
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  font-size: 0.84rem;
+  font-weight: 680;
+  min-height: 28px;
+}
+
+.ai-control__grid {
+  align-items: end;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(130px, 1fr)) minmax(130px, auto);
+}
+
+.ai-control__field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.ai-control__field span {
+  color: var(--app-muted);
+  font-size: 0.68rem;
+  font-weight: 760;
+  text-transform: uppercase;
 }
 
 .ai-panel__table-section header span {
@@ -457,14 +615,16 @@ onMounted(loadInsights);
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .ai-panel__grid {
+  .ai-panel__grid,
+  .ai-control__grid {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 620px) {
   .ai-panel__header,
-  .ai-recommendation header {
+  .ai-recommendation header,
+  .ai-control header {
     align-items: flex-start;
     flex-direction: column;
   }

@@ -46,6 +46,24 @@ export interface AiRecommendationAudit {
   sample?: AiTelemetrySample | null;
 }
 
+export interface AiControlSettings {
+  room_id: number;
+  enabled: boolean;
+  target_co2: number;
+  target_temperature?: number | null;
+  target_humidity?: number | null;
+  max_ventilation_power: number;
+  updated_at: string;
+}
+
+export interface AiControlSettingsPayload {
+  enabled: boolean;
+  target_co2: number;
+  target_temperature?: number | null;
+  target_humidity?: number | null;
+  max_ventilation_power: number;
+}
+
 export interface RoomAiInsights {
   has_sample: boolean;
   message?: string | null;
@@ -54,5 +72,6 @@ export interface RoomAiInsights {
   sample?: AiTelemetrySample | null;
   prediction?: AiPredictResponse | null;
   simulation?: AiSimulateResponse | null;
+  control_settings?: AiControlSettings | null;
   recent_recommendations: AiRecommendationAudit[];
 }

@@ -67,6 +67,16 @@ CREATE TABLE IF NOT EXISTS "ai_model_versions" (
 CREATE INDEX IF NOT EXISTS "idx_ai_model_versions_active_created"
     ON "ai_model_versions" ("active", "created_at" DESC);
 
+CREATE TABLE IF NOT EXISTS "ai_control_settings" (
+    "room_id" int PRIMARY KEY REFERENCES "rooms" ("id") ON DELETE CASCADE,
+    "enabled" bool NOT NULL DEFAULT FALSE,
+    "target_co2" real NOT NULL DEFAULT 900,
+    "target_temperature" real,
+    "target_humidity" real,
+    "max_ventilation_power" real NOT NULL DEFAULT 100,
+    "updated_at" timestamptz NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+
 CREATE TABLE IF NOT EXISTS "demo_room_profiles" (
     "room_id" int PRIMARY KEY REFERENCES "rooms" ("id") ON DELETE CASCADE,
     "scenario" varchar(64) NOT NULL DEFAULT 'auto',

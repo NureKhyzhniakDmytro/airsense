@@ -119,6 +119,10 @@ public class SensorService(
         if (aiRecommendation is not null)
             return (int)Math.Round(Math.Clamp(aiRecommendation.RequestedPower, 0, 100));
 
+        var autonomousRecommendation = await aiPredictionService.GetAutonomousControlRecommendationAsync(roomId);
+        if (autonomousRecommendation is not null)
+            return (int)Math.Round(Math.Clamp(autonomousRecommendation.RequestedPower, 0, 100));
+
         return GetFanSpeedByValue(points, value);
     }
 }

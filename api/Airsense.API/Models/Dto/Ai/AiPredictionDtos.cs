@@ -89,6 +89,7 @@ public sealed class AiRecommendationPayloadDto
     public double TargetCo2 { get; init; }
     public double MaxVentilationPower { get; init; }
     public int HorizonMinutes { get; init; }
+    public AiControlSettingsDto? ControlSettings { get; init; }
 }
 
 public sealed class AiRecommendationAuditDto
@@ -113,6 +114,7 @@ public sealed class RoomAiInsightsDto
     public AiTelemetrySampleDto? Sample { get; init; }
     public AiPredictResponseDto? Prediction { get; init; }
     public AiSimulateResponseDto? Simulation { get; init; }
+    public AiControlSettingsDto? ControlSettings { get; init; }
     public List<AiRecommendationAuditDto> RecentRecommendations { get; init; } = [];
 }
 
@@ -120,4 +122,24 @@ public sealed class AiAutomationRecommendationDto
 {
     public long Id { get; init; }
     public double RequestedPower { get; init; }
+}
+
+public sealed class AiControlSettingsDto
+{
+    public int RoomId { get; init; }
+    public bool Enabled { get; init; }
+    public double TargetCo2 { get; init; } = 900;
+    public double? TargetTemperature { get; init; }
+    public double? TargetHumidity { get; init; }
+    public double MaxVentilationPower { get; init; } = 100;
+    public DateTime UpdatedAt { get; init; } = DateTime.UtcNow;
+}
+
+public sealed class AiControlSettingsUpdateDto
+{
+    public bool Enabled { get; init; }
+    public double TargetCo2 { get; init; } = 900;
+    public double? TargetTemperature { get; init; }
+    public double? TargetHumidity { get; init; }
+    public double MaxVentilationPower { get; init; } = 100;
 }

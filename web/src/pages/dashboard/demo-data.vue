@@ -107,7 +107,7 @@
         <div class="demo-section-heading">
           <div>
             <h2>Topology builder</h2>
-            <p>Create demo rooms with real sensors, ventilation devices, and starting telemetry values.</p>
+            <p>Create demo rooms with sensors, ventilation devices, and editable heat emitters on the room layout.</p>
           </div>
         </div>
 
@@ -152,30 +152,6 @@
           <label class="demo-field">
             <span>Vent devices</span>
             <InputNumber v-model="roomForm.device_count" :min="0" :max="20" show-buttons fluid />
-          </label>
-        </div>
-
-        <div class="demo-subsection-label">Initial values</div>
-
-        <div class="demo-form-grid demo-form-grid--readings">
-          <label class="demo-field">
-            <span>CO₂</span>
-            <InputNumber v-model="roomForm.readings.co2" :min="300" :max="5000" suffix=" ppm" fluid />
-          </label>
-
-          <label class="demo-field">
-            <span>Temp</span>
-            <InputNumber v-model="roomForm.readings.temperature" :min="-50" :max="50" suffix=" °C" :max-fraction-digits="1" fluid />
-          </label>
-
-          <label class="demo-field">
-            <span>Humidity</span>
-            <InputNumber v-model="roomForm.readings.humidity" :min="0" :max="100" suffix="%" fluid />
-          </label>
-
-          <label class="demo-field">
-            <span>Vent</span>
-            <InputNumber v-model="roomForm.readings.ventilation_power" :min="0" :max="100" suffix="%" fluid />
           </label>
         </div>
 
@@ -358,35 +334,54 @@
               />
             </div>
 
-            <div class="demo-reading-editor">
-              <label class="demo-row-field">
-                <span>CO₂</span>
-                <InputNumber v-model="readingDrafts[room.room_id].co2" :min="300" :max="5000" suffix=" ppm" fluid />
-              </label>
+            <div class="demo-emitter-editor">
+              <div class="demo-emitter-editor__header">
+                <span>Heat emitters</span>
+                <small>Simulation source values</small>
+              </div>
 
-              <label class="demo-row-field">
-                <span>Temp</span>
-                <InputNumber v-model="readingDrafts[room.room_id].temperature" :min="-50" :max="50" suffix=" °C" :max-fraction-digits="1" fluid />
-              </label>
+              <template v-if="room.emitters?.length">
+                <div
+                  v-for="emitter in room.emitters"
+                  :key="emitter.id"
+                  class="demo-emitter-row"
+                >
+                  <div class="demo-emitter-row__name">
+                    <strong>{{ emitter.label }}</strong>
+                    <small>{{ emitter.id }}</small>
+                  </div>
 
-              <label class="demo-row-field">
-                <span>Humidity</span>
-                <InputNumber v-model="readingDrafts[room.room_id].humidity" :min="0" :max="100" suffix="%" fluid />
-              </label>
+                  <label class="demo-row-field">
+                    <span>Heat load</span>
+                    <InputNumber
+                      v-model="emitterDrafts[room.room_id][emitter.id]"
+                      :min="0"
+                      :max="1000"
+                      suffix=" kW"
+                      :max-fraction-digits="1"
+                      fluid
+                    />
+                  </label>
 
-              <label class="demo-row-field">
-                <span>Vent</span>
-                <InputNumber v-model="readingDrafts[room.room_id].ventilation_power" :min="0" :max="100" suffix="%" fluid />
-              </label>
+                  <Tag
+                    class="demo-emitter-row__tag"
+                    :value="formatThermalLoad(emitter.thermal_load)"
+                    :severity="emitterSeverity(emitter.thermal_load)"
+                  />
 
-              <Button
-                icon="pi pi-send"
-                label="Apply values"
-                size="small"
-                :disabled="!hasReadingDraftValue(readingDrafts[room.room_id])"
-                :loading="applyingReadingsRoomId === room.room_id"
-                @click="applyReadings(room.room_id)"
-              />
+                  <Button
+                    icon="pi pi-save"
+                    label="Save emitter"
+                    size="small"
+                    :loading="savingEmitterKey === `${room.room_id}:${emitter.id}`"
+                    @click="saveEmitter(room.room_id, emitter.id)"
+                  />
+                </div>
+              </template>
+
+              <p v-else class="demo-emitter-empty">
+                No heat emitters on this layout yet. Add equipment on the room layout to configure source values.
+              </p>
             </div>
           </div>
         </article>
@@ -425,18 +420,18 @@ import Select from "primevue/select";
 import Tag from "primevue/tag";
 import {
   addDemoRoomAssets,
-  applyDemoRoomReadings,
   backfillDemoData,
   bootstrapDemoData,
   clearDemoRoomProfile,
   createDemoRoom,
   getDemoDataStatus,
   resetDemoDataHistory,
+  updateDemoEmitter,
   updateDemoRoom,
   updateDemoRoomProfile,
 } from "@/services/apiService";
 import { getPlaceIconOption, ROOM_ICON_OPTIONS } from "@/config/placeOptions";
-import type { DemoDataStatus, DemoRoomProfilePayload, DemoRoomReadingsPayload, DemoRoomStatus } from "@/types/demoData";
+import type { DemoDataStatus, DemoRoomProfilePayload, DemoRoomStatus } from "@/types/demoData";
 
 type RoomDraft = Required<Pick<DemoRoomProfilePayload, "scenario">> & {
   ventilation_power_override: number | null;
@@ -448,12 +443,7 @@ type RoomMetaDraft = {
   icon: string;
 };
 
-type ReadingDraft = {
-  co2: number | null;
-  temperature: number | null;
-  humidity: number | null;
-  ventilation_power: number | null;
-};
+type EmitterDraft = Record<string, number | null>;
 
 const confirm = useConfirm();
 const toast = useToast();
@@ -466,11 +456,11 @@ const isResetting = ref(false);
 const isCreatingRoom = ref(false);
 const savingRoomId = ref<number | null>(null);
 const renamingRoomId = ref<number | null>(null);
-const applyingReadingsRoomId = ref<number | null>(null);
+const savingEmitterKey = ref<string | null>(null);
 const assetSavingKey = ref<string | null>(null);
 const drafts = reactive<Record<number, RoomDraft>>({});
 const roomEdits = reactive<Record<number, RoomMetaDraft>>({});
-const readingDrafts = reactive<Record<number, ReadingDraft>>({});
+const emitterDrafts = reactive<Record<number, EmitterDraft>>({});
 const backfillForm = reactive({
   hours: 6,
   interval_minutes: 5,
@@ -481,12 +471,6 @@ const roomForm = reactive({
   icon: "room",
   sensor_count: 1 as number | null,
   device_count: 1 as number | null,
-  readings: {
-    co2: 900,
-    temperature: 22,
-    humidity: 45,
-    ventilation_power: 35,
-  } as ReadingDraft,
 });
 
 const defaultScenarios = [
@@ -554,12 +538,12 @@ const syncDrafts = () => {
       name: room.room_name || "",
       icon: normalizeRoomIcon(room.room_icon),
     };
-    readingDrafts[room.room_id] = {
-      co2: roundForInput(room.co2, 0, 900),
-      temperature: roundForInput(room.temperature, 1, 22),
-      humidity: roundForInput(room.humidity, 0, 45),
-      ventilation_power: roundForInput(room.ventilation_power, 0, 35),
-    };
+    emitterDrafts[room.room_id] = Object.fromEntries(
+      (room.emitters ?? []).map((emitter) => [
+        emitter.id,
+        roundForInput(emitter.heat_load_kw, 1, 0),
+      ]),
+    );
   }
 };
 
@@ -614,7 +598,6 @@ const createRoom = async () => {
       icon: roomForm.icon || "room",
       sensor_count: roomForm.sensor_count ?? 0,
       device_count: roomForm.device_count ?? 0,
-      readings: buildReadingsPayload(roomForm.readings),
     });
     roomForm.name = "";
     roomForm.sensor_count = 1;
@@ -736,17 +719,19 @@ const addAssets = async (roomId: number, sensorCount: number, deviceCount: numbe
   }
 };
 
-const applyReadings = async (roomId: number) => {
-  const draft = readingDrafts[roomId];
-  if (!hasReadingDraftValue(draft)) return;
+const saveEmitter = async (roomId: number, emitterId: string) => {
+  const value = emitterDrafts[roomId]?.[emitterId];
+  if (value == null) return;
 
-  applyingReadingsRoomId.value = roomId;
+  savingEmitterKey.value = `${roomId}:${emitterId}`;
   try {
-    status.value = await applyDemoRoomReadings(roomId, buildReadingsPayload(draft));
+    status.value = await updateDemoEmitter(roomId, emitterId, {
+      heat_load_kw: value,
+    });
     syncDrafts();
-    toast.add({ severity: "success", summary: "Room values applied", life: 2200 });
+    toast.add({ severity: "success", summary: "Heat emitter updated", life: 2200 });
   } finally {
-    applyingReadingsRoomId.value = null;
+    savingEmitterKey.value = null;
   }
 };
 
@@ -766,23 +751,22 @@ function roomSerialTitle(room: DemoRoomStatus) {
   return `Sensors: ${sensors}\nVentilation: ${devices}`;
 }
 
-function buildReadingsPayload(draft: ReadingDraft): DemoRoomReadingsPayload {
-  return {
-    co2: draft.co2,
-    temperature: draft.temperature,
-    humidity: draft.humidity,
-    ventilation_power: draft.ventilation_power,
-  };
-}
-
-function hasReadingDraftValue(draft?: ReadingDraft) {
-  return Boolean(draft && Object.values(draft).some((value) => value != null));
-}
-
 function roundForInput(value: number | null | undefined, fractionDigits: number, fallback: number) {
   if (value == null || Number.isNaN(value)) return fallback;
   const scale = 10 ** fractionDigits;
   return Math.round(value * scale) / scale;
+}
+
+function formatThermalLoad(value?: string | null) {
+  if (!value) return "custom";
+  return value;
+}
+
+function emitterSeverity(value?: string | null) {
+  if (value === "high") return "danger";
+  if (value === "medium") return "warn";
+  if (value === "low") return "info";
+  return "secondary";
 }
 
 function normalizeRoomIcon(value?: string | null) {
@@ -1140,13 +1124,13 @@ function formatDateTime(value?: string | null) {
 
 .demo-room-editor :deep(.p-button),
 .demo-room-tools :deep(.p-button),
-.demo-reading-editor :deep(.p-button) {
+.demo-emitter-editor :deep(.p-button) {
   white-space: nowrap;
 }
 
 .demo-room-editor :deep(.p-button-label),
 .demo-room-tools :deep(.p-button-label),
-.demo-reading-editor :deep(.p-button-label) {
+.demo-emitter-editor :deep(.p-button-label) {
   white-space: nowrap;
 }
 
@@ -1158,13 +1142,74 @@ function formatDateTime(value?: string | null) {
   min-width: 0;
 }
 
-.demo-reading-editor {
+.demo-emitter-editor {
+  background: var(--app-surface);
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 10px;
+}
+
+.demo-emitter-editor__header {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.demo-emitter-editor__header span {
+  color: var(--app-text-strong);
+  font-weight: 760;
+}
+
+.demo-emitter-editor__header small,
+.demo-emitter-empty,
+.demo-emitter-row__name small {
+  color: var(--app-muted);
+  font-family: var(--app-mono);
+  font-size: 0.68rem;
+}
+
+.demo-emitter-empty {
+  margin: 0;
+}
+
+.demo-emitter-row {
   align-items: end;
   display: grid;
   gap: 8px;
-  grid-column: 1 / -1;
-  grid-template-columns: repeat(5, minmax(105px, 1fr)) minmax(128px, auto);
+  grid-template-columns: minmax(180px, 1fr) minmax(140px, 0.7fr) minmax(72px, auto) minmax(128px, auto);
   min-width: 0;
+}
+
+.demo-emitter-row__name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.demo-emitter-row__name strong {
+  color: var(--app-text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.demo-emitter-row__name small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.demo-emitter-row__tag {
+  align-self: center;
+  justify-self: start;
 }
 
 @media (max-width: 1180px) {
@@ -1187,7 +1232,7 @@ function formatDateTime(value?: string | null) {
   }
 
   .demo-room-editor,
-  .demo-reading-editor {
+  .demo-emitter-row {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
@@ -1203,7 +1248,7 @@ function formatDateTime(value?: string | null) {
   .demo-room-summary,
   .demo-room-manage,
   .demo-room-editor,
-  .demo-reading-editor {
+  .demo-emitter-row {
     grid-template-columns: 1fr;
   }
 

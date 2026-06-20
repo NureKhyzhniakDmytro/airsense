@@ -82,6 +82,33 @@ public class AiController(
         }
     }
 
+    [HttpGet("room/{roomId:int}/control")]
+    public async Task<IActionResult> GetRoomControlSettings(int roomId)
+    {
+        var accessError = await ValidateRoomReadAccessAsync(roomId);
+        if (accessError is not null)
+            return accessError;
+
+        return Ok(await aiPredictionService.GetControlSettingsAsync(roomId));
+    }
+
+    [HttpPatch("room/{roomId:int}/control")]
+    public async Task<IActionResult> UpdateRoomControlSettings(
+        int roomId,
+        [FromBody] AiControlSettingsUpdateDto? request,
+        CancellationToken cancellationToken)
+    {
+        var accessError = await ValidateRoomManageAccessAsync(roomId);
+        if (accessError is not null)
+            return accessError;
+
+        var validationError = ValidateControlSettings(request);
+        if (validationError is not null)
+            return BadRequest(new { message = validationError });
+
+        return Ok(await aiPredictionService.UpdateControlSettingsAsync(roomId, request!, cancellationToken));
+    }
+
     [HttpPost("room/{roomId:int}/recommendations/{recommendationId:long}/accept")]
     public async Task<IActionResult> AcceptRoomRecommendation(
         int roomId,
@@ -158,6 +185,28 @@ public class AiController(
 
         if (!hasAccess)
             return Forbid();
+
+        return null;
+    }
+
+    private static string? ValidateControlSettings(AiControlSettingsUpdateDto? request)
+    {
+        if (request is null)
+            return "AI control settings are required";
+
+        if (request.TargetCo2 is < 400 or > 3000)
+            return "Target CO2 must be between 400 and 3000 ppm";
+
+        if (request.TargetTemperature.HasValue
+            && (request.TargetTemperature.Value < 10 || request.TargetTemperature.Value > 40))
+            return "Target temperature must be between 10 and 40°C";
+
+        if (request.TargetHumidity.HasValue
+            && (request.TargetHumidity.Value < 10 || request.TargetHumidity.Value > 90))
+            return "Target humidity must be between 10 and 90%";
+
+        if (request.MaxVentilationPower is < 0 or > 100)
+            return "Maximum ventilation power must be between 0 and 100%";
 
         return null;
     }

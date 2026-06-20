@@ -14,6 +14,13 @@ export interface DemoMetrics {
   latest_device_at?: string | null;
 }
 
+export interface DemoEmitter {
+  id: string;
+  label: string;
+  heat_load_kw?: number | null;
+  thermal_load?: string | null;
+}
+
 export interface DemoRoomStatus {
   room_id: number;
   room_name: string;
@@ -32,6 +39,7 @@ export interface DemoRoomStatus {
   humidity?: number | null;
   ventilation_power?: number | null;
   last_activity_at?: string | null;
+  emitters: DemoEmitter[];
 }
 
 export interface DemoDataStatus {
@@ -74,6 +82,10 @@ export interface DemoRoomUpdatePayload {
 export interface DemoRoomAssetsPayload {
   sensor_count?: number | null;
   device_count?: number | null;
+}
+
+export interface DemoEmitterPayload {
+  heat_load_kw?: number | null;
 }
 
 export interface DemoRoomProfilePayload {

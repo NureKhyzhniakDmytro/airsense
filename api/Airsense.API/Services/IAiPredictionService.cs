@@ -13,5 +13,16 @@ public interface IAiPredictionService
         long recommendationId,
         CancellationToken cancellationToken = default);
 
+    Task<AiControlSettingsDto> GetControlSettingsAsync(int roomId);
+
+    Task<AiControlSettingsDto> UpdateControlSettingsAsync(
+        int roomId,
+        AiControlSettingsUpdateDto request,
+        CancellationToken cancellationToken = default);
+
     Task<AiAutomationRecommendationDto?> ConsumeAcceptedRecommendationAsync(int roomId);
+
+    Task<AiAutomationRecommendationDto?> GetAutonomousControlRecommendationAsync(
+        int roomId,
+        CancellationToken cancellationToken = default);
 }

@@ -133,6 +133,16 @@ CREATE TABLE "ai_model_versions" (
 CREATE INDEX "idx_ai_model_versions_active_created"
     ON "ai_model_versions" ("active", "created_at" DESC);
 
+CREATE TABLE "ai_control_settings" (
+                                      "room_id" int PRIMARY KEY,
+                                      "enabled" bool NOT NULL DEFAULT FALSE,
+                                      "target_co2" real NOT NULL DEFAULT 900,
+                                      "target_temperature" real,
+                                      "target_humidity" real,
+                                      "max_ventilation_power" real NOT NULL DEFAULT 100,
+                                      "updated_at" timestamptz NOT NULL DEFAULT (CURRENT_TIMESTAMP)
+);
+
 CREATE TABLE "demo_room_profiles" (
                                       "room_id" int PRIMARY KEY,
                                       "scenario" varchar(64) NOT NULL DEFAULT 'auto',
@@ -193,3 +203,5 @@ ALTER TABLE "threshold_alert_states" ADD FOREIGN KEY ("sensor_id") REFERENCES "s
 ALTER TABLE "threshold_alert_states" ADD FOREIGN KEY ("parameter_id") REFERENCES "parameters" ("id") ON DELETE CASCADE;
 
 ALTER TABLE "demo_room_profiles" ADD FOREIGN KEY ("room_id") REFERENCES "rooms" ("id") ON DELETE CASCADE;
+
+ALTER TABLE "ai_control_settings" ADD FOREIGN KEY ("room_id") REFERENCES "rooms" ("id") ON DELETE CASCADE;
