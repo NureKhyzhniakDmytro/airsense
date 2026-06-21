@@ -1864,9 +1864,15 @@ function getTemperatureAmbientValue(sensorSamples: MapSample[], heatSamples: Map
   const ambient = average(calibratedAmbientValues);
   const minimum = Math.min(...sensorValues);
   const mean = average(sensorValues);
-  const comfortCeiling = 23.2 + clamp(Math.max(0, mean - 23.2) * 0.42, 0, 2.8);
+  const spread = Math.max(...sensorValues) - minimum;
+  const warmRoomFloor = mean > 26
+    ? mean - clamp(1.35 + spread * 0.42, 1.2, 3.2)
+    : minimum - 4.2;
+  const ambientCeiling = mean > 26
+    ? mean - clamp(spread * 0.18, 0, 0.85)
+    : 23.2 + clamp(Math.max(0, mean - 23.2) * 0.42, 0, 2.8);
 
-  return clamp(Math.min(ambient, comfortCeiling), minimum - 4.2, mean + 0.25);
+  return clamp(Math.min(ambient, ambientCeiling), warmRoomFloor, mean + 0.25);
 }
 
 function getTemperatureReferenceValues(sensorSamples: MapSample[], heatSamples: MapSample[], ambient: number, heatScale = 1) {
@@ -1882,14 +1888,15 @@ function getTemperatureHeatScale(sensorSamples: MapSample[], heatSamples: MapSam
   const sensorValues = sensorSamples.map((sample) => sample.value);
   if (!sensorValues.length || !heatSamples.length) return 1;
 
-  const observedExcess = Math.max(0, average(sensorValues) - 23);
-  if (observedExcess <= 0) return 1;
+  const observedSpread = Math.max(...sensorValues) - Math.min(...sensorValues);
+  const observedContrast = Math.max(0, observedSpread - 0.75);
+  if (observedContrast <= 0) return 1;
 
   const totalPotential = heatSamples.reduce((sum, sample) => (
     sum + getEquipmentHeatPotential(getEquipmentHeatLoad(sample.item))
   ), 0);
 
-  return clamp(1 + observedExcess / Math.max(totalPotential * 0.42 + 0.35, 0.35), 1, 6.8);
+  return clamp(1 + observedContrast / Math.max(totalPotential * 0.32 + 0.35, 0.35), 1, 4.2);
 }
 
 function getTemperatureHeatSourceField(point: FieldPoint, heatSamples: MapSample[], heatScale = 1) {
@@ -1971,9 +1978,40 @@ function applyTemperatureHeatAdvection(
   return value + (upstreamValue - value) * mix;
 }
 
-function getTemperatureSensorAnchorAtPoint(_point: FieldPoint, sensorSamples: MapSample[], heatSamples: MapSample[]): SensorAnchor | null {
+function getTemperatureSensorAnchorAtPoint(point: FieldPoint, sensorSamples: MapSample[], heatSamples: MapSample[]): SensorAnchor | null {
   if (!heatSamples.length) return getSensorAnchorAtPoint(point, sensorSamples);
-  return null;
+
+  const nearest = getNearestSensorSample(point, sensorSamples);
+  if (!nearest) return null;
+
+  const nearestDistance = Math.hypot(point.x - nearest.point.x, point.y - nearest.point.y);
+  const sensorSize = Math.max(nearest.item.width, nearest.item.height);
+  const nearestHeatDistance = heatSamples.reduce((minimum, sample) => (
+    Math.min(minimum, getDistanceToItemBounds(nearest.point, sample.item))
+  ), Number.POSITIVE_INFINITY);
+  const nearbyHeat = Number.isFinite(nearestHeatDistance)
+    ? clamp(1 - nearestHeatDistance / 2.4, 0, 1)
+    : 0;
+  const exactRadius = clamp(sensorSize * 0.9, 0.22, 0.58);
+  const fadeRadius = clamp(
+    sensorSize * (2.7 + nearbyHeat * 2.1),
+    exactRadius + 0.22,
+    Math.min(layout.value.width, layout.value.height) * 0.24,
+  );
+
+  if (nearestDistance >= fadeRadius) return null;
+  if (nearestDistance <= exactRadius) {
+    return {
+      value: nearest.value,
+      influence: 1,
+    };
+  }
+
+  const fade = 1 - (nearestDistance - exactRadius) / Math.max(fadeRadius - exactRadius, 0.001);
+  return {
+    value: nearest.value,
+    influence: clamp(fade * fade * (0.82 + nearbyHeat * 0.18), 0, 1),
+  };
 }
 
 function getMapFieldAtPoint(point: FieldPoint, layer: RoomMapLayer) {
