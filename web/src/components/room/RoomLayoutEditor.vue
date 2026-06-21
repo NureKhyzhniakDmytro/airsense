@@ -25,7 +25,7 @@
           />
         </div>
         <Tag v-if="isReadOnly" severity="secondary" value="Read only" />
-        <Tag v-if="!isReadOnly && (mode === 'edit' || isDirty)" :severity="isDirty ? 'warn' : 'success'" :value="isDirty ? 'Unsaved' : 'Saved'" />
+        <Tag v-if="!isReadOnly && mode === 'edit'" :severity="isDirty ? 'warn' : 'success'" :value="isDirty ? 'Unsaved' : 'Saved'" />
         <Button v-if="mode === 'view'" label="Refresh data" icon="pi pi-refresh" severity="secondary" variant="text" :loading="isTelemetryLoading" @click="() => loadTelemetry()" />
         <Button v-if="mode === 'edit'" label="Reload" icon="pi pi-refresh" severity="secondary" variant="text" :disabled="isSaving" @click="reloadLayout" />
         <Button v-if="mode === 'edit'" label="Save" icon="pi pi-save" :loading="isSaving" :disabled="!isDirty || hasPlacementErrors" @click="saveLayout" />
@@ -943,6 +943,7 @@ const isSaving = ref(false);
 const isTelemetryLoading = ref(false);
 const hasLoaded = ref(false);
 const hasTelemetryLoaded = ref(false);
+const hasAcceptedInitialAssetSync = ref(false);
 const errorMessage = ref("");
 const telemetryError = ref("");
 const activeMapLayer = ref<RoomMapLayer>("temperature");
@@ -1357,14 +1358,17 @@ const liveStream = useRoomLiveStream(roomId, {
     hasTelemetryLoaded.value = true;
     telemetryError.value = "";
     syncRequiredRoomAssets();
+    acceptInitialRequiredAssetSync();
   },
   sensor: (event) => {
     applySensorLiveEvent(sensors, event);
     syncRequiredRoomAssets();
+    acceptInitialRequiredAssetSync();
   },
   device: (event) => {
     applyDeviceLiveEvent(devices, event);
     syncRequiredRoomAssets();
+    acceptInitialRequiredAssetSync();
   },
   error: (error) => {
     console.error("Layout live stream error:", error);
@@ -3652,6 +3656,15 @@ function syncRequiredRoomAssets() {
   ensureVentAirflowRoles();
 }
 
+function acceptInitialRequiredAssetSync() {
+  if (!hasLoaded.value || !hasTelemetryLoaded.value || hasAcceptedInitialAssetSync.value) return;
+
+  const normalized = normalizeLayout(layout.value);
+  layout.value = cloneLayout(normalized);
+  savedLayout.value = cloneLayout(normalized);
+  hasAcceptedInitialAssetSync.value = true;
+}
+
 function getFirstUnplacedSensor(excludeItemId?: string) {
   const placedSensorIds = new Set(layout.value.items
     .filter((item) => item.id !== excludeItemId && getItemType(item.type).value === "sensor")
@@ -3687,6 +3700,7 @@ async function loadTelemetry(options: { silent?: boolean } = {}) {
     hasTelemetryLoaded.value = true;
     telemetryError.value = "";
     syncRequiredRoomAssets();
+    acceptInitialRequiredAssetSync();
   } catch (error) {
     console.error("Failed to load layout telemetry:", error);
     telemetryError.value = "Unable to load live values for the room plan.";
@@ -3700,6 +3714,7 @@ async function loadTelemetry(options: { silent?: boolean } = {}) {
 async function loadLayout() {
   isLoading.value = true;
   errorMessage.value = "";
+  hasAcceptedInitialAssetSync.value = false;
 
   try {
     const result = normalizeLayout(await withTimeout(getRoomLayout(envId, roomId), layoutLoadTimeoutMs));
@@ -3708,6 +3723,7 @@ async function loadLayout() {
     selectedId.value = result.items[0]?.id ?? null;
     hasLoaded.value = true;
     syncRequiredRoomAssets();
+    acceptInitialRequiredAssetSync();
   } catch (error) {
     const fallback = createDefaultLayout();
     errorMessage.value = "Unable to load room layout. Showing an empty draft.";
@@ -3716,6 +3732,7 @@ async function loadLayout() {
     selectedId.value = null;
     hasLoaded.value = true;
     syncRequiredRoomAssets();
+    acceptInitialRequiredAssetSync();
   } finally {
     isLoading.value = false;
   }
@@ -3723,6 +3740,7 @@ async function loadLayout() {
 
 async function reloadLayout() {
   hasLoaded.value = false;
+  hasAcceptedInitialAssetSync.value = false;
   await loadLayout();
 }
 

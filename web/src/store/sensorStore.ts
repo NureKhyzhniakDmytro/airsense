@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { reactive, ref, computed } from 'vue';
+import { reactive, computed } from 'vue';
 import type { Sensor, SensorsResponse } from '@/types/sensor';
 import api from '@/api';
 
@@ -13,22 +13,32 @@ export const useSensorStore = defineStore('sensorStore', () => {
   });
 
   // Кешируем результаты постраничных запросов
-  const pagesData = new Map<number, SensorsResponse>();
-  const pagePromises = new Map<number, Promise<SensorsResponse>>();
-  const pageSize = ref<number | null>(null);
+  const pagesData = new Map<string, SensorsResponse>();
+  const pagePromises = new Map<string, Promise<SensorsResponse>>();
+  const pageSizeByRoom = new Map<number, number>();
 
   // Дедупликация запросов по конкретному sensorId
-  const fetchSensorPromises = new Map<number, Promise<Sensor | null>>();
+  const fetchSensorPromises = new Map<string, Promise<Sensor | null>>();
+
+  function pageCacheKey(roomId: number, skip: number) {
+    return `${roomId}:${skip}`;
+  }
+
+  function sensorCacheKey(roomId: number, sensorId: number) {
+    return `${roomId}:${sensorId}`;
+  }
 
   // Получить и закешировать одну страницу (skip = смещение)
   function fetchPage(roomId: number, skip: number): Promise<SensorsResponse> {
-    if (pagesData.has(skip)) {
+    const key = pageCacheKey(roomId, skip);
+
+    if (pagesData.has(key)) {
       // Уже есть в кеше — сразу возвращаем
-      return Promise.resolve(pagesData.get(skip)!);
+      return Promise.resolve(pagesData.get(key)!);
     }
-    if (pagePromises.has(skip)) {
+    if (pagePromises.has(key)) {
       // Уже в процессе загрузки — возвращаем тот же промис
-      return pagePromises.get(skip)!;
+      return pagePromises.get(key)!;
     }
 
     const p = api
@@ -36,22 +46,22 @@ export const useSensorStore = defineStore('sensorStore', () => {
       .then(res => {
         const resp = res.data;
         // Сохраняем в кеш страницы
-        pagesData.set(skip, resp);
+        pagesData.set(key, resp);
         // Сохраняем все сенсоры этой страницы в общий Map
         resp.data.forEach(sensor => {
           state.sensors.set(sensor.id, sensor);
         });
         // Фиксируем размер страницы
-        if (pageSize.value === null) {
-          pageSize.value = resp.data.length;
+        if (!pageSizeByRoom.has(roomId)) {
+          pageSizeByRoom.set(roomId, resp.data.length);
         }
         return resp;
       })
       .finally(() => {
-        pagePromises.delete(skip);
+        pagePromises.delete(key);
       });
 
-    pagePromises.set(skip, p);
+    pagePromises.set(key, p);
     return p;
   }
 
@@ -65,8 +75,9 @@ export const useSensorStore = defineStore('sensorStore', () => {
       return Promise.resolve(state.sensors.get(sensorId)!);
     }
     // Если уже запрошен — возвращаем существующий промис
-    if (fetchSensorPromises.has(sensorId)) {
-      return fetchSensorPromises.get(sensorId)!;
+    const key = sensorCacheKey(roomId, sensorId);
+    if (fetchSensorPromises.has(key)) {
+      return fetchSensorPromises.get(key)!;
     }
 
     state.isLoading.set(sensorId, true);
@@ -85,10 +96,11 @@ export const useSensorStore = defineStore('sensorStore', () => {
             return found;
           }
           // Если не нашли и страница гарантированно пуста или размер не определён — выходим
-          if (!pageSize.value || resp.data.length === 0) {
+          const pageSize = pageSizeByRoom.get(roomId);
+          if (!pageSize || resp.data.length === 0) {
             break;
           }
-          skip += pageSize.value;
+          skip += pageSize;
         }
         return null;
       } catch (err) {
@@ -96,11 +108,11 @@ export const useSensorStore = defineStore('sensorStore', () => {
         return null;
       } finally {
         state.isLoading.set(sensorId, false);
-        fetchSensorPromises.delete(sensorId);
+        fetchSensorPromises.delete(key);
       }
     })();
 
-    fetchSensorPromises.set(sensorId, p);
+    fetchSensorPromises.set(key, p);
     return p;
   }
 

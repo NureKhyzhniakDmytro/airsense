@@ -23,7 +23,7 @@ defineEmits<{
   (e: 'select', type: string): void;
 }>();
 
-const options = computed(() => props.types.map(type => ({
+const options = computed(() => [...new Set(props.types.filter(Boolean))].map(type => ({
   label: PARAMETER_LABELS[type] || type,
   value: type,
 })));

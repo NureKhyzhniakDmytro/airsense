@@ -25,7 +25,7 @@
         </header>
         <div class="detail-toolbar">
           <ParameterSelector
-            :types="sensor.types"
+            :types="sensorTypes"
             :selected-param="selectedParam"
             @select="selectType"
           />
@@ -52,7 +52,7 @@
 <script setup lang="ts">
 definePageMeta({ name: 'sensor', requiresAuth: true })
 
-import { ref, onMounted, watch } from "vue";
+import { computed, ref, onMounted, watch } from "vue";
 import { useRoute } from "vue-router";
 import { getAvailableParameters } from "@/services/apiService";
 import api from "@/api";
@@ -87,16 +87,19 @@ const fromDate = ref<Date>(new Date(
   new Date().getMinutes()
 ));
 const toDate = ref<Date>(new Date());
+const sensorTypes = computed(() => [...new Set(sensor.value?.types.filter(Boolean) ?? [])]);
 
 const loadSensor = async () => {
   isLoading.value = true;
   try {
     sensor.value = await sensorStore.fetchSensor(roomId, sensorId);
     const parameters = await getAvailableParameters(roomId);
-    params.value = parameters.filter(parameter => 
-      sensor.value?.types.some(type => type === parameter.name)
-    );
-    selectedParam.value = sensor.value?.types[0] || "";
+    const types = new Set(sensorTypes.value);
+    params.value = parameters.filter((parameter, index, source) => (
+      types.has(parameter.name)
+      && source.findIndex((candidate) => candidate.name === parameter.name) === index
+    ));
+    selectedParam.value = sensorTypes.value[0] || "";
   } catch (error) {
     console.error("Error loading sensor:", error);
   } finally {

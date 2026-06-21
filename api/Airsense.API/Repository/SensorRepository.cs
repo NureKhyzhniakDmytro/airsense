@@ -30,7 +30,9 @@ public class SensorRepository(IDbConnection connection) : ISensorRepository
                                    sensor_id, parameter_id, value, timestamp
                                FROM sensor_data
                                ORDER BY sensor_id, parameter_id, timestamp DESC
-                           ) sd ON s.id = sd.sensor_id AND sd.timestamp > NOW() - INTERVAL '15 minutes'
+                           ) sd ON s.id = sd.sensor_id
+                               AND sd.parameter_id = sp.id
+                               AND sd.timestamp > NOW() - INTERVAL '15 minutes'
                            LEFT JOIN parameters dp ON dp.id = sd.parameter_id
                            WHERE s.room_id = @roomId
                            ORDER BY s.id
@@ -45,7 +47,11 @@ public class SensorRepository(IDbConnection connection) : ISensorRepository
                 Id = g.Key.Id,
                 TypeName = g.Key.TypeName,
                 SerialNumber = g.Key.SerialNumber,
-                Types = g.Select(s => s.SensorParameter).ToList(),
+                Types = g
+                    .Select(s => s.SensorParameter)
+                    .Where(parameter => parameter is not null)
+                    .Distinct()
+                    .ToList(),
                 Parameters = g
                     .Where(x => x.ParamKey is not null)
                     .DistinctBy(x => x.ParamKey)
@@ -149,7 +155,7 @@ public class SensorRepository(IDbConnection connection) : ISensorRepository
     public async Task<ICollection<string>> GetTypesAsync(int sensorId)
     {
         const string sql = """
-                           SELECT p.name
+                           SELECT DISTINCT p.name
                            FROM sensors s
                            JOIN sensor_types t ON s.type_id = t.id
                            JOIN sensor_type_parameters tp ON tp.type_id = t.id

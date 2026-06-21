@@ -101,6 +101,11 @@ import {
 import { useChartConfig } from '@/config/chartConfig';
 import { useRoomLiveStream } from '@/composables/useRoomLiveStream';
 
+type ParameterOption = Param & {
+  min_value?: number;
+  max_value?: number;
+};
+
 function debounce<F extends (...args: any[]) => void>(func: F, wait = 300) {
   let timeout: ReturnType<typeof setTimeout>;
   return (...args: Parameters<F>) => {
@@ -113,8 +118,8 @@ const route = useRoute();
 const roomId = Number(route.params.roomId);
 const sensorStore = useSensorStore();
 
-const parametersOptions = ref<Param[]>([
-  { label: 'Device Speed', name: 'device_speed', unit: '%' },
+const parametersOptions = ref<ParameterOption[]>([
+  { label: 'Device Speed', name: 'device_speed', unit: '%', min_value: 0, max_value: 100 },
 ]);
 
 const { chartOptions } = useChartConfig();
@@ -123,7 +128,7 @@ const sensorNames = shallowRef<Record<number, ChartLabel>>({});
 const isLoading = ref(false);
 const isChartLoading = ref(false);
 
-const selectedParam = ref<Param>(parametersOptions.value[0]);
+const selectedParam = ref<ParameterOption>(parametersOptions.value[0]);
 const selectedInterval = ref(INTERVAL_OPTIONS[1]);
 const fromDate = ref<Date>(
   new Date(new Date().setDate(new Date().getDate() - 1))
@@ -137,6 +142,48 @@ const pointCount = computed(() => Object.values(series.value).reduce(
 
 const getLabel = (name: string) => PARAMETER_LABELS[name] || name;
 const maxLivePointsPerSeries = 1500;
+
+function updateChartAxisRange(values: number[] = []) {
+  const option = selectedParam.value;
+  const metaMin = Number.isFinite(option.min_value) ? Number(option.min_value) : undefined;
+  const metaMax = Number.isFinite(option.max_value) ? Number(option.max_value) : undefined;
+  const defaultMin = metaMin ?? 0;
+  const defaultMax = metaMax ?? (option.name === 'device_speed' ? 100 : defaultMin + 1);
+
+  let min = defaultMin;
+  let max = defaultMax;
+
+  if (values.length) {
+    const dataMin = Math.min(...values);
+    const dataMax = Math.max(...values);
+    const metaRange = Math.max((metaMax ?? dataMax) - (metaMin ?? dataMin), 1);
+    const dataRange = Math.max(dataMax - dataMin, metaRange * 0.03, 1);
+    const padding = dataRange * 0.18;
+
+    min = dataMin - padding;
+    max = dataMax + padding;
+
+    if (metaMin !== undefined) min = Math.max(metaMin, min);
+    if (metaMax !== undefined) max = Math.min(metaMax, max);
+    if (max <= min) max = min + 1;
+  }
+
+  chartOptions.value = {
+    ...chartOptions.value,
+    yaxis: {
+      ...chartOptions.value.yaxis,
+      min,
+      max,
+      tickAmount: 5,
+      labels: {
+        ...chartOptions.value.yaxis.labels,
+        formatter: (val: number) => option.name === 'co2' || option.name === 'device_speed'
+          ? val.toFixed(0)
+          : val.toFixed(1),
+      },
+    },
+  };
+}
 
 function isLivePointInCurrentRange(timestampMs: number) {
   if (timestampMs < fromDate.value.getTime())
@@ -177,6 +224,9 @@ function appendLivePoint(
     data: nextData.slice(-maxLivePointsPerSeries),
   }];
   series.value = nextSeries;
+  updateChartAxisRange(Object.values(nextSeries).flatMap((items) => (
+    items.flatMap((item) => item.data.map((point) => point.y))
+  )));
   sensorNames.value = {
     ...sensorNames.value,
     [sourceId]: {
@@ -192,6 +242,8 @@ async function loadChartData() {
 
   const newSeries: Record<number, SeriesData[]> = {};
   const newNames: Record<number, ChartLabel> = {};
+  const axisValues: number[] = [];
+  updateChartAxisRange();
 
   try {
     const params: HistoryParams = {
@@ -229,6 +281,7 @@ async function loadChartData() {
             })),
           },
         ];
+        axisValues.push(...history.map((h) => h.value));
         if (selectedParam.value.name === 'device_speed') {
           newNames[deviceData.id] = {
             name: `Device #${deviceData.id}`,
@@ -249,6 +302,7 @@ async function loadChartData() {
 
     series.value = newSeries;
     sensorNames.value = newNames;
+    updateChartAxisRange(axisValues);
   } catch (err) {
     console.error('Error loading chart data:', err);
   } finally {
@@ -268,6 +322,8 @@ async function loadParams() {
           name: p.name,
           label: getLabel(p.name),
           unit: p.unit,
+          min_value: p.min_value,
+          max_value: p.max_value,
         });
       }
     });
