@@ -6,16 +6,6 @@
         <h3>Predictive ventilation</h3>
       </div>
       <div class="ai-panel__actions">
-        <span v-if="modelLabel" class="ai-panel__model">{{ modelLabel }}</span>
-        <Button
-          type="button"
-          :label="showDetails ? 'Hide details' : 'Details'"
-          :icon="showDetails ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"
-          severity="secondary"
-          outlined
-          size="small"
-          @click="showDetails = !showDetails"
-        />
         <Button
           type="button"
           aria-label="Refresh AI predictions"
@@ -71,10 +61,6 @@
           <span>Exhaust</span>
           <strong>{{ formatNumber(sample.exhaust_ventilation_power) }}%</strong>
         </div>
-        <div class="ai-sample">
-          <span>Sample age</span>
-          <strong>{{ formatAge(insights.telemetry_age_seconds) }}</strong>
-        </div>
       </div>
 
       <section class="ai-control">
@@ -123,94 +109,66 @@
         </div>
       </section>
 
-      <div v-if="showDetails" class="ai-panel__details">
-        <div class="ai-panel__grid">
-          <section class="ai-panel__table-section">
-            <header>
-              <span>Forecast</span>
-              <small>{{ insights.prediction?.mode || "unknown" }}</small>
-            </header>
-            <table class="ai-table">
-              <thead>
-                <tr>
-                  <th>Horizon</th>
-                  <th>CO₂</th>
-                  <th>Temp</th>
-                  <th>Humidity</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="point in insights.prediction?.predictions || []" :key="point.horizon_minutes">
-                  <td>{{ point.horizon_minutes }}m</td>
-                  <td>{{ formatNumber(point.co2) }}</td>
-                  <td>{{ formatNumber(point.temperature) }}</td>
-                  <td>{{ formatNumber(point.humidity) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </section>
+      <section v-if="forecastRows.length" class="ai-panel__table-section">
+        <header>
+          <span>Forecast</span>
+        </header>
+        <table class="ai-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>CO₂</th>
+              <th>Temperature</th>
+              <th>Humidity</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="point in forecastRows" :key="point.horizon_minutes">
+              <td>In {{ point.horizon_minutes }} min</td>
+              <td>{{ formatNumber(point.co2) }} ppm</td>
+              <td>{{ formatNumber(point.temperature) }}°C</td>
+              <td>{{ formatNumber(point.humidity) }}%</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
 
-          <section class="ai-panel__table-section">
-            <header>
-              <span>Scenarios</span>
-              <small>20m CO₂</small>
-            </header>
-            <table class="ai-table">
-              <thead>
-                <tr>
-                  <th>Mode</th>
-                  <th>Power</th>
-                  <th>CO₂</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="scenario in scenarioRows" :key="scenario.label">
-                  <td>{{ scenario.label }}</td>
-                  <td>{{ formatNumber(scenario.ventilation_power) }}%</td>
-                  <td>{{ formatNumber(scenario.co2) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </section>
-        </div>
-
-        <section class="ai-recommendation">
-          <header>
-            <div>
-              <span class="ai-panel__eyebrow">Recommendation</span>
-              <h4>{{ latestRecommendation ? `${formatNumber(latestRecommendation.requested_power)}% ventilation` : "No recommendation yet" }}</h4>
-            </div>
-            <span v-if="latestRecommendation" class="ai-status" :class="`ai-status--${latestRecommendation.status}`">
-              {{ latestRecommendation.status }}
-            </span>
-          </header>
-
-          <p v-if="latestRecommendation?.reason">{{ latestRecommendation.reason }}</p>
-          <p v-else>Generate a recommendation from the current room sample and model version.</p>
-
-          <div v-if="!isReadOnly" class="ai-recommendation__actions">
-            <Button
-              type="button"
-              label="Generate"
-              icon="pi pi-sparkles"
-              size="small"
-              :loading="isCreatingRecommendation"
-              @click="createRecommendation"
-            />
-            <Button
-              v-if="latestRecommendation && latestRecommendation.status === 'recommended'"
-              type="button"
-              label="Apply"
-              icon="pi pi-check"
-              severity="secondary"
-              outlined
-              size="small"
-              :loading="isAcceptingRecommendation"
-              @click="acceptRecommendation(latestRecommendation.id)"
-            />
+      <section class="ai-recommendation">
+        <header>
+          <div>
+            <span class="ai-panel__eyebrow">Recommendation</span>
+            <h4>{{ latestRecommendation ? `${formatNumber(latestRecommendation.requested_power)}% ventilation` : "No recommendation yet" }}</h4>
           </div>
-        </section>
-      </div>
+          <span v-if="latestRecommendation" class="ai-status" :class="`ai-status--${latestRecommendation.status}`">
+            {{ formatRecommendationStatus(latestRecommendation.status) }}
+          </span>
+        </header>
+
+        <p v-if="latestRecommendation?.reason">{{ latestRecommendation.reason }}</p>
+        <p v-else>Generate a recommendation from the current room conditions.</p>
+
+        <div v-if="!isReadOnly" class="ai-recommendation__actions">
+          <Button
+            type="button"
+            label="Generate"
+            icon="pi pi-sparkles"
+            size="small"
+            :loading="isCreatingRecommendation"
+            @click="createRecommendation"
+          />
+          <Button
+            v-if="latestRecommendation && latestRecommendation.status === 'recommended'"
+            type="button"
+            label="Apply"
+            icon="pi pi-check"
+            severity="secondary"
+            outlined
+            size="small"
+            :loading="isAcceptingRecommendation"
+            @click="acceptRecommendation(latestRecommendation.id)"
+          />
+        </div>
+      </section>
     </template>
   </section>
 </template>
@@ -234,6 +192,10 @@ const props = defineProps<{
   roomId: number;
 }>();
 
+const emit = defineEmits<{
+  (event: "control-updated", settings: AiControlSettings): void;
+}>();
+
 const toast = useToast();
 const insights = ref<RoomAiInsights | null>(null);
 const isLoading = ref(false);
@@ -241,7 +203,6 @@ const isCreatingRecommendation = ref(false);
 const isAcceptingRecommendation = ref(false);
 const isSavingControl = ref(false);
 const errorMessage = ref("");
-const showDetails = ref(false);
 const controlDraft = ref<AiControlSettingsPayload>({
   enabled: false,
   target_co2: 900,
@@ -254,19 +215,8 @@ const isReadOnly = computed(() => injectedReadOnly.value);
 
 const sample = computed(() => insights.value?.sample ?? null);
 const latestRecommendation = computed(() => insights.value?.recent_recommendations?.[0] ?? null);
-const modelLabel = computed(() => {
-  const prediction = insights.value?.prediction;
-  return prediction ? `${prediction.mode} · ${prediction.model_version}` : "";
-});
-
-const scenarioRows = computed(() =>
-  (insights.value?.simulation?.scenarios ?? []).map((scenario) => ({
-    label: scenario.label,
-    ventilation_power: scenario.ventilation_power,
-    co2: scenario.predictions.find((point) => point.horizon_minutes === 20)?.co2
-      ?? scenario.predictions.at(-1)?.co2
-      ?? null,
-  })),
+const forecastRows = computed(() =>
+  [...(insights.value?.prediction?.predictions ?? [])].sort((left, right) => left.horizon_minutes - right.horizon_minutes),
 );
 
 const upsertRecommendation = (recommendation: AiRecommendationAudit) => {
@@ -291,6 +241,8 @@ const loadInsights = async () => {
   try {
     insights.value = await getRoomAiInsights(props.roomId);
     syncControlDraft(insights.value.control_settings);
+    if (insights.value.control_settings)
+      emit("control-updated", insights.value.control_settings);
   } catch (error) {
     console.error("Failed to load AI predictions:", error);
     errorMessage.value = "AI predictions are unavailable right now.";
@@ -313,6 +265,7 @@ const saveControlSettings = async () => {
     if (insights.value)
       insights.value.control_settings = settings;
     syncControlDraft(settings);
+    emit("control-updated", settings);
     toast.add({ severity: "success", summary: "AI control saved", life: 2400 });
   } catch (error) {
     console.error("Failed to save AI control settings:", error);
@@ -361,11 +314,11 @@ const formatNumber = (value?: number | null) => {
   return new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 }).format(value);
 };
 
-const formatAge = (seconds?: number | null) => {
-  if (seconds == null) return "—";
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
-  return `${Math.round(seconds / 3600)}h`;
+const formatRecommendationStatus = (status: string) => {
+  if (status === "recommended") return "Ready";
+  if (status === "accepted") return "Applied";
+  if (status === "used") return "Used";
+  return status;
 };
 
 onMounted(loadInsights);
@@ -417,11 +370,6 @@ onMounted(loadInsights);
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
-}
-
-.ai-panel__model {
-  color: var(--app-muted);
-  font-size: 0.8rem;
 }
 
 .ai-panel__loading,
@@ -476,19 +424,6 @@ onMounted(loadInsights);
   color: var(--app-text-strong);
   font-size: 1rem;
   line-height: 1.2;
-}
-
-.ai-panel__grid {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-}
-
-.ai-panel__details {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 0;
 }
 
 .ai-panel__table-section,
@@ -615,7 +550,6 @@ onMounted(loadInsights);
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .ai-panel__grid,
   .ai-control__grid {
     grid-template-columns: 1fr;
   }

@@ -71,7 +71,7 @@ export interface CurvePoint {
 
 export interface CurveData {
   points: CurvePoint[];
-  critical_value?: number;
+  critical_value?: number | null;
 }
 
 export interface SeriesData {
