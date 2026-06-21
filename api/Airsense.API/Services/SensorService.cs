@@ -15,6 +15,20 @@ public class SensorService(
 {
     public async Task ProcessDataAsync(int roomId, int sensorId, string parameter, SensorDataDto data)
     {
+        var controlSettings = await aiPredictionService.GetControlSettingsAsync(roomId);
+        if (controlSettings.Enabled)
+        {
+            var autonomousRecommendation = await aiPredictionService.GetAutonomousControlRecommendationAsync(roomId);
+            if (autonomousRecommendation is not null)
+                await PublishFanSpeedAsync(roomId, autonomousRecommendation.RequestedPower, "ai-autonomous");
+
+            var monitoringCurve = await settingsRepository.GetCurveAsync(roomId, parameter);
+            if (monitoringCurve?.CriticalValue is { } criticalValue)
+                await PublishThresholdAlertAsync(roomId, sensorId, parameter, data.Value, criticalValue);
+
+            return;
+        }
+
         var curve = await settingsRepository.GetCurveAsync(roomId, parameter);
 
         if (curve?.Points == null || curve.Points.Count == 0)
@@ -25,29 +39,47 @@ public class SensorService(
         if (!fanSpeed.HasValue)
             return;
 
-        await deviceRepository.AddDataAsync(roomId, fanSpeed.Value);
-        await mqttService.PublishAsync($"room/{roomId}", new
-        {
-            fanSpeed,
-            timestamp = new DateTimeOffset(DateTime.UtcNow).ToUnixTimeMilliseconds(),
-        });
-        await mqttService.PublishAsync("airsense/device-state", new DeviceTelemetryEventDto
-        {
-            RoomId = roomId,
-            FanSpeed = fanSpeed.Value,
-            ActiveAt = new DateTimeOffset(DateTime.UtcNow).ToUnixTimeSeconds(),
-            Source = "automation"
-        });
+        await PublishFanSpeedAsync(roomId, fanSpeed.Value, "automation");
 
         if (!curve.CriticalValue.HasValue)
             return;
 
+        await PublishThresholdAlertAsync(roomId, sensorId, parameter, data.Value, curve.CriticalValue.Value);
+    }
+
+    private async Task PublishFanSpeedAsync(int roomId, double fanSpeed, string source)
+    {
+        var clampedSpeed = Math.Round(Math.Clamp(fanSpeed, 0, 100));
+
+        await deviceRepository.AddDataAsync(roomId, clampedSpeed);
+        await mqttService.PublishAsync($"room/{roomId}", new
+        {
+            fanSpeed = clampedSpeed,
+            timestamp = new DateTimeOffset(DateTime.UtcNow).ToUnixTimeMilliseconds(),
+            source
+        });
+        await mqttService.PublishAsync("airsense/device-state", new DeviceTelemetryEventDto
+        {
+            RoomId = roomId,
+            FanSpeed = clampedSpeed,
+            ActiveAt = new DateTimeOffset(DateTime.UtcNow).ToUnixTimeSeconds(),
+            Source = source
+        });
+    }
+
+    private async Task PublishThresholdAlertAsync(
+        int roomId,
+        int sensorId,
+        string parameter,
+        double value,
+        double criticalValue)
+    {
         var transition = await thresholdAlertStateRepository.UpdateAsync(
             roomId,
             sensorId,
             parameter,
-            data.Value,
-            curve.CriticalValue.Value);
+            value,
+            criticalValue);
 
         if (transition == ThresholdAlertTransition.None)
             return;
@@ -83,8 +115,8 @@ public class SensorService(
                 ["room_id"] = roomId.ToString(),
                 ["sensor_id"] = sensorId.ToString(),
                 ["parameter"] = parameter,
-                ["value"] = data.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
-                ["critical_value"] = curve.CriticalValue.Value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
+                ["value"] = value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture),
+                ["critical_value"] = criticalValue.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)
             }
         });
     }

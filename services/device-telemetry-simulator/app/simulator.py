@@ -106,6 +106,8 @@ class RoomProfile:
     scenario: str = "auto"
     ventilation_power_override: float | None = None
     occupancy_override: int | None = None
+    ai_control_enabled: bool = False
+    ai_ventilation_power: float | None = None
 
 
 def env_int(name: str, default: int) -> int:
@@ -441,6 +443,11 @@ def update_state(
         profile.occupancy_override if profile else None,
         profile.ventilation_power_override if profile else None,
     )
+
+    if profile and profile.ai_control_enabled:
+        device_state = "ai"
+        if profile.ai_ventilation_power is not None:
+            target_power = clamp(profile.ai_ventilation_power, 0.0, 100.0)
 
     occupancy_delta = target_occupancy - state.occupancy
     if occupancy_delta != 0:
@@ -1389,23 +1396,54 @@ def persist_device_state(client: mqtt.Client, states: Iterable[RoomState]) -> No
 
 def read_room_profiles() -> dict[int, RoomProfile]:
     try:
+        command_max_age_seconds = env_float("AI_CONTROL_COMMAND_MAX_AGE_SECONDS", 180.0)
         with connect_db() as conn:
             with conn.cursor() as cur:
                 ensure_demo_control_schema(cur)
                 cur.execute(
                     """
-                    SELECT room_id, scenario, ventilation_power_override, occupancy_override
-                    FROM demo_room_profiles
-                    """
+                    SELECT
+                        p.room_id,
+                        p.scenario,
+                        p.ventilation_power_override,
+                        p.occupancy_override,
+                        COALESCE(a.enabled, FALSE) AS ai_control_enabled,
+                        c.requested_power AS ai_ventilation_power
+                    FROM demo_room_profiles p
+                    LEFT JOIN ai_control_settings a ON a.room_id = p.room_id
+                    LEFT JOIN LATERAL (
+                        SELECT vc.requested_power
+                        FROM ventilation_commands vc
+                        WHERE vc.room_id = p.room_id
+                          AND vc.source = 'ai-autonomous'
+                          AND vc.command_type = 'autonomous-control'
+                          AND vc.requested_power IS NOT NULL
+                          AND vc.timestamp > CURRENT_TIMESTAMP - (%s * INTERVAL '1 second')
+                        ORDER BY vc.timestamp DESC, vc.id DESC
+                        LIMIT 1
+                    ) c ON TRUE
+                    """,
+                    (command_max_age_seconds,),
                 )
                 profiles: dict[int, RoomProfile] = {}
-                for room_id, scenario, ventilation_power_override, occupancy_override in cur.fetchall():
+                for (
+                    room_id,
+                    scenario,
+                    ventilation_power_override,
+                    occupancy_override,
+                    ai_control_enabled,
+                    ai_ventilation_power,
+                ) in cur.fetchall():
                     profiles[int(room_id)] = RoomProfile(
                         scenario=scenario if scenario in SCENARIOS else "auto",
                         ventilation_power_override=(
                             None if ventilation_power_override is None else float(ventilation_power_override)
                         ),
                         occupancy_override=None if occupancy_override is None else int(occupancy_override),
+                        ai_control_enabled=bool(ai_control_enabled),
+                        ai_ventilation_power=(
+                            None if ai_ventilation_power is None else float(ai_ventilation_power)
+                        ),
                     )
                 return profiles
     except Exception:
