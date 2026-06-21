@@ -13,6 +13,27 @@ spec:
       port: {{ .Values.postgres.service.port }}
       targetPort: {{ .Values.postgres.service.port }}
 ---
+{{- if and .Values.postgres.persistence.enabled (not .Values.postgres.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  labels:
+    {{- include "airsense.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  accessModes:
+{{- range .Values.postgres.persistence.accessModes }}
+    - {{ . | quote }}
+{{- end }}
+{{- if .Values.postgres.persistence.storageClassName }}
+  storageClassName: {{ .Values.postgres.persistence.storageClassName | quote }}
+{{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.postgres.persistence.size | quote }}
+---
+{{- end }}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -81,7 +102,12 @@ spec:
               mountPath: /docker-entrypoint-initdb.d
       volumes:
         - name: postgres-data
+{{- if .Values.postgres.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default "postgres-data" .Values.postgres.persistence.existingClaim | quote }}
+{{- else }}
           emptyDir: {}
+{{- end }}
         - name: postgres-initdb
           configMap:
             name: postgres-initdb

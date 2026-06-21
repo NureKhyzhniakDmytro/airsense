@@ -62,6 +62,13 @@ postgres:
     pullPolicy: IfNotPresent
   service:
     port: 5432
+  persistence:
+    enabled: true
+    existingClaim: ""
+    storageClassName: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 8Gi
   resources:
     requests:
       cpu: 100m

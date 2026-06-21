@@ -1,6 +1,6 @@
 # AI Training Datasets
 
-This document records the datasets used to train the AirSense AI prediction service on June 20, 2026.
+This document records the datasets used to train the AirSense AI prediction service on June 21, 2026.
 
 ## Normalized AirSense Schema
 
@@ -97,21 +97,23 @@ The snapshot is generated from the same room-minute training query used by the m
 
 ## Training Result
 
-The active trained model after loading the datasets is:
+The active trained model after the latest Kubernetes training run is:
 
-- Model version: `hgb-20260620161453`
+- Model version: `hgb-20260621163014`
 - Model type: scikit-learn `MultiOutputRegressor` over `HistGradientBoostingRegressor`
-- Raw training rows: 39,441
-- Supervised rows: 39,028
-- Train rows: 31,223
-- Validation rows: 7,805
+- Raw training rows: 35,805
+- AirSense DB rows: 5,116
+- External dataset rows: 30,689
+- Supervised rows: 35,378
+- Train rows: 28,301
+- Validation rows: 7,077
 - Series: 8
 
 Validation metrics:
 
-- CO2 MAE: 72.7522 ppm
-- Temperature MAE: 0.113 C
-- Humidity MAE: 0.3288 %
+- CO2 MAE: 101.8942 ppm
+- Temperature MAE: 0.2215 C
+- Humidity MAE: 1.0194 %
 
 ## Limitations
 

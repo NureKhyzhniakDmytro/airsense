@@ -8,7 +8,7 @@ mkdir -p "$LOG_DIR"
 
 usage() {
   cat <<'EOF'
-Usage: scripts/check-quiet.sh [all|api|web|web-build|web-test|helm|diff ...]
+Usage: scripts/check-quiet.sh [all|api|ai|web|web-build|web-test|helm|diff ...]
 
 Runs common AirSense validation commands with compact output.
 Full logs are written to AIRSENSE_LOG_DIR, default: /tmp/airsense-checks.
@@ -54,6 +54,24 @@ api_tests() {
   printf '[skip] api tests: dotnet/docker not available\n' >&2
 }
 
+ai_tests() {
+  if command -v python3 >/dev/null 2>&1 && python3 -c 'import pytest, fastapi, numpy, joblib' >/dev/null 2>&1; then
+    run_step "ai prediction tests" bash -lc "cd '$ROOT_DIR/services/ai-prediction-service' && python3 -m pytest -q"
+    return
+  fi
+
+  if command -v docker >/dev/null 2>&1; then
+    run_step "ai prediction tests" docker run --rm \
+      -v "$ROOT_DIR:/src" \
+      -w /src/services/ai-prediction-service \
+      python:3.12-slim \
+      sh -c "pip install -q -r requirements-dev.txt && python -m pytest -q"
+    return
+  fi
+
+  printf '[skip] ai prediction tests: python dependencies/docker not available\n' >&2
+}
+
 web_tests() {
   run_step "web tests" npm --silent --prefix "$ROOT_DIR/web" test
 }
@@ -73,12 +91,13 @@ diff_check() {
 run_target() {
   case "$1" in
     api) api_tests ;;
+    ai) ai_tests ;;
     web) web_tests; web_build ;;
     web-test) web_tests ;;
     web-build) web_build ;;
     helm) helm_lint ;;
     diff) diff_check ;;
-    all) api_tests; web_tests; web_build; helm_lint; diff_check ;;
+    all) api_tests; ai_tests; web_tests; web_build; helm_lint; diff_check ;;
     -h|--help) usage ;;
     *)
       printf 'Unknown target: %s\n' "$1" >&2

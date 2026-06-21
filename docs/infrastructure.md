@@ -54,6 +54,7 @@ The chart includes:
 - StatefulSet for PostgreSQL.
 - ClusterIP services for API, EMQX, PostgreSQL, and Redis.
 - ConfigMaps for EMQX configuration and PostgreSQL initialization scripts.
+- PersistentVolumeClaim for PostgreSQL data by default, configurable through `postgres.persistence`.
 - A templated local Secret for development values, configured through `values.yaml`, environment variables, or a local Helm values file.
 
 The deployment script is `scripts/deploy-minikube.sh`. It performs these steps:
@@ -69,6 +70,8 @@ The deployment script is `scripts/deploy-minikube.sh`. It performs these steps:
 ## Kubernetes Hardening
 
 The Helm chart includes startup probes, readiness probes, and liveness probes for API-derived services, PostgreSQL, Redis, and EMQX. Resource requests and limits are defined for each workload to make the Minikube deployment more predictable and closer to a production Kubernetes description.
+
+PostgreSQL persistence is enabled by default through a `PersistentVolumeClaim` named `postgres-data`. It can be disabled for disposable local runs with `postgres.persistence.enabled=false`, or connected to a pre-created claim through `postgres.persistence.existingClaim`.
 
 Local credentials are not committed as a standalone Kubernetes Secret manifest. `charts/airsense/values.yaml` documents the required keys, while `scripts/deploy-minikube.sh` passes local environment values to Helm during installation or upgrade.
 

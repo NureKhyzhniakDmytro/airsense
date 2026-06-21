@@ -13,10 +13,14 @@ Known gaps:
 
 Decision: keep this as documented debt until the web/backend demo path is stable.
 
-## Local PostgreSQL Persistence
+## PostgreSQL Backup And Restore
 
-The Helm chart currently mounts PostgreSQL data on `emptyDir`. A Postgres pod restart recreates the seed database, which is acceptable for disposable local demos but drops runtime-created Firebase users, memberships, and telemetry history.
+The Helm chart now mounts PostgreSQL data through a `PersistentVolumeClaim` by default. A normal Postgres pod restart should keep the database volume attached instead of recreating the seed database from scratch.
 
-Mitigation in the current demo flow: login now re-adds the authenticated user to the demo environment as read-only `user`, and the simulator/migration rebuild demo topology, telemetry, and room layout bindings.
+Remaining production debt:
 
-Debt: replace `emptyDir` with a PVC-backed volume before treating the Minikube deployment as stateful.
+- define a backup and restore workflow for PostgreSQL;
+- define retention for telemetry history and notification history;
+- document disaster recovery steps for a lost Minikube volume or a replaced storage class.
+
+Mitigation in the current demo flow: login re-adds the authenticated user to the demo environment as read-only `user`, and the simulator/migration can rebuild demo topology, telemetry, and room layout bindings if the local database is intentionally reset.
