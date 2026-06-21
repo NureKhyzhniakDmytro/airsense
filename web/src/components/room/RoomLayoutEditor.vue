@@ -857,7 +857,7 @@ type MapSample = {
   item: RoomLayoutItem;
   point: FieldPoint;
   value: number;
-  source: "sensor" | "equipment";
+  source: "sensor" | "equipment" | "co2_source";
   confidence: number;
 };
 type SensorAnchor = {
@@ -992,6 +992,7 @@ const viewLegendItemTypes = computed(() => {
 const sensorLayoutItems = computed(() => layout.value.items.filter((item) => getItemType(item.type).value === "sensor"));
 const ventLayoutItems = computed(() => layout.value.items.filter((item) => getItemType(item.type).value === "vent"));
 const equipmentLayoutItems = computed(() => layout.value.items.filter((item) => getItemType(item.type).value === "equipment"));
+const co2SourceLayoutItems = computed(() => layout.value.items.filter((item) => isCo2SourceItem(item)));
 const boardGridLines = computed<BoardGridLine[]>(() => {
   const step = getBoardGridStep();
   const majorStep = step * 2;
@@ -1696,12 +1697,92 @@ function getMapSamples(layer: RoomMapLayer): MapSample[] {
     })
     .filter((sample): sample is MapSample => sample !== null);
 
+  if (layer === "co2") {
+    return [
+      ...sensorSamples,
+      ...getCo2SourceSamples(sensorSamples),
+    ];
+  }
+
   if (layer !== "temperature") return sensorSamples;
 
   return [
     ...sensorSamples,
     ...getEquipmentHeatSamples(sensorSamples),
   ];
+}
+
+function isCo2SourceItem(item: RoomLayoutItem) {
+  const type = getItemType(item.type).value;
+  return type === "zone" || type === "desk";
+}
+
+function getCo2SourceSamples(sensorSamples: MapSample[]): MapSample[] {
+  const sensorValues = sensorSamples.map((sample) => sample.value);
+  if (!sensorValues.length) return [];
+
+  const max = Math.max(...sensorValues);
+  const min = Math.min(...sensorValues);
+  const spread = max - min;
+  const background = getLayerBackgroundValue("co2", sensorValues);
+  const excess = Math.max(0, max - background);
+
+  if (max < 520 && spread < 55) return [];
+
+  return co2SourceLayoutItems.value
+    .map((item) => {
+      const potential = getCo2SourcePotential(item);
+      if (potential <= 0) return null;
+
+      const point = getItemCenter(item);
+      const localSensorEstimate = getBroadSensorEstimateAtPoint(point, sensorSamples) ?? average(sensorValues);
+      const sourceLift = Math.max(45, excess * 0.54 + spread * 0.28) * (0.62 + potential * 0.32);
+      const sourceValue = clamp(
+        Math.max(localSensorEstimate, background + sourceLift),
+        background + 18,
+        max + Math.max(30, spread * 0.22),
+      );
+
+      return {
+        id: `co2-source-${item.id}`,
+        item,
+        point,
+        value: round(sourceValue),
+        source: "co2_source",
+        confidence: clamp(0.42 + potential * 0.24 + spread / 900, 0.42, 0.8),
+      };
+    })
+    .filter((sample): sample is MapSample => sample !== null);
+}
+
+function getCo2SourcePotential(item: RoomLayoutItem) {
+  const type = getItemType(item.type).value;
+  const area = Math.max(item.width * item.height, 0.1);
+  const areaFactor = clamp(Math.sqrt(area) / 2.15, 0.34, 1.25);
+  const label = `${item.label ?? ""}`.toLowerCase();
+  let profile = type === "desk" ? 0.42 : 0.56;
+
+  if (/meeting|conference|operator|shift|people|occupied|work/.test(label)) profile += 0.38;
+  if (/airlock|maintenance|service/.test(label)) profile += 0.16;
+  if (/storage|cold|empty/.test(label)) profile -= 0.18;
+
+  return clamp(profile * areaFactor, 0, 1.18);
+}
+
+function getBroadSensorEstimateAtPoint(point: FieldPoint, sensorSamples: MapSample[]) {
+  let weightedValue = 0;
+  let weightSum = 0;
+
+  for (const sample of sensorSamples) {
+    if (sample.source !== "sensor") continue;
+
+    const distance = Math.hypot(point.x - sample.point.x, point.y - sample.point.y);
+    const weight = sample.confidence / (distance ** 1.38 + 0.62);
+    weightedValue += sample.value * weight;
+    weightSum += weight;
+  }
+
+  return weightSum > 0 ? weightedValue / weightSum : null;
 }
 
 function getEquipmentHeatSamples(sensorSamples: MapSample[]): MapSample[] {
@@ -1772,7 +1853,7 @@ function getSensorFieldValue(point: FieldPoint, layer: RoomMapLayer, samples: Ma
   const advectedValue = applyAirflowAdvection(point, layer, spatialValue, samples, airflow);
   const conditionedField = applyVentConditioning(point, layer, advectedValue, values);
   const eddy = getAirflowEddy(layer, point, airflow, values);
-  const anchor = getSensorAnchorAtPoint(point, samples);
+  const anchor = getLayerSensorAnchorAtPoint(point, layer, samples);
   const rawValue = conditionedField.value + eddy;
   const anchoredValue = anchor
     ? rawValue + (anchor.value - rawValue) * anchor.influence
@@ -1783,6 +1864,11 @@ function getSensorFieldValue(point: FieldPoint, layer: RoomMapLayer, samples: Ma
     confidence: clamp(Math.max(baseField.confidence, conditionedField.confidence, anchor?.influence ?? 0), 0.03, 1),
     airflow: Math.max(airflow.intensity, conditionedField.intensity),
   };
+}
+
+function getLayerSensorAnchorAtPoint(point: FieldPoint, layer: RoomMapLayer, samples: MapSample[]): SensorAnchor | null {
+  if (layer === "co2") return null;
+  return getSensorAnchorAtPoint(point, samples);
 }
 
 function getSensorAnchorAtPoint(point: FieldPoint, samples: MapSample[]): SensorAnchor | null {
@@ -2092,8 +2178,8 @@ function interpolateSensorFieldBase(
 
   for (const sample of samples) {
     const distance = Math.hypot(point.x - sample.point.x, point.y - sample.point.y);
-    const baseWeight = 1 / (distance ** 2.25 + 0.08);
-    const sampleWeight = sample.confidence * (sample.source === "equipment" ? 0.58 : 1);
+    const baseWeight = getMapSampleBaseWeight(layer, sample, distance);
+    const sampleWeight = sample.confidence * getMapSampleSourceWeight(layer, sample);
     const alignment = getFlowAlignment(sample.point, point, airflow);
     const obstruction = getObstructionFactor(sample.point, point);
     const downwindBoost = Math.max(0, alignment) * airflow.intensity * 1.15;
@@ -2110,6 +2196,22 @@ function interpolateSensorFieldBase(
     value: weightedValue / weightSum,
     confidence: clamp(weightSum / (weightSum + 0.72), 0.03, 1),
   };
+}
+
+function getMapSampleBaseWeight(layer: RoomMapLayer, sample: MapSample, distance: number) {
+  if (layer === "co2") {
+    if (sample.source === "sensor") return 1 / (distance ** 1.42 + 0.62);
+    if (sample.source === "co2_source") return 1 / (distance ** 1.68 + 0.18);
+  }
+
+  return 1 / (distance ** 2.25 + 0.08);
+}
+
+function getMapSampleSourceWeight(layer: RoomMapLayer, sample: MapSample) {
+  if (sample.source === "equipment") return 0.58;
+  if (layer === "co2" && sample.source === "sensor") return 0.62;
+  if (layer === "co2" && sample.source === "co2_source") return 0.86;
+  return 1;
 }
 
 function applyAirflowAdvection(
