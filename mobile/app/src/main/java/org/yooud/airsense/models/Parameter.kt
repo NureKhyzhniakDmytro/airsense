@@ -1,9 +1,13 @@
 package org.yooud.airsense.models
 
+import com.google.gson.annotations.SerializedName
+
 data class Parameter(
     val name: String,
-    val value: Double,
+    val value: Double?,
     val unit: String,
-    val min_value: Double,
-    val max_value: Double
+    @SerializedName("min_value")
+    val minValue: Double,
+    @SerializedName("max_value")
+    val maxValue: Double
 )

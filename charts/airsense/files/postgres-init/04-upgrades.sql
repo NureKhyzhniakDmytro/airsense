@@ -22,6 +22,24 @@ CREATE TABLE IF NOT EXISTS "ventilation_commands" (
 CREATE INDEX IF NOT EXISTS "idx_ventilation_commands_room_timestamp"
     ON "ventilation_commands" ("room_id", "timestamp" DESC);
 
+CREATE INDEX IF NOT EXISTS "idx_rooms_environment_id"
+    ON "rooms" ("environment_id", "id");
+
+CREATE INDEX IF NOT EXISTS "idx_sensors_room_id"
+    ON "sensors" ("room_id", "id");
+
+CREATE INDEX IF NOT EXISTS "idx_devices_room_id"
+    ON "devices" ("room_id", "id");
+
+CREATE INDEX IF NOT EXISTS "idx_sensor_data_sensor_parameter_timestamp"
+    ON "sensor_data" ("sensor_id", "parameter_id", "timestamp" DESC, "id" DESC);
+
+CREATE INDEX IF NOT EXISTS "idx_device_data_device_timestamp"
+    ON "device_data" ("device_id", "timestamp" DESC, "id" DESC);
+
+CREATE INDEX IF NOT EXISTS "idx_device_data_device_applied_at"
+    ON "device_data" ("device_id", "applied_at" DESC, "id" DESC);
+
 CREATE TABLE IF NOT EXISTS "user_notifications" (
     "id" bigserial PRIMARY KEY,
     "user_id" int NOT NULL REFERENCES "users" ("id") ON DELETE CASCADE,

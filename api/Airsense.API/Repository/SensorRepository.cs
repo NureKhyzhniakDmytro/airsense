@@ -29,10 +29,11 @@ public class SensorRepository(IDbConnection connection) : ISensorRepository
                                SELECT DISTINCT ON (sensor_id, parameter_id)
                                    sensor_id, parameter_id, value, timestamp
                                FROM sensor_data
+                               WHERE sensor_id IN (SELECT id FROM sensors WHERE room_id = @roomId)
+                                 AND timestamp > NOW() - INTERVAL '15 minutes'
                                ORDER BY sensor_id, parameter_id, timestamp DESC
                            ) sd ON s.id = sd.sensor_id
                                AND sd.parameter_id = sp.id
-                               AND sd.timestamp > NOW() - INTERVAL '15 minutes'
                            LEFT JOIN parameters dp ON dp.id = sd.parameter_id
                            WHERE s.room_id = @roomId
                            ORDER BY s.id

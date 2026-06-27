@@ -8,7 +8,21 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import com.google.android.material.snackbar.Snackbar
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import androidx.credentials.Credential
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
@@ -22,6 +36,7 @@ import kotlinx.coroutines.launch
 import org.yooud.airsense.auth.AuthViewModel
 import org.yooud.airsense.R
 import org.yooud.airsense.ui.LoginScreen
+import org.yooud.airsense.ui.ModernTheme
 import org.yooud.airsense.ui.RegistrationScreen
 
 class MainActivity : ComponentActivity() {
@@ -35,25 +50,50 @@ class MainActivity : ComponentActivity() {
         setContent {
             var showRegister by remember { mutableStateOf(false) }
             val user by authVm.currentUser.collectAsState(initial = null)
+            val errorMessage by authVm.errorMessage.collectAsState(initial = null)
+            val successMessage by authVm.successMessage.collectAsState(initial = null)
+            val isLoading by authVm.isLoading.collectAsState(initial = false)
+            val isApiSessionReady by authVm.isApiSessionReady.collectAsState(initial = false)
 
-            if (user != null) {
-                val intent = Intent(this, EnvironmentActivity::class.java)
-                startActivity(intent)
-            } else if (showRegister) {
+            LaunchedEffect(errorMessage) {
+                errorMessage?.let { message ->
+                    showErrorSnackBar(RuntimeException(message))
+                    authVm.clearError()
+                }
+            }
+
+            LaunchedEffect(successMessage) {
+                successMessage?.let { message ->
+                    showMessageSnackBar(message)
+                    authVm.clearSuccess()
+                }
+            }
+
+            LaunchedEffect(user?.uid, isApiSessionReady) {
+                if (user != null && isApiSessionReady) {
+                    startActivity(Intent(this@MainActivity, EnvironmentActivity::class.java))
+                    finish()
+                }
+            }
+
+            if (user != null && !isApiSessionReady) {
+                WaitingForApiSessionScreen()
+            } else if (user == null && showRegister) {
                 RegistrationScreen(
+                    isLoading = isLoading,
                     onRegister = { email, pass ->
                         authVm.signUp(email, pass)
-                        showRegister = false
                     },
                     onLogin = { showRegister = false },
                     onGoogleSignIn = { launchGoogleIdSignIn() }
                 )
-            } else {
+            } else if (user == null) {
                 LoginScreen(
+                    isLoading = isLoading,
                     onLogin = { email, pass -> authVm.signIn(email, pass) },
                     onGoogleSignIn = { launchGoogleIdSignIn() },
                     onRegister = { showRegister = true },
-                    onForgotPassword = {}
+                    onForgotPassword = { email -> authVm.sendPasswordReset(email) }
                 )
             }
         }
@@ -81,14 +121,20 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showErrorSnackBar(error: Throwable) {
+        showMessageSnackBar(
+            getString(
+                R.string.sign_in_error,
+                error.localizedMessage ?: error.message ?: ""
+            )
+        )
+    }
+
+    private fun showMessageSnackBar(message: String) {
         val root = findViewById<View>(android.R.id.content)
         Snackbar
             .make(
                 root,
-                getString(
-                    R.string.sign_in_error,
-                    error.localizedMessage ?: error.message ?: ""
-                ),
+                message,
                 Snackbar.LENGTH_LONG
             )
             .setAction(android.R.string.ok) { /* скрыть */ }
@@ -107,5 +153,32 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "MainActivity"
+    }
+}
+
+@Composable
+private fun WaitingForApiSessionScreen() {
+    ModernTheme {
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            color = MaterialTheme.colorScheme.background
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "Completing secure AirSense session...",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
     }
 }

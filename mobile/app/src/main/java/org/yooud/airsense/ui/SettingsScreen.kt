@@ -2,10 +2,7 @@
 
 package org.yooud.airsense.ui
 
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,170 +10,114 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.AccountCircle
-import androidx.compose.material.icons.outlined.Email
-import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material.icons.outlined.Logout
-import androidx.compose.material.icons.outlined.NewReleases
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material.icons.outlined.QuestionAnswer
+import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import org.yooud.airsense.BuildConfig
 
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    themeMode: AppThemeMode = AppThemeMode.SYSTEM,
+    onThemeModeChange: (AppThemeMode) -> Unit = {}
 ) {
-    val listState = rememberLazyListState()
-    val hasScrolled by remember {
-        derivedStateOf { listState.firstVisibleItemScrollOffset > 0 }
-    }
-    val appBarElevation by animateDpAsState(targetValue = if (hasScrolled) 4.dp else 0.dp)
-
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
+            TopAppBar(
                 title = {
                     Text(
                         text = "Settings",
                         style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.onBackground
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            imageVector = Icons.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = MaterialTheme.colorScheme.primary
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back"
                         )
                     }
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = if (isSystemInDarkTheme()) {
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (hasScrolled) 1f else 0f)
-                    } else {
-                        MaterialTheme.colorScheme.surface
-                    },
-                    titleContentColor = MaterialTheme.colorScheme.primary,
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
                     navigationIconContentColor = MaterialTheme.colorScheme.primary
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(64.dp)
-                    .shadow(appBarElevation)
+                )
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
-        contentColor = MaterialTheme.colorScheme.onBackground,
         modifier = Modifier.fillMaxSize()
     ) { paddingValues ->
         LazyColumn(
-            state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .widthIn(max = 600.dp),
-            contentPadding = PaddingValues(
-                top = 16.dp,
-                bottom = 16.dp
-            ),
+                .padding(paddingValues),
+            contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                CategoryRow(
+                SettingsInfoCard(
                     title = "Account",
-                    icon = Icons.Outlined.AccountCircle,
-                    onClick = { /* Navigate to Account settings */ }
+                    body = "Firebase authentication with AirSense API session sync.",
+                    icon = Icons.Outlined.AccountCircle
                 )
             }
             item {
-                CategoryRow(
-                    title = "Privacy",
-                    icon = Icons.Outlined.Lock,
-                    onClick = { /* Navigate to Privacy */ }
-                )
-            }
-            item {
-                CategoryRow(
+                SettingsInfoCard(
                     title = "Notifications",
-                    icon = Icons.Outlined.Notifications,
-                    onClick = { /* Navigate to Notifications */ }
+                    body = "Push notifications are delivered through Firebase Cloud Messaging when enabled.",
+                    icon = Icons.Outlined.Notifications
                 )
             }
             item {
-                Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-            }
-            item {
-                CategoryRow(
-                    title = "FAQ",
-                    icon = Icons.Outlined.QuestionAnswer,
-                    onClick = { /* Navigate to FAQ */ }
+                ThemeSettingsCard(
+                    selectedMode = themeMode,
+                    onSelectMode = onThemeModeChange
                 )
             }
             item {
-                CategoryRow(
-                    title = "Send Feedback",
-                    icon = Icons.Outlined.Email,
-                    onClick = { /* Open feedback dialog */ }
+                SettingsInfoCard(
+                    title = "Version",
+                    body = BuildConfig.VERSION_NAME,
+                    icon = Icons.Outlined.Info
                 )
             }
             item {
-                CategoryRow(
-                    title = "What’s New",
-                    icon = Icons.Outlined.NewReleases,
-                    onClick = { /* Show release notes */ }
-                )
-            }
-            item {
-                Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-            }
-            item {
-                CategoryRow(
-                    title = "Logout",
-                    icon = Icons.Outlined.Logout,
-                    onClick = onLogout,
-                    tint = MaterialTheme.colorScheme.error
-                )
-            }
-            item {
-                Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
-            }
-            item {
-                VersionCard(
-                    versionText = "Version 1.2.3",
-                    copyrights = "© 2023, All Rights Reserved",
-                    onClick = { /* Easter egg if clicked 8 times */ }
+                SettingsActionCard(
+                    title = "Log out",
+                    icon = Icons.AutoMirrored.Outlined.Logout,
+                    tint = MaterialTheme.colorScheme.error,
+                    onClick = onLogout
                 )
             }
         }
@@ -184,77 +125,159 @@ fun SettingsScreen(
 }
 
 @Composable
-fun CategoryRow(
-    title: String,
-    icon: ImageVector,
-    onClick: () -> Unit,
-    tint: Color = MaterialTheme.colorScheme.onSurface
+private fun ThemeSettingsCard(
+    selectedMode: AppThemeMode,
+    onSelectMode: (AppThemeMode) -> Unit
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(20.dp)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Box(
-            modifier = Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(24.dp),
-                tint = tint
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Palette,
+                        contentDescription = null,
+                        modifier = Modifier.size(22.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Appearance",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Choose how AirSense looks on this device.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                AppThemeMode.entries.forEachIndexed { index, mode ->
+                    SegmentedButton(
+                        selected = selectedMode == mode,
+                        onClick = { onSelectMode(mode) },
+                        shape = SegmentedButtonDefaults.itemShape(
+                            index = index,
+                            count = AppThemeMode.entries.size
+                        ),
+                        label = { Text(mode.label) }
+                    )
+                }
+            }
         }
-        Text(
-            text = title,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface
+    }
+}
+
+@Composable
+private fun SettingsInfoCard(
+    title: String,
+    body: String,
+    icon: ImageVector
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        SettingsRow(
+            title = title,
+            body = body,
+            icon = icon,
+            tint = MaterialTheme.colorScheme.primary
         )
     }
 }
 
 @Composable
-fun VersionCard(
-    versionText: String,
-    copyrights: String,
+private fun SettingsActionCard(
+    title: String,
+    icon: ImageVector,
+    tint: Color,
     onClick: () -> Unit
 ) {
     Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        SettingsRow(
+            title = title,
+            body = "End the current mobile session.",
+            icon = icon,
+            tint = tint
+        )
+    }
+}
+
+@Composable
+private fun SettingsRow(
+    title: String,
+    body: String,
+    icon: ImageVector,
+    tint: Color
+) {
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(200.dp)
-            .padding(horizontal = 16.dp)
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(color = Color.Black.copy(alpha = 0.25f))
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(tint.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+                tint = tint
             )
-
-            Column(
-                modifier = Modifier
-                    .padding(16.dp)
-            ) {
-                Text(
-                    text = versionText,
-                    style = MaterialTheme.typography.headlineSmall.copy(color = Color.White)
-                )
-                Text(
-                    text = copyrights,
-                    style = MaterialTheme.typography.bodySmall.copy(color = Color.White.copy(alpha = 0.8f))
-                )
-            }
         }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = body,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun SettingsScreenPreview() {
+    ModernTheme {
+        SettingsScreen(onBack = {}, onLogout = {})
     }
 }

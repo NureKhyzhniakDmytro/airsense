@@ -70,7 +70,9 @@ builder.Services.AddScoped<IAuthService>(_ => isFirebaseConfigured ? new Firebas
 builder.Services.AddScoped<IAuthMqttService, AuthMqttService>();
 builder.Services.AddScoped<ISensorService, SensorService>();
 builder.Services.AddScoped<IAiPredictionService, AiPredictionService>();
-builder.Services.AddScoped<INotificationService>(_ => isFirebaseConfigured ? new FirebaseNotificationService() : new NoOpNotificationService());
+builder.Services.AddScoped<INotificationService>(sp => isFirebaseConfigured
+    ? new FirebaseNotificationService(sp.GetRequiredService<ILogger<FirebaseNotificationService>>())
+    : new NoOpNotificationService());
 builder.Services.AddSingleton<IRoomLiveTelemetryHub, RoomLiveTelemetryHub>();
 builder.Services.AddSingleton<IUserNotificationHub, UserNotificationHub>();
 

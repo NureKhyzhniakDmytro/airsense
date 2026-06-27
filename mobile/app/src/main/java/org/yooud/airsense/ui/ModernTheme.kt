@@ -12,69 +12,67 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val PurpleAccent = Color(0xFF7E22CE)
-private val PurpleLight = Color(0xFF9D4EDD)
-private val PurpleDark = Color(0xFF5B1891)
+private val AirPrimary = Color(0xFF0F766E)
+private val AirPrimaryDark = Color(0xFF5EEAD4)
+private val AirSecondary = Color(0xFF2563EB)
+private val AirSecondaryDark = Color(0xFF93C5FD)
 
-private val TealAccent = Color(0xFF14B8A6)
-private val TealLight = Color(0xFF2DD4BF)
-private val TealDark = Color(0xFF0E766F)
+private val LightBackground = Color(0xFFF5F7FA)
+private val LightSurface = Color(0xFFFFFFFF)
+private val DarkBackground = Color(0xFF0F172A)
+private val DarkSurface = Color(0xFF172033)
 
-private val LightBackground = Color(0xFFF6F6F6)
-private val LightSurface    = Color(0xFFFFFFFF)
-private val DarkBackground  = Color(0xFF121212)
-private val DarkSurface     = Color(0xFF1E1E1E)
-
-private val TextOnLightSurface = Color(0xFF1F2937)
-private val TextOnDarkSurface  = Color(0xFFF1F5F9)
-
-private val DividerLight = Color(0xFFE5E7EB)
-private val DividerDark  = Color(0xFF374151)
+private val TextOnLightSurface = Color(0xFF172033)
+private val TextOnDarkSurface = Color(0xFFE5EDF6)
 
 private val LightColors = lightColorScheme(
-    primary       = PurpleAccent,
-    onPrimary     = Color.White,
-    primaryContainer   = PurpleLight.copy(alpha = 0.3f),
-    onPrimaryContainer = PurpleAccent,
+    primary = AirPrimary,
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFD8F3EF),
+    onPrimaryContainer = Color(0xFF064E47),
 
-    secondary     = TealAccent,
-    onSecondary   = Color.White,
-    secondaryContainer   = TealLight.copy(alpha = 0.3f),
-    onSecondaryContainer = TealAccent,
+    secondary = AirSecondary,
+    onSecondary = Color.White,
+    secondaryContainer = Color(0xFFDBEAFE),
+    onSecondaryContainer = Color(0xFF1E3A8A),
 
-    background    = LightBackground,
-    onBackground  = TextOnLightSurface,
+    background = LightBackground,
+    onBackground = TextOnLightSurface,
 
-    surface       = LightSurface,
-    onSurface     = TextOnLightSurface,
+    surface = LightSurface,
+    onSurface = TextOnLightSurface,
     surfaceVariant = Color(0xFFF0F4F8),
     onSurfaceVariant = TextOnLightSurface,
 
-    error         = Color(0xFFB00020),
-    onError       = Color.White,
+    error = Color(0xFFB42318),
+    onError = Color.White,
+    errorContainer = Color(0xFFFEE4E2),
+    onErrorContainer = Color(0xFF7A271A),
 )
 
 private val DarkColors = darkColorScheme(
-    primary       = PurpleDark,
-    onPrimary     = Color.Black,
-    primaryContainer   = PurpleAccent.copy(alpha = 0.25f),
-    onPrimaryContainer = Color.Black,
+    primary = AirPrimaryDark,
+    onPrimary = Color(0xFF042F2E),
+    primaryContainer = Color(0xFF134E4A),
+    onPrimaryContainer = Color(0xFFCCFBF1),
 
-    secondary     = TealDark,
-    onSecondary   = Color.Black,
-    secondaryContainer   = TealAccent.copy(alpha = 0.25f),
-    onSecondaryContainer = Color.Black,
+    secondary = AirSecondaryDark,
+    onSecondary = Color(0xFF172554),
+    secondaryContainer = Color(0xFF1D4ED8),
+    onSecondaryContainer = Color(0xFFDBEAFE),
 
-    background    = DarkBackground,
-    onBackground  = TextOnDarkSurface,
+    background = DarkBackground,
+    onBackground = TextOnDarkSurface,
 
-    surface       = DarkSurface,
-    onSurface     = TextOnDarkSurface,
+    surface = DarkSurface,
+    onSurface = TextOnDarkSurface,
     surfaceVariant = Color(0xFF2E2E2E),
     onSurfaceVariant = TextOnDarkSurface,
 
-    error         = Color(0xFFCF6679),
-    onError       = Color.Black,
+    error = Color(0xFFF97066),
+    onError = Color(0xFF450A0A),
+    errorContainer = Color(0xFF7F1D1D),
+    onErrorContainer = Color(0xFFFEE2E2),
 )
 
 private val AppTypography = Typography(
@@ -83,7 +81,7 @@ private val AppTypography = Typography(
         fontWeight = FontWeight.Bold,
         fontSize = 57.sp,
         lineHeight = 64.sp,
-        letterSpacing = (-0.25).sp
+        letterSpacing = 0.sp
     ),
     displayMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
@@ -134,14 +132,14 @@ private val AppTypography = Typography(
         fontWeight = FontWeight.Medium,
         fontSize = 16.sp,
         lineHeight = 24.sp,
-        letterSpacing = 0.15.sp
+        letterSpacing = 0.sp
     ),
     titleSmall = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Medium,
         fontSize = 14.sp,
         lineHeight = 20.sp,
-        letterSpacing = 0.1.sp
+        letterSpacing = 0.sp
     ),
 
     bodyLarge = TextStyle(
@@ -149,21 +147,21 @@ private val AppTypography = Typography(
         fontWeight = FontWeight.Normal,
         fontSize = 16.sp,
         lineHeight = 24.sp,
-        letterSpacing = 0.5.sp
+        letterSpacing = 0.sp
     ),
     bodyMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
         fontSize = 14.sp,
         lineHeight = 20.sp,
-        letterSpacing = 0.25.sp
+        letterSpacing = 0.sp
     ),
     bodySmall = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
         fontSize = 12.sp,
         lineHeight = 16.sp,
-        letterSpacing = 0.4.sp
+        letterSpacing = 0.sp
     ),
 
     labelLarge = TextStyle(
@@ -171,29 +169,48 @@ private val AppTypography = Typography(
         fontWeight = FontWeight.Medium,
         fontSize = 14.sp,
         lineHeight = 20.sp,
-        letterSpacing = 0.1.sp
+        letterSpacing = 0.sp
     ),
     labelMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Medium,
         fontSize = 12.sp,
         lineHeight = 16.sp,
-        letterSpacing = 0.5.sp
+        letterSpacing = 0.sp
     ),
     labelSmall = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Medium,
         fontSize = 11.sp,
         lineHeight = 16.sp,
-        letterSpacing = 0.5.sp
+        letterSpacing = 0.sp
     )
 )
 
+enum class AppThemeMode(
+    val storageValue: String,
+    val label: String
+) {
+    SYSTEM("system", "System"),
+    LIGHT("light", "Light"),
+    DARK("dark", "Dark");
+
+    companion object {
+        fun fromStorageValue(value: String?): AppThemeMode =
+            entries.firstOrNull { it.storageValue == value } ?: SYSTEM
+    }
+}
+
 @Composable
 fun ModernTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeMode: AppThemeMode = AppThemeMode.SYSTEM,
     content: @Composable () -> Unit
 ) {
+    val darkTheme = when (themeMode) {
+        AppThemeMode.SYSTEM -> isSystemInDarkTheme()
+        AppThemeMode.LIGHT -> false
+        AppThemeMode.DARK -> true
+    }
     val colors = if (darkTheme) DarkColors else LightColors
 
     MaterialTheme(
@@ -201,8 +218,8 @@ fun ModernTheme(
         typography  = AppTypography,
         shapes      = Shapes(
             small  = RoundedCornerShape(8.dp),
-            medium = RoundedCornerShape(12.dp),
-            large  = RoundedCornerShape(16.dp)
+            medium = RoundedCornerShape(8.dp),
+            large  = RoundedCornerShape(12.dp)
         ),
         content = content
     )

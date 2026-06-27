@@ -23,6 +23,7 @@ public class DeviceRepository(IDbConnection connection) : IDeviceRepository
                                    dd.timestamp AS applied_at,
                                    dd.value AS DeviceSpeed
                                FROM device_data dd
+                               WHERE dd.device_id IN (SELECT id FROM devices WHERE room_id = @roomId)
                                ORDER BY dd.device_id, dd.timestamp DESC, dd.value DESC
                            ) dd ON d.id = dd.device_id
                            WHERE d.room_id = @roomId

@@ -1,3 +1,8 @@
 package org.yooud.airsense.models
 
-data class RegisterRequest(val notificationToken: String)
+import com.google.gson.annotations.SerializedName
+
+data class RegisterRequest(
+    @SerializedName("notification_token")
+    val notificationToken: String?
+)

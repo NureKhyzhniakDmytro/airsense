@@ -9,7 +9,7 @@ object ApiClient {
     private const val BASE_URL = "https://airsense.yooud.org/api/"
 
     private val logging = HttpLoggingInterceptor().apply {
-        level = HttpLoggingInterceptor.Level.BODY
+        level = HttpLoggingInterceptor.Level.NONE
     }
     private val authInterceptor = AuthInterceptor()
 

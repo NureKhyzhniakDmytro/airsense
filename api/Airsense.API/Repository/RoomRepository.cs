@@ -20,8 +20,22 @@ public class RoomRepository(IDbConnection connection) : IRoomRepository
     public async Task<ICollection<RoomDto>> GetAsync(int envId, int skip, int count)
     {
         const string sql = """
-                           WITH latest_sensor_data AS (
+                           WITH paged_rooms AS (
+                               SELECT r.id, r.name, r.icon
+                               FROM rooms r
+                               WHERE r.environment_id = @envId
+                               ORDER BY r.id
+                               LIMIT @count
+                               OFFSET @skip
+                           ),
+                           room_sensors AS (
+                               SELECT s.id AS sensor_id, s.room_id
+                               FROM sensors s
+                               JOIN paged_rooms pr ON pr.id = s.room_id
+                           ),
+                           latest_sensor_data AS (
                                SELECT DISTINCT ON (sd.sensor_id, sd.parameter_id)
+                                   rs.room_id,
                                    sd.sensor_id,
                                    sd.parameter_id,
                                    sd.value,
@@ -30,39 +44,46 @@ public class RoomRepository(IDbConnection connection) : IRoomRepository
                                    p.unit,
                                    p.min_value,
                                    p.max_value
-                               FROM sensor_data sd
-                                        JOIN parameters p ON sd.parameter_id = p.id
-                               ORDER BY sd.sensor_id, sd.parameter_id DESC, sd.timestamp DESC
+                               FROM room_sensors rs
+                               JOIN sensor_data sd ON sd.sensor_id = rs.sensor_id
+                               JOIN parameters p ON sd.parameter_id = p.id
+                               WHERE sd.timestamp > NOW() - INTERVAL '15 minutes'
+                               ORDER BY sd.sensor_id, sd.parameter_id, sd.timestamp DESC
                            ),
-                                latest_device_data AS (
-                                    SELECT DISTINCT ON (dd.device_id)
-                                        dd.device_id,
-                                        dd.timestamp AS applied_at,
-                                        dd.value AS DeviceSpeed
-                                    FROM device_data dd
-                                    ORDER BY dd.device_id, dd.timestamp DESC, dd.value DESC
-                                )
+                           room_devices AS (
+                               SELECT d.id AS device_id, d.room_id
+                               FROM devices d
+                               JOIN paged_rooms pr ON pr.id = d.room_id
+                           ),
+                           latest_device_data AS (
+                               SELECT DISTINCT ON (dd.device_id)
+                                   rd.room_id,
+                                   dd.device_id,
+                                   dd.timestamp AS applied_at,
+                                   dd.value AS DeviceSpeed
+                               FROM room_devices rd
+                               JOIN device_data dd ON dd.device_id = rd.device_id
+                               WHERE dd.timestamp > NOW() - INTERVAL '15 minutes'
+                               ORDER BY dd.device_id, dd.timestamp DESC, dd.value DESC
+                           )
                            SELECT
-                               r.id AS Id,
-                               r.name AS Name,
-                               r.icon AS Icon,
+                               pr.id AS Id,
+                               pr.name AS Name,
+                               pr.icon AS Icon,
                                MAX(ldd.DeviceSpeed) AS DeviceSpeed,
                                lsd.parameter AS ParamKey,
                                lsd.unit AS ParamUnit,
                                lsd.min_value AS ParamMinValue,
                                lsd.max_value AS ParamMaxValue,
                                AVG(lsd.value) AS ParamValue
-                           FROM rooms r
-                                    LEFT JOIN devices d ON r.id = d.room_id
-                                    LEFT JOIN latest_device_data ldd ON d.id = ldd.device_id AND ldd.applied_at > NOW() - INTERVAL '15 minutes'
-                                    LEFT JOIN sensors s ON r.id = s.room_id
-                                    LEFT JOIN latest_sensor_data lsd ON s.id = lsd.sensor_id AND lsd.timestamp > NOW() - INTERVAL '15 minutes'
-                           WHERE r.environment_id = @envId
-                           GROUP BY r.id, r.name, r.icon, lsd.parameter, lsd.unit, lsd.min_value, lsd.max_value
-                           ORDER BY r.id
+                           FROM paged_rooms pr
+                           LEFT JOIN latest_device_data ldd ON pr.id = ldd.room_id
+                           LEFT JOIN latest_sensor_data lsd ON pr.id = lsd.room_id
+                           GROUP BY pr.id, pr.name, pr.icon, lsd.parameter, lsd.unit, lsd.min_value, lsd.max_value
+                           ORDER BY pr.id
                            """;
 
-        var roomData = await connection.QueryAsync<RoomRawDto>(sql, new { envId });
+        var roomData = await connection.QueryAsync<RoomRawDto>(sql, new { envId, skip, count });
 
         var rooms = roomData
             .GroupBy(r => new { r.Id, r.Name, r.Icon })
@@ -90,9 +111,7 @@ public class RoomRepository(IDbConnection connection) : IRoomRepository
                 if (room.Parameters == null || room.Parameters.Count == 0)
                     room.Parameters = null;
                 return room;
-            })
-            .Skip(skip)
-            .Take(count);
+            });
 
         return rooms.ToList();
     }
@@ -122,8 +141,19 @@ public class RoomRepository(IDbConnection connection) : IRoomRepository
     public async Task<RoomDto?> GetByIdAsync(int roomId)
     {
         const string sql = """
-                           WITH latest_sensor_data AS (
+                           WITH room_scope AS (
+                               SELECT r.id, r.name, r.icon
+                               FROM rooms r
+                               WHERE r.id = @roomId
+                           ),
+                           room_sensors AS (
+                               SELECT s.id AS sensor_id, s.room_id
+                               FROM sensors s
+                               JOIN room_scope rs ON rs.id = s.room_id
+                           ),
+                           latest_sensor_data AS (
                                SELECT DISTINCT ON (sd.sensor_id, sd.parameter_id)
+                                   rs.room_id,
                                    sd.sensor_id,
                                    sd.parameter_id,
                                    sd.value,
@@ -132,37 +162,43 @@ public class RoomRepository(IDbConnection connection) : IRoomRepository
                                    p.unit,
                                    p.min_value,
                                    p.max_value
-                               FROM sensor_data sd
+                               FROM room_sensors rs
+                               JOIN sensor_data sd ON sd.sensor_id = rs.sensor_id
                                JOIN parameters p ON sd.parameter_id = p.id
-                               ORDER BY sd.sensor_id, sd.parameter_id DESC, sd.timestamp DESC
+                               WHERE sd.timestamp > NOW() - INTERVAL '15 minutes'
+                               ORDER BY sd.sensor_id, sd.parameter_id, sd.timestamp DESC
+                           ),
+                           room_devices AS (
+                               SELECT d.id AS device_id, d.room_id
+                               FROM devices d
+                               JOIN room_scope rs ON rs.id = d.room_id
                            ),
                            latest_device_data AS (
                                SELECT DISTINCT ON (dd.device_id)
+                                   rd.room_id,
                                    dd.device_id,
-                                   dd.applied_at,
+                                   dd.timestamp AS applied_at,
                                    dd.value AS DeviceSpeed
-                               FROM device_data dd
-                               WHERE dd.applied_at IS NOT NULL
-                               ORDER BY dd.device_id, dd.applied_at DESC, dd.value DESC
+                               FROM room_devices rd
+                               JOIN device_data dd ON dd.device_id = rd.device_id
+                               WHERE dd.timestamp > NOW() - INTERVAL '15 minutes'
+                               ORDER BY dd.device_id, dd.timestamp DESC, dd.value DESC
                            )
                            SELECT
-                               r.id AS Id,
-                               r.name AS Name,
-                               r.icon AS Icon,
+                               rs.id AS Id,
+                               rs.name AS Name,
+                               rs.icon AS Icon,
                                MAX(ldd.DeviceSpeed) AS DeviceSpeed,
                                lsd.parameter AS ParamKey,
                                lsd.unit AS ParamUnit,
                                lsd.min_value AS ParamMinValue,
                                lsd.max_value AS ParamMaxValue,
                                AVG(lsd.value) AS ParamValue
-                           FROM rooms r
-                                    LEFT JOIN devices d ON r.id = d.room_id
-                                    LEFT JOIN latest_device_data ldd ON d.id = ldd.device_id AND ldd.applied_at > NOW() - INTERVAL '15 minutes'
-                                    LEFT JOIN sensors s ON r.id = s.room_id
-                                    LEFT JOIN latest_sensor_data lsd ON s.id = lsd.sensor_id AND lsd.timestamp > NOW() - INTERVAL '15 minutes'
-                           WHERE r.id = @roomId
-                           GROUP BY r.id, r.name, r.icon, lsd.parameter, lsd.unit, lsd.min_value, lsd.max_value
-                           ORDER BY r.id
+                           FROM room_scope rs
+                           LEFT JOIN latest_device_data ldd ON rs.id = ldd.room_id
+                           LEFT JOIN latest_sensor_data lsd ON rs.id = lsd.room_id
+                           GROUP BY rs.id, rs.name, rs.icon, lsd.parameter, lsd.unit, lsd.min_value, lsd.max_value
+                           ORDER BY rs.id
                            """;
         var roomData = await connection.QueryAsync<RoomRawDto>(sql, new { roomId });
 

@@ -16,6 +16,7 @@ interface AuthRepository {
     suspend fun signIn(email: String, pass: String): Result<User>
     suspend fun signUp(email: String, pass: String): Result<User>
     suspend fun signInWithGoogle(idToken: String): Result<User>
+    suspend fun sendPasswordReset(email: String): Result<Unit>
     fun signOut()
     val currentUser: Flow<User?>
 }
@@ -45,6 +46,13 @@ class FirebaseAuthRepository(
         val credential = GoogleAuthProvider.getCredential(idToken, null)
         val result = auth.signInWithCredential(credential).await()
         Result.success(result.user!!.toUser())
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    override suspend fun sendPasswordReset(email: String): Result<Unit> = try {
+        auth.sendPasswordResetEmail(email).await()
+        Result.success(Unit)
     } catch (e: Exception) {
         Result.failure(e)
     }

@@ -2,43 +2,77 @@
 
 package org.yooud.airsense.ui
 
-import android.util.Log
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material3.*
-import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
-import androidx.compose.material3.pulltorefresh.pullToRefresh
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.outlined.Air
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Warning
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.collectLatest
 import org.yooud.airsense.env.EnvironmentDetailViewModel
+import org.yooud.airsense.models.MetricSeverity
 import org.yooud.airsense.models.Parameter
 import org.yooud.airsense.models.Room
+import org.yooud.airsense.models.formatFanSpeed
+import org.yooud.airsense.models.parameterUiState
+import org.yooud.airsense.models.roomSeverity
+import org.yooud.airsense.models.severityLabel
 
 @Composable
 fun EnvironmentDetailScreen(
     environmentId: Int,
-    viewModel: EnvironmentDetailViewModel = EnvironmentDetailViewModel(environmentId),
-    onBack: () -> Unit
+    environmentName: String?,
+    onBack: () -> Unit,
+    onRoomClick: (Room) -> Unit
 ) {
+    val viewModel = remember(environmentId) { EnvironmentDetailViewModel(environmentId) }
     val rooms by viewModel.rooms.collectAsState()
     val isRefreshing by viewModel.isRefreshing.collectAsState()
     val isLoadingMore by viewModel.isLoadingMore.collectAsState()
     val hasMoreData by viewModel.hasMoreData.collectAsState()
-
+    val errorMessage by viewModel.errorMessage.collectAsState()
     val listState = rememberLazyListState()
 
     LaunchedEffect(listState, hasMoreData) {
@@ -54,82 +88,99 @@ fun EnvironmentDetailScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = "Environment Details",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Column {
+                        Text(
+                            text = environmentName ?: "Environment",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        Text(
+                            text = "${rooms.size} rooms loaded",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            imageVector = Icons.Default.ArrowBack,
-                            contentDescription = "Back",
-                            tint = MaterialTheme.colorScheme.primary
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back"
                         )
                     }
                 },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(64.dp)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    navigationIconContentColor = MaterialTheme.colorScheme.primary
+                )
             )
         },
         containerColor = MaterialTheme.colorScheme.background,
-        contentColor = MaterialTheme.colorScheme.onBackground,
         modifier = Modifier.fillMaxSize()
     ) { innerPadding ->
-        Box(
+        PullToRefreshWrapper(
+            isRefreshing = isRefreshing,
+            onRefresh = viewModel::refreshRooms,
             modifier = Modifier
                 .padding(innerPadding)
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
+                .fillMaxSize(),
+            enabled = true
         ) {
-            PullToRefreshWrapper(
-                isRefreshing = isRefreshing,
-                onRefresh = { viewModel.refreshRooms() },
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.TopStart,
-                enabled = true
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background),
-                    contentPadding = PaddingValues(
-                        top = 16.dp,
-                        bottom = 24.dp,
-                        start = 16.dp,
-                        end = 16.dp
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    itemsIndexed(rooms) { index, room ->
-                        RoomCard(
-                            room = room,
-                            onClick = { /* Опционально: открытие детального экрана комнаты */ }
+                errorMessage?.let { message ->
+                    item {
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(vertical = 8.dp)
                         )
-                        if (index < rooms.lastIndex) {
-                            Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+
+                if (rooms.isEmpty() && !isRefreshing && errorMessage == null) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 48.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "No rooms available",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
+                }
 
-                    if (isLoadingMore) {
-                        item {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 16.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                LinearProgressIndicator(
-                                    modifier = Modifier
-                                        .fillMaxWidth(0.5f)
-                                        .height(4.dp),
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
+                itemsIndexed(rooms, key = { _, room -> room.id }) { index, room ->
+                    RoomCard(
+                        room = room,
+                        onClick = { onRoomClick(room) }
+                    )
+                    if (index < rooms.lastIndex) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                    }
+                }
+
+                if (isLoadingMore) {
+                    item {
+                        LinearProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 16.dp)
+                                .height(4.dp),
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             }
@@ -142,54 +193,73 @@ private fun RoomCard(
     room: Room,
     onClick: () -> Unit
 ) {
+    val severity = roomSeverity(room)
+    val primaryParams = room.parameters.orEmpty().take(3)
+
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.onSurface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         shape = MaterialTheme.shapes.medium
     ) {
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp)
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = room.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = room.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "Room #${room.id}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                SeverityBadge(severity = severity)
                 Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Speed: ${room.device_speed ?: "N/A"}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = "Open room",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(24.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            if (room.parameters.isNullOrEmpty()) {
-                Text(
-                    text = "No parameters available",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 8.dp)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                AssistChip(
+                    onClick = {},
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Air,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    },
+                    label = { Text("Fan ${formatFanSpeed(room.deviceSpeed)}") }
                 )
-                Log.d("RoomCard", "Parameters are null or empty for room: ${room.name}")
+            }
+
+            if (primaryParams.isEmpty()) {
+                Text(
+                    text = "No live parameters",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             } else {
-                room.parameters.forEach { param ->
-                    ParameterRow(parameter = param)
-                    Spacer(modifier = Modifier.height(8.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    primaryParams.forEach { parameter ->
+                        ParameterCompactRow(parameter = parameter)
+                    }
                 }
             }
         }
@@ -197,36 +267,92 @@ private fun RoomCard(
 }
 
 @Composable
-private fun ParameterRow(
-    parameter: Parameter
-) {
+private fun ParameterCompactRow(parameter: Parameter) {
+    val ui = parameterUiState(parameter)
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = parameter.name.replaceFirstChar { it.uppercaseChar() },
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = "${parameter.value} ${parameter.unit}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        Text(
+            text = ui.label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = ui.valueText,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
 
-        val fraction = ((parameter.value - parameter.min_value).toFloat() /
-                (parameter.max_value - parameter.min_value).coerceAtLeast(1.0)).coerceIn(0.0, 1.0)
-        LinearProgressIndicator(
-            progress = fraction.toFloat(),
-            modifier = Modifier
-                .widthIn(min = 80.dp)
-                .height(4.dp),
-            color = MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+@Composable
+internal fun SeverityBadge(severity: MetricSeverity) {
+    val colors = severityColors(severity)
+    AssistChip(
+        onClick = {},
+        leadingIcon = {
+            Icon(
+                imageVector = statusIcon(severity),
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = colors.foreground
+            )
+        },
+        label = { Text(severityLabel(severity)) }
+    )
+}
+
+@Composable
+internal fun severityColors(severity: MetricSeverity): StatusColors = when (severity) {
+    MetricSeverity.NORMAL -> StatusColors(
+        background = Color(0xFFE7F8F1),
+        foreground = Color(0xFF047857)
+    )
+    MetricSeverity.WARNING -> StatusColors(
+        background = Color(0xFFFFF7D6),
+        foreground = Color(0xFFB45309)
+    )
+    MetricSeverity.CRITICAL -> StatusColors(
+        background = MaterialTheme.colorScheme.errorContainer,
+        foreground = MaterialTheme.colorScheme.onErrorContainer
+    )
+    MetricSeverity.UNKNOWN -> StatusColors(
+        background = MaterialTheme.colorScheme.surfaceVariant,
+        foreground = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+}
+
+internal data class StatusColors(
+    val background: Color,
+    val foreground: Color
+)
+
+private fun statusIcon(severity: MetricSeverity): ImageVector = when (severity) {
+    MetricSeverity.NORMAL -> Icons.Outlined.CheckCircle
+    MetricSeverity.WARNING -> Icons.Outlined.Warning
+    MetricSeverity.CRITICAL -> Icons.Outlined.ErrorOutline
+    MetricSeverity.UNKNOWN -> Icons.Outlined.Warning
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun RoomCardPreview() {
+    ModernTheme {
+        RoomCard(
+            room = Room(
+                id = 12,
+                name = "Assembly Line",
+                icon = null,
+                deviceSpeed = 42.0,
+                parameters = listOf(
+                    Parameter("temperature", 23.4, "°C", 10.0, 40.0),
+                    Parameter("co2", 720.0, "ppm", 350.0, 2000.0),
+                    Parameter("humidity", 44.0, "%", 0.0, 100.0)
+                )
+            ),
+            onClick = {}
         )
     }
 }

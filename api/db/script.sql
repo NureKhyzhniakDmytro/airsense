@@ -73,6 +73,24 @@ CREATE TABLE "sensor_data" (
                                "sent_at" timestamp NOT NULL
 );
 
+CREATE INDEX "idx_rooms_environment_id"
+    ON "rooms" ("environment_id", "id");
+
+CREATE INDEX "idx_sensors_room_id"
+    ON "sensors" ("room_id", "id");
+
+CREATE INDEX "idx_devices_room_id"
+    ON "devices" ("room_id", "id");
+
+CREATE INDEX "idx_sensor_data_sensor_parameter_timestamp"
+    ON "sensor_data" ("sensor_id", "parameter_id", "timestamp" DESC, "id" DESC);
+
+CREATE INDEX "idx_device_data_device_timestamp"
+    ON "device_data" ("device_id", "timestamp" DESC, "id" DESC);
+
+CREATE INDEX "idx_device_data_device_applied_at"
+    ON "device_data" ("device_id", "applied_at" DESC, "id" DESC);
+
 CREATE TABLE "ventilation_commands" (
                                         "id" bigserial PRIMARY KEY,
                                         "room_id" int NOT NULL,
